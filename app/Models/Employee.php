@@ -81,4 +81,8 @@ class Employee extends Model
     {
         return $this->hasOne(EmployeeJobPosition::class, 'employee_id', 'id_employee')->where('is_active', true);
     }
+    public function activeContract()
+    {
+        return $this->hasOne(EmployeeContract::class, 'employee_id', 'id_employee')->where('is_active', true);
+    }
 }

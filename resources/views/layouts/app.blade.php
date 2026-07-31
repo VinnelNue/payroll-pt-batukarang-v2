@@ -35,22 +35,26 @@
         </div>
 
         <div class="sidebar-menu">
+            <!-- GROUP 1: OVERVIEW -->
             <div class="menu-header">Main Menu</div>
             <a href="{{ route('dashboard') }}" class="nav-link-custom {{ request()->routeIs('dashboard') ? 'active' : '' }}" title="Dashboard">
                 <i class="fa-solid fa-chart-pie"></i>
                 <span>Dashboard</span>
             </a>
 
+            <!-- GROUP 2: MASTER KARYAWAN & KONTRAK -->
             <div class="menu-header mt-3">Master Karyawan</div>
             <a href="{{ route('employees.index') }}" class="nav-link-custom {{ request()->routeIs('employees.*') ? 'active' : '' }}" title="Data Diri Karyawan">
                 <i class="fa-solid fa-user-gear"></i>
                 <span>Data Diri Karyawan</span>
             </a>
-            <a href="#" class="nav-link-custom" title="Jabatan & Site">
-                <i class="fa-solid fa-briefcase"></i>
-                <span>Jabatan & Site</span>
+
+            <a href="{{ route('contracts.index') }}" class="nav-link-custom {{ request()->routeIs('contracts.*') ? 'active' : '' }}" title="Penempatan & Kontrak">
+                <i class="fa-solid fa-file-signature"></i>
+                <span>Penempatan & Kontrak</span>
             </a>
 
+            <!-- GROUP 3: PENGGAJIAN & PERPAJAKAN -->
             <div class="menu-header mt-3">Penggajian & Tax</div>
             <a href="#" class="nav-link-custom" title="Process Payroll">
                 <i class="fa-solid fa-file-invoice-dollar"></i>
@@ -92,9 +96,18 @@
 
     <!-- MAIN CONTENT -->
     <main class="main-content">
+        <!-- NOTIFIKASI SUCCESS -->
         @if(session('success'))
             <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3 mb-4" role="alert">
                 <i class="fa-solid fa-circle-check me-2"></i> {{ session('success') }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
+
+        <!-- NOTIFIKASI ERROR -->
+        @if(session('error'))
+            <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 mb-4" role="alert">
+                <i class="fa-solid fa-triangle-exclamation me-2"></i> {{ session('error') }}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         @endif

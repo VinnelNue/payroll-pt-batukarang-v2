@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\EmployeeContractController; // <-- WAJIB ADD INI DI ATAS
 
 /*
 |--------------------------------------------------------------------------
@@ -16,7 +17,7 @@ Route::get('/', function () {
 
 /*
 |--------------------------------------------------------------------------
-| ROUTE CUSTOM KARYAWAN (Wajib ditaruh SEBELUM Route::resource)
+| ROUTE MODUL MASTER KARYAWAN (DATA DIRI)
 |--------------------------------------------------------------------------
 */
 // Import & Download Template
@@ -28,14 +29,18 @@ Route::get('employees/get-cities', [EmployeeController::class, 'getCities'])->na
 Route::get('employees/get-districts', [EmployeeController::class, 'getDistricts'])->name('employees.get-districts');
 Route::get('employees/get-villages', [EmployeeController::class, 'getVillages'])->name('employees.get-villages');
 
-// Alias untuk kompatibilitas route api.* (jika ada script lama yang memanggil)
+// Alias untuk kompatibilitas route api.*
 Route::get('api/cities', [EmployeeController::class, 'getCities'])->name('api.cities');
 Route::get('api/districts', [EmployeeController::class, 'getDistricts'])->name('api.districts');
 Route::get('api/villages', [EmployeeController::class, 'getVillages'])->name('api.villages');
 
+Route::resource('employees', EmployeeController::class);
+
 /*
 |--------------------------------------------------------------------------
-| ROUTE RESOURCE KARYAWAN (Wajib paling bawah dari modul employees)
+| ROUTE MODUL PENEMPATAN, JABATAN & KONTRAK KERJA
 |--------------------------------------------------------------------------
 */
-Route::resource('employees', EmployeeController::class);
+Route::get('contracts', [EmployeeContractController::class, 'index'])->name('contracts.index');
+Route::get('contracts/{employee}/edit', [EmployeeContractController::class, 'edit'])->name('contracts.edit');
+Route::put('contracts/{employee}', [EmployeeContractController::class, 'update'])->name('contracts.update');

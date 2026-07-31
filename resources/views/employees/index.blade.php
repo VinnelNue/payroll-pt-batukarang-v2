@@ -125,6 +125,7 @@
                             <a href="{{ route('employees.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-warning rounded-2" title="Edit">
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </a>
+                            
                             <form action="{{ route('employees.destroy', $emp->uuid) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data karyawan ini?');">
                                 @csrf
                                 @method('DELETE')
