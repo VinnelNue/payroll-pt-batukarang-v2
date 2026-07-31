@@ -63,7 +63,7 @@
 
                 <!-- UPLOAD FILE KTP -->
                 <div class="col-md-12 mt-3">
-                    <label class="form-label fw-semibold text-dark">Upload Scan / Foto KTP (.jpg, .png, .pdf max 2MB)</label>
+                    <label class="form-label fw-semibold text-dark">Upload Scan / Foto KTP (.jpg, .png, .pdf max 5MB)</label>
                     <input type="file" name="ktp_file" class="form-control @error('ktp_file') is-invalid @enderror" accept="image/*,.pdf">
                     @error('ktp_file') <div class="invalid-feedback">{{ $message }}</div> @enderror
 
@@ -177,7 +177,6 @@
         </div>
     </div>
 </div>
-
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -193,13 +192,14 @@ document.addEventListener('DOMContentLoaded', function () {
         villageSelect.innerHTML = '<option value="">-- Pilih Kelurahan --</option>';
 
         if (provCode) {
-            fetch(`{{ route('api.cities') }}?province_code=${provCode}`)
+            fetch(`{{ route('employees.get-cities') }}?province_code=${provCode}`)
                 .then(res => res.json())
                 .then(data => {
                     Object.entries(data).forEach(([code, name]) => {
                         citySelect.innerHTML += `<option value="${code}">${name}</option>`;
                     });
-                });
+                })
+                .catch(err => console.error("Error fetching cities:", err));
         }
     });
 
@@ -209,13 +209,14 @@ document.addEventListener('DOMContentLoaded', function () {
         villageSelect.innerHTML = '<option value="">-- Pilih Kelurahan --</option>';
 
         if (cityCode) {
-            fetch(`{{ route('api.districts') }}?city_code=${cityCode}`)
+            fetch(`{{ route('employees.get-districts') }}?city_code=${cityCode}`)
                 .then(res => res.json())
                 .then(data => {
                     Object.entries(data).forEach(([code, name]) => {
                         districtSelect.innerHTML += `<option value="${code}">${name}</option>`;
                     });
-                });
+                })
+                .catch(err => console.error("Error fetching districts:", err));
         }
     });
 
@@ -224,13 +225,14 @@ document.addEventListener('DOMContentLoaded', function () {
         villageSelect.innerHTML = '<option value="">-- Pilih Kelurahan --</option>';
 
         if (distCode) {
-            fetch(`{{ route('api.villages') }}?district_code=${distCode}`)
+            fetch(`{{ route('employees.get-villages') }}?district_code=${distCode}`)
                 .then(res => res.json())
                 .then(data => {
                     Object.entries(data).forEach(([code, name]) => {
                         villageSelect.innerHTML += `<option value="${code}">${name}</option>`;
                     });
-                });
+                })
+                .catch(err => console.error("Error fetching villages:", err));
         }
     });
 });

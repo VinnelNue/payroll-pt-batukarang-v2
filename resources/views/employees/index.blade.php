@@ -38,6 +38,8 @@
         <table class="table table-hover align-middle border-top">
             <thead class="table-light">
                 <tr>
+                    <th class="py-3 text-center" style="width: 50px;">No</th>
+                    <th class="py-3 text-center" style="width: 80px;">Foto KTP</th>
                     <th class="py-3">NIK KTP</th>
                     <th class="py-3">Nama Lengkap</th>
                     <th class="py-3">Kontak</th>
@@ -47,8 +49,60 @@
                 </tr>
             </thead>
             <tbody>
-                @forelse($employees as $emp)
+                @forelse($employees as $index => $emp)
                 <tr>
+                    <!-- 1. LOOPING NOMOR URUT -->
+                    <td class="text-center fw-semibold text-muted">
+                        {{ $employees->firstItem() ? $employees->firstItem() + $index : $index + 1 }}
+                    </td>
+
+                    <!-- 2. THUMBNAIL FOTO KTP & PREVIEW TRIGGER -->
+                    <td class="text-center">
+                        @if($emp->ktp_path && Storage::disk('public')->exists($emp->ktp_path))
+                            <button type="button" 
+                                    class="btn btn-link p-0 border-0" 
+                                    data-bs-toggle="modal" 
+                                    data-bs-target="#modalPreviewKtp-{{ $emp->id_employee ?? $loop->index }}"
+                                    title="Klik untuk memperbesar Foto KTP">
+                                <img src="{{ asset('storage/' . $emp->ktp_path) }}" 
+                                     alt="KTP {{ $emp->full_name }}" 
+                                     class="rounded-2 border shadow-sm object-fit-cover" 
+                                     style="width: 48px; height: 36px; cursor: pointer;">
+                            </button>
+
+                            <!-- MODAL POPUP PREVIEW KTP (PER KARYAWAN) -->
+                            <div class="modal fade" id="modalPreviewKtp-{{ $emp->id_employee ?? $loop->index }}" tabindex="-1" aria-hidden="true">
+                                <div class="modal-dialog modal-dialog-centered modal-lg">
+                                    <div class="modal-content border-0 shadow-lg rounded-4">
+                                        <div class="modal-header border-bottom">
+                                            <h6 class="modal-title fw-bold text-dark">
+                                                <i class="fa-solid fa-id-card text-primary me-2"></i> Foto KTP - {{ $emp->full_name }}
+                                            </h6>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <div class="modal-body p-3 text-center bg-light">
+                                            <img src="{{ asset('storage/' . $emp->ktp_path) }}" 
+                                                 alt="KTP {{ $emp->full_name }}" 
+                                                 class="img-fluid rounded-3 shadow-sm border" 
+                                                 style="max-height: 500px;">
+                                        </div>
+                                        <div class="modal-footer border-top bg-white">
+                                            <a href="{{ asset('storage/' . $emp->ktp_path) }}" target="_blank" class="btn btn-sm btn-outline-primary fw-semibold">
+                                                <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Buka Ukuran Asli
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <!-- Placeholder jika belum ada foto KTP -->
+                            <span class="badge bg-light text-secondary border px-2 py-1 small" title="Foto KTP belum diunggah">
+                                <i class="fa-solid fa-image-slash"></i> No Foto
+                            </span>
+                        @endif
+                    </td>
+
                     <td class="fw-medium text-dark">{{ $emp->nik_ktp }}</td>
                     <td>
                         <div class="fw-bold text-dark">{{ $emp->full_name }}</div>
@@ -83,7 +137,7 @@
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="6" class="text-center py-5 text-muted">
+                    <td colspan="8" class="text-center py-5 text-muted">
                         <i class="fa-solid fa-user-slash fs-2 mb-2 d-block text-secondary"></i>
                         Belum ada data karyawan. Klik **Impor Excel** atau **Tambah Karyawan**.
                     </td>
@@ -93,7 +147,7 @@
         </table>
     </div>
 
-<!-- PAGINATION BARIS BAWAH (Cukup 1 kali panggil $employees->links()) -->
+    <!-- PAGINATION BARIS BAWAH -->
     <div class="d-flex justify-content-between align-items-center flex-wrap mt-4 pt-3 border-top">
         <div class="small text-muted mb-2 mb-md-0">
             Menampilkan <strong>{{ $employees->firstItem() ?? 0 }}</strong> sampai <strong>{{ $employees->lastItem() ?? 0 }}</strong> dari <strong>{{ $employees->total() }}</strong> karyawan

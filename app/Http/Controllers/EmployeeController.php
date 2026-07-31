@@ -27,7 +27,6 @@ class EmployeeController extends Controller
         return view('employees.create', compact('provinces'));
     }
 
-        // Method Hybrid Import: otomatis deteksi format file (xlsx/xls pakai Maatwebsite, csv pakai Native Parser)
     public function import(Request $request)
     {
         $request->validate([
@@ -37,7 +36,6 @@ class EmployeeController extends Controller
         $file = $request->file('file_excel');
         $extension = strtolower($file->getClientOriginalExtension());
 
-        // 1. JIKA USER UPLOAD CSV / TXT -> GUNAKAN NATIVE PHP PARSER
         if ($extension === 'csv' || $extension === 'txt') {
             try {
                 $handle = fopen($file->getRealPath(), 'r');
@@ -89,7 +87,6 @@ class EmployeeController extends Controller
             }
         }
 
-        // 2. JIKA USER UPLOAD XLSX / XLS -> GUNAKAN MAATWEBSITE EXCEL PACKAGE
         try {
             Excel::import(new EmployeeImport, $file);
             return redirect()->route('employees.index')->with('success', 'Data Master Karyawan berhasil diimpor via Excel!');
@@ -102,7 +99,6 @@ class EmployeeController extends Controller
         }
     }
 
-    // Method Download Template CSV
     public function downloadTemplate()
     {
         $headers = [
@@ -160,9 +156,16 @@ class EmployeeController extends Controller
             'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
         ]);
 
+        // Auto-generate UUID jika belum di-set oleh Eloquent observer
+        $validated['uuid'] = (string) Str::uuid();
+
+        // Simpan File KTP jika diunggah
         if ($request->hasFile('ktp_file')) {
             $validated['ktp_path'] = $request->file('ktp_file')->store('employees/ktp', 'public');
         }
+
+        // Unset input 'ktp_file' karena nama kolom di database adalah 'ktp_path'
+        unset($validated['ktp_file']);
 
         Employee::create($validated);
 
@@ -202,15 +205,17 @@ class EmployeeController extends Controller
             'bank_name'           => 'nullable|string|max:50',
             'bank_account_number' => 'nullable|string|max:50',
             'bank_account_holder' => 'nullable|string|max:255',
-            'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
+            'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5000',
         ]);
 
         if ($request->hasFile('ktp_file')) {
-            if ($employee->ktp_path) {
+            if ($employee->ktp_path && Storage::disk('public')->exists($employee->ktp_path)) {
                 Storage::disk('public')->delete($employee->ktp_path);
             }
             $validated['ktp_path'] = $request->file('ktp_file')->store('employees/ktp', 'public');
         }
+
+        unset($validated['ktp_file']);
 
         $employee->update($validated);
 
@@ -219,7 +224,7 @@ class EmployeeController extends Controller
 
     public function destroy(Employee $employee)
     {
-        if ($employee->ktp_path) {
+        if ($employee->ktp_path && Storage::disk('public')->exists($employee->ktp_path)) {
             Storage::disk('public')->delete($employee->ktp_path);
         }
 
@@ -227,7 +232,6 @@ class EmployeeController extends Controller
         return redirect()->route('employees.index')->with('success', 'Data Master Karyawan berhasil dihapus!');
     }
 
-    // API AJAX Wilayah Laravolt
     public function getCities(Request $request)
     {
         $cities = City::where('province_code', $request->province_code)->pluck('name', 'code');
