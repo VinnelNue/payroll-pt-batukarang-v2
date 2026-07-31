@@ -1,0 +1,1 @@
+php artisan db:seed --class="Laravolt\Indonesia\Seeds\DatabaseSeeder"

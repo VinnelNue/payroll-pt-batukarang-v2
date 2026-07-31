@@ -1,0 +1,150 @@
+:root {
+    --sidebar-width: 260px;
+    --sidebar-mini-width: 75px;
+    --topbar-height: 70px;
+    --primary-gradient: linear-gradient(135deg, #0284c7 0%, #0369a1 50%, #0f172a 100%);
+    --accent-sky: #38bdf8;
+    --bg-canvas: #f8fafc;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-canvas);
+    color: #334155;
+    overflow-x: hidden;
+}
+
+/* SIDEBAR STYLING */
+.sidebar-wrapper {
+    width: var(--sidebar-width);
+    height: 100vh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    background: var(--primary-gradient);
+    color: #ffffff;
+    z-index: 1040;
+    box-shadow: 4px 0 24px rgba(2, 132, 199, 0.15);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-brand {
+    height: var(--topbar-height);
+    display: flex;
+    align-items: center;
+    padding: 0 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.sidebar-menu {
+    padding: 1.25rem 0.5rem;
+    height: calc(100vh - var(--topbar-height));
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.menu-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #93c5fd;
+    padding: 0.75rem 0.75rem 0.35rem;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: opacity 0.2s ease;
+}
+
+.nav-link-custom {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 0.85rem;
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: none;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.nav-link-custom:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.nav-link-custom.active {
+    color: #0369a1;
+    background: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.nav-link-custom i {
+    min-width: 28px;
+    font-size: 1.15rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* TOPBAR & MAIN CONTENT STYLING */
+.topbar-wrapper {
+    height: var(--topbar-height);
+    margin-left: var(--sidebar-width);
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-content {
+    margin-left: var(--sidebar-width);
+    padding: 2rem;
+    min-height: calc(100vh - var(--topbar-height));
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-custom {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+/* ========================================================
+   MINI SIDEBAR STATE (MODE ICON-ONLY PAS DI-TOGGLE CLOSE)
+   ======================================================== */
+body.mini-sidebar .sidebar-wrapper {
+    width: var(--sidebar-mini-width);
+}
+
+body.mini-sidebar .topbar-wrapper,
+body.mini-sidebar .main-content {
+    margin-left: var(--sidebar-mini-width);
+}
+
+/* Sembunyikan teks nama brand, teks menu, & header group saat mode mini */
+body.mini-sidebar .brand-text,
+body.mini-sidebar .nav-link-custom span,
+body.mini-sidebar .menu-header {
+    display: none !important;
+}
+
+/* Pusatkan icon menu saat mode mini */
+body.mini-sidebar .nav-link-custom {
+    justify-content: center;
+    padding: 0.75rem 0;
+}
+
+body.mini-sidebar .nav-link-custom i {
+    margin: 0;
+}
