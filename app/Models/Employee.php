@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use App\Models\Payroll;
 use Laravolt\Indonesia\Models\Province;
 use Laravolt\Indonesia\Models\City;
 use Laravolt\Indonesia\Models\District;
@@ -84,5 +85,15 @@ class Employee extends Model
     public function activeContract()
     {
         return $this->hasOne(EmployeeContract::class, 'employee_id', 'id_employee')->where('is_active', true);
+    }
+    // Relasi ke Payroll
+    public function payrolls()
+    {
+        return $this->hasMany(Payroll::class, 'employee_id', 'id_employee');
+    }
+
+    public function user()
+    {
+        return $this->hasOne(User::class, 'employee_id', 'id_employee');
     }
 }

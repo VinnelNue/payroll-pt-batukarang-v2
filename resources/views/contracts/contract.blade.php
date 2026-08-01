@@ -7,7 +7,7 @@
 <div class="mb-4 d-flex justify-content-between align-items-center">
     <div>
         <h5 class="fw-bold text-dark m-0">Setup Jabatan & Gaji: {{ $employee->full_name }}</h5>
-        <small class="text-muted">NIK: {{ $employee->nik_ktp }} | Kelola acuan Gapok, Tunjangan & Keaktifan BPJS</small>
+        <small class="text-muted">NIK: {{ $employee->nik_ktp }} | Kelola acuan Gapok, Tunjangan, BPJS & PPh 21</small>
     </div>
     <a href="{{ route('contracts.index') }}" class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3">
         <i class="fa-solid fa-arrow-left me-1"></i> Kembali
@@ -93,11 +93,11 @@
             </div>
         </div>
 
-        <!-- GAJI POKOK, TUNJANGAN & BPJS -->
+        <!-- GAJI POKOK, TUNJANGAN, BPJS & PPH21 -->
         <div class="col-lg-6">
             <div class="card-custom p-4 h-100">
                 <h6 class="fw-bold text-primary mb-3 pb-2 border-bottom">
-                    <i class="fa-solid fa-money-bill-wave me-2"></i> Acuan Financial & BPJS
+                    <i class="fa-solid fa-money-bill-wave me-2"></i> Acuan Financial, BPJS & Pajak
                 </h6>
 
                 <div class="row g-3">
@@ -121,8 +121,9 @@
                         </div>
                     </div>
 
-                    <hr class="my-3">
+                    <hr class="my-2">
 
+                    <!-- KEPESERTAAN BPJS -->
                     <div class="col-md-12">
                         <label class="form-label fw-semibold text-dark d-block">Kepesertaan BPJS</label>
                         
@@ -135,6 +136,30 @@
                             <input class="form-check-input" type="checkbox" name="is_bpjs_health_active" id="bpjsks" value="1" {{ old('is_bpjs_health_active', $contract->is_bpjs_health_active ?? true) ? 'checked' : '' }}>
                             <label class="form-check-label fw-medium" for="bpjsks">Aktifkan Potongan BPJS Kesehatan</label>
                         </div>
+                    </div>
+
+                    <hr class="my-2">
+
+                    <!-- STATUS PTKP / PPH 21 (TER BARU) -->
+                    <div class="col-md-12">
+                        <label class="form-label fw-semibold text-dark">Status PTKP & Kategori TER (PPh 21) <span class="text-danger">*</span></label>
+                        <select name="ptkp_status" class="form-select fw-semibold" required>
+                            <optgroup label="TER A (Lajang / Kawin Tanpa Tanggungan)">
+                                <option value="TK/0" {{ old('ptkp_status', $contract->ptkp_status ?? 'TK/0') == 'TK/0' ? 'selected' : '' }}>TK/0 — Tidak Kawin, 0 Tanggungan (TER A)</option>
+                                <option value="TK/1" {{ old('ptkp_status', $contract->ptkp_status ?? '') == 'TK/1' ? 'selected' : '' }}>TK/1 — Tidak Kawin, 1 Tanggungan (TER A)</option>
+                                <option value="K/0" {{ old('ptkp_status', $contract->ptkp_status ?? '') == 'K/0' ? 'selected' : '' }}>K/0 — Kawin, 0 Tanggungan (TER A)</option>
+                            </optgroup>
+                            <optgroup label="TER B (Kawin/Lajang Tanggungan Sedang)">
+                                <option value="TK/2" {{ old('ptkp_status', $contract->ptkp_status ?? '') == 'TK/2' ? 'selected' : '' }}>TK/2 — Tidak Kawin, 2 Tanggungan (TER B)</option>
+                                <option value="TK/3" {{ old('ptkp_status', $contract->ptkp_status ?? '') == 'TK/3' ? 'selected' : '' }}>TK/3 — Tidak Kawin, 3 Tanggungan (TER B)</option>
+                                <option value="K/1" {{ old('ptkp_status', $contract->ptkp_status ?? '') == 'K/1' ? 'selected' : '' }}>K/1 — Kawin, 1 Tanggungan (TER B)</option>
+                                <option value="K/2" {{ old('ptkp_status', $contract->ptkp_status ?? '') == 'K/2' ? 'selected' : '' }}>K/2 — Kawin, 2 Tanggungan (TER B)</option>
+                            </optgroup>
+                            <optgroup label="TER C (Kawin Tanggungan Maksimal)">
+                                <option value="K/3" {{ old('ptkp_status', $contract->ptkp_status ?? '') == 'K/3' ? 'selected' : '' }}>K/3 — Kawin, 3 Tanggungan (TER C)</option>
+                            </optgroup>
+                        </select>
+                        <small class="text-muted">Kategori TER A/B/C akan menentukan persentase potongan PPh 21 bulanan secara otomatis.</small>
                     </div>
                 </div>
             </div>

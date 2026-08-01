@@ -15,10 +15,23 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class EmployeeController extends Controller
 {
-    public function index()
+    // 1. DIBERSIHKAN: Tambah Fitur Search & Pengurutan Terbaru ke Terlama
+    public function index(Request $request)
     {
-        $employees = Employee::with(['province', 'city'])->latest('id_employee')->paginate(10);
-        return view('employees.index', compact('employees'));
+        $search = $request->get('search');
+
+        $employees = Employee::with(['province', 'city'])
+            ->when($search, function ($query) use ($search) {
+                $query->where('full_name', 'LIKE', "%{$search}%")
+                      ->orWhere('nik_ktp', 'LIKE', "%{$search}%")
+                      ->orWhere('email', 'LIKE', "%{$search}%")
+                      ->orWhere('phone_number', 'LIKE', "%{$search}%");
+            })
+            ->oldest('id_employee') // <--- Mengurutkan dari Terlama ke Terbaru (Ascending)
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('employees.index', compact('employees', 'search'));
     }
 
     public function create()
@@ -27,6 +40,7 @@ class EmployeeController extends Controller
         return view('employees.create', compact('provinces'));
     }
 
+    // 2. DIBERSIHKAN: Kebal dari Scientific Notation (E+) & Skip Duplikat
     public function import(Request $request)
     {
         $request->validate([
@@ -35,6 +49,15 @@ class EmployeeController extends Controller
 
         $file = $request->file('file_excel');
         $extension = strtolower($file->getClientOriginalExtension());
+
+        $cleanNumber = function ($value) {
+            if (empty($value)) return null;
+            $str = (string) $value;
+            if (is_numeric($value) && str_contains(strtoupper($str), 'E')) {
+                return sprintf('%.0f', (float)$value);
+            }
+            return trim($str);
+        };
 
         if ($extension === 'csv' || $extension === 'txt') {
             try {
@@ -45,7 +68,7 @@ class EmployeeController extends Controller
                 while (($row = fgetcsv($handle, 2000, ',')) !== FALSE) {
                     if (!array_filter($row)) continue;
 
-                    $nikKtp = trim($row[0] ?? '');
+                    $nikKtp = $cleanNumber($row[0] ?? '');
                     if (empty($nikKtp)) continue;
 
                     if (Employee::where('nik_ktp', $nikKtp)->exists()) {
@@ -62,17 +85,17 @@ class EmployeeController extends Controller
                         'birth_date'          => !empty($row[5]) ? date('Y-m-d', strtotime($row[5])) : now()->format('Y-m-d'),
                         'religion'            => $row[6] ?? null,
                         'marital_status'      => strtolower($row[7] ?? 'single'),
-                        'phone_number'        => $row[8] ?? null,
+                        'phone_number'        => $cleanNumber($row[8] ?? null),
                         'email'               => $row[9] ?? null,
                         'address_ktp'         => $row[10] ?? '-',
                         'address_domicile'    => $row[11] ?? null,
-                        'province_code'       => $row[12] ?? null,
-                        'city_code'           => $row[13] ?? null,
-                        'district_code'       => $row[14] ?? null,
-                        'village_code'        => $row[15] ?? null,
-                        'npwp_number'         => $row[16] ?? null,
+                        'province_code'       => $cleanNumber($row[12] ?? null),
+                        'city_code'           => $cleanNumber($row[13] ?? null),
+                        'district_code'       => $cleanNumber($row[14] ?? null),
+                        'village_code'        => $cleanNumber($row[15] ?? null),
+                        'npwp_number'         => $cleanNumber($row[16] ?? null),
                         'bank_name'           => $row[17] ?? null,
-                        'bank_account_number' => $row[18] ?? null,
+                        'bank_account_number' => $cleanNumber($row[18] ?? null),
                         'bank_account_holder' => $row[19] ?? null,
                         'is_active'           => true,
                     ]);
@@ -92,11 +115,62 @@ class EmployeeController extends Controller
             return redirect()->route('employees.index')->with('success', 'Data Master Karyawan berhasil diimpor via Excel!');
         } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
             $failures = $e->failures();
-            $errorMsg = 'Gagal impor! NIK KTP pada baris ' . $failures[0]->row() . ' sudah terdaftar atau format data salah.';
+            $rowNum = isset($failures[0]) ? $failures[0]->row() : 'tertentu';
+            $errorMsg = 'Gagal impor! Terjadi kesalahan validasi data pada baris ' . $rowNum . '.';
             return redirect()->back()->with('error', $errorMsg);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Terjadi kesalahan saat membaca file Excel: ' . $e->getMessage());
         }
+    }
+
+    // 3. BARU: Method Export Data Karyawan ke CSV
+    public function export()
+    {
+        $filename = 'Export_Master_Karyawan_PT_Batu_Karang_' . date('Ymd_His') . '.csv';
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"$filename\"",
+        ];
+
+        $employees = Employee::with(['province', 'city'])->latest('id_employee')->get();
+
+        $columns = [
+            'NIK KTP', 'Nama Lengkap', 'Panggilan', 'Jenis Kelamin', 'Tempat Lahir', 'Tanggal Lahir',
+            'Agama', 'Status Pernikahan', 'No HP', 'Email', 'Alamat KTP', 'Provinsi', 'Kota/Kabupaten',
+            'NPWP', 'Nama Bank', 'No Rekening', 'Pemilik Rekening'
+        ];
+
+        $callback = function () use ($employees, $columns) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, $columns);
+
+            foreach ($employees as $emp) {
+                fputcsv($file, [
+                    $emp->nik_ktp,
+                    $emp->full_name,
+                    $emp->nickname,
+                    $emp->gender,
+                    $emp->birth_place,
+                    $emp->birth_date,
+                    $emp->religion,
+                    $emp->marital_status,
+                    $emp->phone_number,
+                    $emp->email,
+                    $emp->address_ktp,
+                    $emp->province->name ?? '',
+                    $emp->city->name ?? '',
+                    $emp->npwp_number,
+                    $emp->bank_name,
+                    $emp->bank_account_number,
+                    $emp->bank_account_holder,
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     public function downloadTemplate()
@@ -156,15 +230,12 @@ class EmployeeController extends Controller
             'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
         ]);
 
-        // Auto-generate UUID jika belum di-set oleh Eloquent observer
         $validated['uuid'] = (string) Str::uuid();
 
-        // Simpan File KTP jika diunggah
         if ($request->hasFile('ktp_file')) {
             $validated['ktp_path'] = $request->file('ktp_file')->store('employees/ktp', 'public');
         }
 
-        // Unset input 'ktp_file' karena nama kolom di database adalah 'ktp_path'
         unset($validated['ktp_file']);
 
         Employee::create($validated);

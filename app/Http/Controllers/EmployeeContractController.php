@@ -56,6 +56,7 @@ class EmployeeContractController extends Controller
             'end_date'              => 'nullable|date|after_or_equal:start_date',
             'exit_date'             => 'nullable|date',
             'exit_reason'           => 'nullable|string|max:500',
+            'ptkp_status'           => 'required|string|max:10',
         ]);
 
         $validated['is_bpjstk_active'] = $request->has('is_bpjstk_active');

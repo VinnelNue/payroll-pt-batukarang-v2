@@ -4,7 +4,7 @@
 @section('page_title', 'Master Data Diri Karyawan')
 
 @section('content')
-<div class="card-custom p-4 mb-4">
+<div class="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
     <!-- HEADER BARIS TOMBOL AKSI -->
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
@@ -13,7 +13,11 @@
             </h5>
             <small class="text-muted">Data identitas pribadi, kontak, alamat & rekening payroll karyawan PT Batu Karang</small>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap">
+            <!-- TOMBOL EXPORT CSV -->
+            <a href="{{ route('employees.export') }}" class="btn btn-outline-secondary px-3 py-2 rounded-3 fw-semibold">
+                <i class="fa-solid fa-file-export me-1"></i> Export CSV
+            </a>
             <!-- TOMBOL IMPOR EXCEL -->
             <button type="button" class="btn btn-outline-success px-3 py-2 rounded-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#modalImportExcel">
                 <i class="fa-solid fa-file-excel me-1"></i> Impor Excel
@@ -25,10 +29,38 @@
         </div>
     </div>
 
-    <!-- ALERT ERROR JIKA IMPOR GAGAL -->
+    <!-- BARIS FITUR SEARCH & FILTER -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-5 col-lg-4">
+            <form action="{{ route('employees.index') }}" method="GET">
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0 rounded-start-3">
+                        <i class="fa-solid fa-magnifying-glass text-muted"></i>
+                    </span>
+                    <input type="text" name="search" class="form-control bg-light border-start-0" placeholder="Cari Nama, NIK, Email, No HP..." value="{{ request('search') }}">
+                    <button class="btn btn-primary rounded-end-3" type="submit">Cari</button>
+                    @if(request('search'))
+                        <a href="{{ route('employees.index') }}" class="btn btn-outline-secondary rounded-3 ms-1" title="Reset Pencarian">
+                            <i class="fa-solid fa-xmark"></i>
+                        </a>
+                    @endif
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- NOTIFIKASI / ALERT ERROR JIKA GAGAL -->
     @if(session('error'))
-        <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 mb-3" role="alert">
+        <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 mb-3 auto-dismiss-alert" role="alert">
             <i class="fa-solid fa-triangle-exclamation me-2"></i> {{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
+    <!-- NOTIFIKASI / ALERT SUCCESS JIKA BERHASIL -->
+    @if(session('success'))
+        <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3 mb-3 auto-dismiss-alert" role="alert">
+            <i class="fa-solid fa-circle-check me-2"></i> {{ session('success') }}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     @endif
@@ -37,7 +69,7 @@
     <div class="table-responsive">
         <table class="table table-hover align-middle border-top">
             <thead class="table-light">
-                <tr>
+                <tr class="small text-muted">
                     <th class="py-3 text-center" style="width: 50px;">No</th>
                     <th class="py-3 text-center" style="width: 80px;">Foto KTP</th>
                     <th class="py-3">NIK KTP</th>
@@ -140,7 +172,7 @@
                 <tr>
                     <td colspan="8" class="text-center py-5 text-muted">
                         <i class="fa-solid fa-user-slash fs-2 mb-2 d-block text-secondary"></i>
-                        Belum ada data karyawan. Klik **Impor Excel** atau **Tambah Karyawan**.
+                        Data karyawan tidak ditemukan.
                     </td>
                 </tr>
                 @endforelse
@@ -157,7 +189,7 @@
             {{ $employees->links() }}
         </div>
     </div>
-</div> <!-- Penutup card-custom -->
+</div>
 
 <!-- MODAL POPUP IMPORT EXCEL / CSV -->
 <div class="modal fade" id="modalImportExcel" tabindex="-1" aria-labelledby="modalImportExcelLabel" aria-hidden="true">
@@ -200,4 +232,17 @@
         </div>
     </div>
 </div>
+
+<!-- SCRIPT AUTO-DISMISS ALERT SETELAH 4 DETIK -->
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            const alerts = document.querySelectorAll('.auto-dismiss-alert');
+            alerts.forEach(function (alert) {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 4000); // 4000 milidetik = 4 detik
+    });
+</script>
 @endsection

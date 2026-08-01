@@ -56,13 +56,33 @@
 
             <!-- GROUP 3: PENGGAJIAN & PERPAJAKAN -->
             <div class="menu-header mt-3">Penggajian & Tax</div>
-            <a href="#" class="nav-link-custom" title="Process Payroll">
+            <a href="{{ route('absensi.create') }}" class="nav-link-custom {{ request()->routeIs('absensi.create') ? 'active' : '' }}" title="Input Absensi & Variabel">
+                <i class="fa-solid fa-calendar-check"></i>
+                <span>Input Absensi</span>
+            </a>
+            <a href="{{ route('payrolls.index') }}" class="nav-link-custom {{ request()->routeIs('payrolls.*') && !request()->routeIs('absensi.create') ? 'active' : '' }}" title="Process Payroll">
                 <i class="fa-solid fa-file-invoice-dollar"></i>
                 <span>Process Payroll</span>
             </a>
-            <a href="#" class="nav-link-custom" title="PPh 21 & BPJS Master">
+            <a href="{{ route('tax-bpjs.index') }}" class="nav-link-custom {{ request()->routeIs('tax-bpjs.*') ? 'active' : '' }}" title="PPh 21 & BPJS Master">
                 <i class="fa-solid fa-calculator"></i>
                 <span>PPh 21 & BPJS Master</span>
+            </a>
+
+            <!-- GROUP 4: PERSONAL ACCOUNT  -->
+            <div class="menu-header mt-3">Personal Account</div>
+
+            <!-- HANYA TAMPIL UNTUK MANAGER KEUANGAN -->
+            @if(Auth::check() && Auth::user()->role === 'manager_keuangan')
+                <a href="{{ route('users.index') }}" class="nav-link-custom {{ request()->routeIs('users.*') ? 'active' : '' }}" title="Kelola Pengguna">
+                    <i class="fa-solid fa-users-gear"></i>
+                    <span>Kelola Pengguna</span>
+                </a>
+            @endif
+
+            <a href="{{ route('profile.edit') }}" class="nav-link-custom {{ request()->routeIs('profile.*') ? 'active' : '' }}" title="Pengaturan Akun">
+                <i class="fa-solid fa-sliders"></i>
+                <span>Pengaturan Akun</span>
             </a>
         </div>
     </aside>
@@ -77,18 +97,30 @@
         </div>
 
         <div class="d-flex align-items-center gap-3">
+            <!-- TOPBAR AVATAR DROPDOWN -->
             <div class="dropdown">
-                <button class="btn btn-light rounded-pill border border-secondary border-opacity-25 px-3 py-1 d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
-                    <div class="bg-primary text-white rounded-circle fw-bold d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; font-size: 0.85rem;">
-                        BK
-                    </div>
-                    <span class="fw-medium small text-dark me-1">Admin Payroll</span>
-                    <i class="fa-solid fa-chevron-down small text-muted"></i>
+                <button class="btn btn-light rounded-pill border border-secondary border-opacity-25 px-2 py-1 d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
+                    @if(Auth::user() && Auth::user()->avatar_url)
+                        <img src="{{ Auth::user()->avatar_url }}" alt="{{ Auth::user()->name }}" class="rounded-circle object-fit-cover border" style="width: 32px; height: 32px;">
+                    @else
+                        <div class="bg-primary text-white rounded-circle fw-bold d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; font-size: 0.85rem;">
+                            {{ substr(Auth::user()->name ?? 'BK', 0, 2) }}
+                        </div>
+                    @endif
+                    <span class="fw-medium small text-dark me-1">{{ Auth::user()->name ?? 'Admin Payroll' }}</span>
+                    <i class="fa-solid fa-chevron-down small text-muted me-1"></i>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end border-0 shadow-lg rounded-3 mt-2">
-                    <li><a class="dropdown-item small py-2" href="#"><i class="fa-solid fa-user me-2 text-muted"></i> Profil</a></li>
+                    <li><a class="dropdown-item small py-2" href="{{ route('profile.edit') }}"><i class="fa-solid fa-user-gear me-2 text-muted"></i> Pengaturan Akun</a></li>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item small py-2 text-danger" href="#"><i class="fa-solid fa-right-from-bracket me-2"></i> Logout</a></li>
+                    <li>
+                        <form action="{{ route('logout') }}" method="POST">
+                            @csrf
+                            <button type="submit" class="dropdown-item small py-2 text-danger w-100 border-0 bg-transparent text-start">
+                                <i class="fa-solid fa-right-from-bracket me-2"></i> Logout
+                            </button>
+                        </form>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -96,22 +128,6 @@
 
     <!-- MAIN CONTENT -->
     <main class="main-content">
-        <!-- NOTIFIKASI SUCCESS -->
-        @if(session('success'))
-            <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3 mb-4" role="alert">
-                <i class="fa-solid fa-circle-check me-2"></i> {{ session('success') }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        @endif
-
-        <!-- NOTIFIKASI ERROR -->
-        @if(session('error'))
-            <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 mb-4" role="alert">
-                <i class="fa-solid fa-triangle-exclamation me-2"></i> {{ session('error') }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        @endif
-
         @yield('content')
     </main>
 
