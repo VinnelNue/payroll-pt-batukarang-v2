@@ -31,6 +31,12 @@ class Payroll extends Model
         'gross_salary',
         'net_salary',
         'status',
+        'is_locked',   // Tambahkan ini
+        'locked_at',   // Tambahkan ini
+        'locked_by',
+        'unlock_requested',  // Tambahkan ini
+        'unlock_reason',     // Tambahkan ini
+        'requested_by',      // Tambahkan ini
     ];
 
     // Relasi ke Employee (BENAR)

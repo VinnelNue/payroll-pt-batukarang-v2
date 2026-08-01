@@ -52,8 +52,15 @@ Route::middleware(['auth'])->group(function () {
     // 4. Modul Payroll & Tax
     Route::get('/payrolls', [PayrollController::class, 'index'])->name('payrolls.index');
     Route::get('/absensi/input', [PayrollController::class, 'create'])->name('absensi.create');
+    Route::get('/payrolls/export-bca', [PayrollController::class, 'exportBca'])->name('payrolls.export-bca');
     Route::post('/payrolls/store', [PayrollController::class, 'store'])->name('payrolls.store');
     Route::post('/payrolls/import', [PayrollController::class, 'import'])->name('payrolls.import');
+
+    // Action Lock, Request Unlock, Unlock, Reject
+    Route::post('/payrolls/lock', [PayrollController::class, 'lockCalculation'])->name('payrolls.lock');
+    Route::post('/payrolls/request-unlock', [PayrollController::class, 'requestUnlock'])->name('payrolls.requestUnlock');
+    Route::post('/payrolls/unlock', [PayrollController::class, 'unlockCalculation'])->name('payrolls.unlock');
+    Route::post('/payrolls/reject-unlock', [PayrollController::class, 'rejectUnlock'])->name('payrolls.reject-unlock');
 
     Route::get('/tax-bpjs-master', [PayrollController::class, 'taxBpjsMaster'])->name('tax-bpjs.index');
     Route::post('/tax-bpjs-master/update-bpjs', [PayrollController::class, 'updateBpjsSetting'])->name('tax-bpjs.update-bpjs');
@@ -65,6 +72,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
 
+    // 6. User Management
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
     Route::post('/users', [UserController::class, 'store'])->name('users.store');
     Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');

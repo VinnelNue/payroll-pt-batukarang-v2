@@ -40,7 +40,7 @@ class PayrollController extends Controller
         ->where('is_active', true)
         ->get();
 
-        return view('payrolls.create', compact('employees', 'period', 'isLocked'));
+        return view('absensi.create', compact('employees', 'period', 'isLocked'));
     }
 
     // Import Rekap Absensi dari File Excel
@@ -147,19 +147,21 @@ class PayrollController extends Controller
                     'pph21_deduction'     => $pph21Deduction,
                     'gross_salary'        => $grossSalary,
                     'net_salary'          => $netSalary,
-                    'status'              => 'Approved',
+                    'status'              => 'Draft',
                 ]
             );
         }
 
-        return redirect()->route('payrolls.index', ['period' => $period])
+        return redirect()->route('absensi.create', ['period' => $period])
             ->with('success', 'Data Absensi & Payroll Periode ' . $period . ' Berhasil Diproses!');
     }
-// Lock Calculation
+
+   // Lock Calculation
     public function lockCalculation(Request $request)
     {
         $period = $request->input('period');
 
+        // GANTI 'period' MENJADI 'period_month'
         Payroll::where('period_month', $period)->update([
             'is_locked' => true,
             'locked_at' => now(),
@@ -170,74 +172,32 @@ class PayrollController extends Controller
         return redirect()->back()->with('success', "Kalkulasi Payroll periode {$period} berhasil DIKUNCI (Locked)!");
     }
 
-    // 1. HRD Mengajukan Request Unlock
-    public function requestUnlock(Request $request)
-    {
-        $request->validate([
-            'period' => 'required|string',
-            'reason' => 'required|string|max:255',
-        ]);
-
-        $period = $request->input('period');
-
-        Payroll::where('period_month', $period)->update([
-            'unlock_requested' => true,
-            'unlock_reason'    => $request->input('reason'),
-            'requested_by'     => Auth::id(),
-        ]);
-
-        return redirect()->back()->with('success', 'Pengajuan Buka Kunci (Request Unlock) berhasil dikirim ke Manager Keuangan!');
-    }
-
-    // Manager Keuangan ATAU Super Admin bisa langsung Unlock
+    // Unlock Calculation
     public function unlockCalculation(Request $request)
     {
-        $userRole = Auth::user()->role;
-
-        // Izinkan jika role adalah manager_keuangan ATAU super_admin
-        if (!in_array($userRole, ['manager_keuangan', 'super_admin'])) {
-            return redirect()->back()->with('error', 'Anda tidak memiliki hak akses untuk membuka kuncian payroll!');
+        if (Auth::user()->role !== 'manager_keuangan') {
+            return redirect()->back()->with('error', 'Hanya Manager Keuangan yang berhak membuka kuncian payroll!');
         }
 
         $period = $request->input('period');
 
+        // GANTI 'period' MENJADI 'period_month'
         Payroll::where('period_month', $period)->update([
-            'is_locked'        => false,
-            'locked_at'        => null,
-            'locked_by'        => null,
-            'unlock_requested' => false,
-            'unlock_reason'    => null,
-            'requested_by'     => null,
-            'status'           => 'Draft',
+            'is_locked' => false,
+            'locked_at' => null,
+            'locked_by' => null,
+            'status'    => 'Draft',
         ]);
 
         return redirect()->back()->with('success', "Kuncian Payroll periode {$period} berhasil DIBUKA kembali!");
     }
 
-    // Manager Keuangan ATAU Super Admin bisa Menolak Request Unlock
-    public function rejectUnlock(Request $request)
-    {
-        $userRole = Auth::user()->role;
-
-        if (!in_array($userRole, ['manager_keuangan', 'super_admin'])) {
-            return redirect()->back()->with('error', 'Anda tidak memiliki hak akses untuk memproses permohonan!');
-        }
-
-        $period = $request->input('period');
-
-        Payroll::where('period_month', $period)->update([
-            'unlock_requested' => false,
-            'unlock_reason'    => null,
-            'requested_by'     => null,
-        ]);
-
-        return redirect()->back()->with('info', "Permohonan Buka Kunci periode {$period} telah DITOLAK.");
-    }
     // Export CSV BCA Mass Transfer
     public function exportBca(Request $request)
     {
         $period = $request->input('period', date('Y-m'));
 
+        // GANTI 'period' MENJADI 'period_month'
         $payrolls = Payroll::with('employee')
             ->where('period_month', $period)
             ->get();
@@ -362,9 +322,12 @@ class PayrollController extends Controller
         return redirect()->back()->with('success', 'Parameter BPJS Berhasil Diperbarui!');
     }
 
-    // Helper Hitung Persentase TER PPh 21 (PP 58/2023)
+/**
+     * Helper Hitung Persentase TER PPh 21 (PP 58/2023)
+     */
     private function calculateTerRate($ptkp, $gross)
     {
+        // 1. Tentukan Kategori TER berdasarkan Status PTKP
         $category = match($ptkp) {
             'TK/0', 'TK/1', 'K/0' => 'TER_A',
             'TK/2', 'TK/3', 'K/1', 'K/2' => 'TER_B',
@@ -372,6 +335,7 @@ class PayrollController extends Controller
             default => 'TER_A'
         };
 
+        // 2. Logika TER A (TK/0, TK/1, K/0)
         if ($category === 'TER_A') {
             if ($gross <= 5400000) return 0.00;
             if ($gross <= 5650000) return 0.0025;
@@ -379,25 +343,27 @@ class PayrollController extends Controller
             if ($gross <= 6300000) return 0.0075;
             if ($gross <= 6750000) return 0.0125;
             if ($gross <= 7500000) return 0.0175;
-            return 0.025;
+            return 0.025; // > 7.500.000
         }
 
+        // 3. Logika TER B (TK/2, TK/3, K/1, K/2)
         if ($category === 'TER_B') {
             if ($gross <= 6200000) return 0.00;
             if ($gross <= 6500000) return 0.0025;
             if ($gross <= 7000000) return 0.005;
             if ($gross <= 8000000) return 0.01;
             if ($gross <= 9200000) return 0.015;
-            return 0.025;
+            return 0.025; // > 9.200.000
         }
 
+        // 4. Logika TER C (K/3)
         if ($category === 'TER_C') {
             if ($gross <= 6600000) return 0.00;
             if ($gross <= 6950000) return 0.0025;
             if ($gross <= 7350000) return 0.005;
             if ($gross <= 8200000) return 0.0075;
             if ($gross <= 9650000) return 0.0125;
-            return 0.0175;
+            return 0.0175; // > 9.650.000
         }
 
         return 0.00;
