@@ -15,14 +15,33 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // 1. Panggil Seeder Wilayah Laravolt Terlebih Dahulu
         $this->call([
-            EmployeeSeeder::class,
+            \Laravolt\Indonesia\Seeds\ProvincesSeeder::class,
+            \Laravolt\Indonesia\Seeds\CitiesSeeder::class,
+            \Laravolt\Indonesia\Seeds\DistrictsSeeder::class,
+            \Laravolt\Indonesia\Seeds\VillagesSeeder::class,
+            EmployeeSeeder::class, // Panggil EmployeeSeeder setelah data wilayah terisi
         ]);
-        // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        User::insert([
+            [
+                'name'       => 'Kevin Immanuel',
+                'email'      => 'spradmin@gmail.com',
+                'password'   => bcrypt('spradmin'),
+                'role'       => 'super_admin',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'name'       => 'Yohana Fernandez',
+                'email'      => 'yohanafernandez@gmail.com',
+                'password'   => bcrypt('yohanafernandez'),
+                'role'       => 'manager_keuangan',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
+
     }
 }

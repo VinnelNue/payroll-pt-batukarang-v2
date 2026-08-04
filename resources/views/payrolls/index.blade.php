@@ -231,11 +231,11 @@
                     <td class="text-center px-3">
                         <div class="d-flex justify-content-center gap-1">
                             <!-- Button Download / Preview PDF -->
-                            <a href="{{ route('payrolls.print-pdf', $pay->id_payroll) }}" target="_blank" class="btn btn-light btn-sm border rounded-3 text-danger hover-bg-danger" title="Cetak Slip PDF">
+                            <a href="{{ route('payrolls.print-pdf', $pay->employee->uuid) }}" target="_blank" class="btn btn-light btn-sm border rounded-3 text-danger hover-bg-danger" title="Cetak Slip PDF">
                                 <i class="fa-solid fa-file-pdf fs-6"></i>
                             </a>
                             <!-- Button Kirim Email -->
-                            <a href="{{ route('payrolls.send-email', $pay->id_payroll) }}" class="btn btn-light btn-sm border rounded-3 text-primary hover-bg-primary" title="Kirim Email Slip Gaji" onclick="return confirm('Kirim slip gaji ke email karyawan?')">
+                            <a href="{{ route('payrolls.send-email', $pay->employee->uuid) }}" class="btn btn-light btn-sm border rounded-3 text-primary hover-bg-primary" title="Kirim Email Slip Gaji" onclick="return confirm('Kirim slip gaji ke email karyawan?')">
                                 <i class="fa-solid fa-paper-plane fs-6"></i>
                             </a>
                         </div>

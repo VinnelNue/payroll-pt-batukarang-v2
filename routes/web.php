@@ -65,10 +65,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/tax-bpjs-master', [PayrollController::class, 'taxBpjsMaster'])->name('tax-bpjs.index');
     Route::post('/tax-bpjs-master/update-bpjs', [PayrollController::class, 'updateBpjsSetting'])->name('tax-bpjs.update-bpjs');
 
-    Route::get('/payrolls/{id}/print-pdf', [PayrollController::class, 'printPdf'])->name('payrolls.print-pdf');
-    Route::get('/payrolls/{id}/send-email', [PayrollController::class, 'sendEmail'])->name('payrolls.send-email');
-
-    // 5. Modul Personal Profile Settings
+    Route::get('/payrolls/{uuid}/print-pdf', [PayrollController::class, 'printPdf'])->name('payrolls.print-pdf');
+    Route::get('/payrolls/{uuid}/send-email', [PayrollController::class, 'sendEmail'])->name('payrolls.send-email');
+        // 5. Modul Personal Profile Settings
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
 

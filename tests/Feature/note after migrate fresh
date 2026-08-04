@@ -1,1 +1,4 @@
 php artisan db:seed --class="Laravolt\Indonesia\Seeds\DatabaseSeeder"
+composer require barryvdh/laravel-dompdf
+composer require barryvdh/laravel-dompdf --ignore-platform-reqs
+php artisan optimize:clear

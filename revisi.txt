@@ -1,0 +1,72 @@
+dalam satu bulan 26 hari 
+missal dalam 21 hari itu tetep 26 hari dan 
+sama kalau 27 hari gaji tetap 26
+intinya gaji kotor dalam sebulan itu tidak peduli 21 atau 27 hari masuk kerja 
+gaji itu satu bulan
+
+hari libur besar di bayar 
+kecuali minggu
+
+employe 
+nomor kk add
+nama panggilan hapus 
+role hrd tidak muncul TER
+role keu TER tampilkan by order 
+
+role HRD 
+add form penyesuaian nominal bpjs 
+Tanggungan karyawan 
+TK dan Kesehatan 
+DIVISI
+
+
+slip gaji catatan pindah ke Bawah 
+
+role keuangan x role hrd 
+dipisah keuangan dan absensi 
+
+kekaryawan hrd	
+keuangan itu nominal 
+
+
+BPJS nominal 
+
+
+Level 
+
+TER hanya A dan B
+Financial role 
+Absensi tambah kan normative 
+Kategori manual all role 
+
+Area Malang 
+Primary Key 
+
+
+
+A gaji tetap terdiri 
+b lembur hari minggu 
+
+ C lain lain - potongan 
+
+
+Level itu 
+
+
+gaji lembur ada rumus di excel 
+gapok + TJ /173
+GAPOK + Tunjangan/26 x 2 
+GP - TJ / 26 Perhari Alpha 
+
+cuti melahirkan 
+bonus input manual 
+
+add kolom thr 
+
+Absensi HRD Surat Dokter DI bayar atau di hitung kerja 
+Kalau 0 Alpha
+Luar Pulau Area Nama Jabatan KaEgori Level 
+
+
+
+

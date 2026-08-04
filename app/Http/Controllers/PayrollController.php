@@ -271,22 +271,30 @@ class PayrollController extends Controller
 
         return response()->stream($callback, 200, $headers);
     }
-
-    // Download / Preview Slip Gaji PDF
-    public function printPdf($id)
+    // Download / Preview Slip Gaji PDF via UUID Employee
+    public function printPdf($uuid)
     {
-        $payroll = Payroll::with(['employee.activeContract'])->findOrFail($id);
+        // Cari Payroll yang terhubung dengan Employee berdasarkan UUID Employee
+        $payroll = Payroll::with(['employee.activeContract'])
+            ->whereHas('employee', function ($query) use ($uuid) {
+                $query->where('uuid', $uuid);
+            })
+            ->firstOrFail();
 
         $pdf = Pdf::loadView('payrolls.pdf_slip', compact('payroll'))->setPaper('a4', 'portrait');
 
         return $pdf->stream('Slip_Gaji_' . $payroll->employee->full_name . '_' . $payroll->period_month . '.pdf');
     }
 
-    // Kirim Slip Gaji PDF ke Email Karyawan
-    public function sendEmail($id)
+    // Kirim Slip Gaji PDF ke Email Karyawan via UUID Employee
+    public function sendEmail($uuid)
     {
-        $payroll = Payroll::with(['employee.activeContract'])->findOrFail($id);
-        
+        $payroll = Payroll::with(['employee.activeContract'])
+            ->whereHas('employee', function ($query) use ($uuid) {
+                $query->where('uuid', $uuid);
+            })
+            ->firstOrFail();
+
         $emailDestination = $payroll->employee->email;
 
         if (!$emailDestination) {
