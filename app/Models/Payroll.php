@@ -12,16 +12,23 @@ class Payroll extends Model
     protected $table = 'payrolls';
     protected $primaryKey = 'id_payroll';
 
+    protected $casts = [
+        'daily_attendance' => 'array',
+        'is_locked'        => 'boolean',
+        'unlock_requested' => 'boolean',
+    ];
+
     protected $fillable = [
         'employee_id',
         'period_month',
+        'daily_attendance', // <-- MASUKKAN INI AGAR TERSIMPAN
         'work_days',
         'unpaid_leave',
         'overtime_hours',
         'basic_salary',
         'allowance',
         'overtime_pay',
-        'maternity_leave_pay', // <-- TAMBAHKAN INI
+        'maternity_leave_pay',
         'incentive',
         'cash_advance',
         'other_deductions',
@@ -31,15 +38,15 @@ class Payroll extends Model
         'gross_salary',
         'net_salary',
         'status',
-        'is_locked',   // Tambahkan ini
-        'locked_at',   // Tambahkan ini
+        'is_locked',
+        'locked_at',
         'locked_by',
-        'unlock_requested',  // Tambahkan ini
-        'unlock_reason',     // Tambahkan ini
-        'requested_by',      // Tambahkan ini
+        'unlock_requested',
+        'unlock_reason',
+        'requested_by',
     ];
 
-    // Relasi ke Employee (BENAR)
+    // Relasi ke Employee
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id', 'id_employee');

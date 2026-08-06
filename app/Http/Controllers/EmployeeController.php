@@ -15,7 +15,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class EmployeeController extends Controller
 {
-    // 1. DIBERSIHKAN: Tambah Fitur Search & Pengurutan Terbaru ke Terlama
+    // 1. Index: Fitur Search & Pengurutan
     public function index(Request $request)
     {
         $search = $request->get('search');
@@ -24,10 +24,11 @@ class EmployeeController extends Controller
             ->when($search, function ($query) use ($search) {
                 $query->where('full_name', 'LIKE', "%{$search}%")
                       ->orWhere('nik_ktp', 'LIKE', "%{$search}%")
+                      ->orWhere('no_kk', 'LIKE', "%{$search}%")
                       ->orWhere('email', 'LIKE', "%{$search}%")
                       ->orWhere('phone_number', 'LIKE', "%{$search}%");
             })
-            ->oldest('id_employee') // <--- Mengurutkan dari Terlama ke Terbaru (Ascending)
+            ->oldest('id_employee')
             ->paginate(10)
             ->withQueryString();
 
@@ -40,7 +41,7 @@ class EmployeeController extends Controller
         return view('employees.create', compact('provinces'));
     }
 
-    // 2. DIBERSIHKAN: Kebal dari Scientific Notation (E+) & Skip Duplikat
+    // 2. Import CSV/Excel
     public function import(Request $request)
     {
         $request->validate([
@@ -78,8 +79,8 @@ class EmployeeController extends Controller
                     Employee::create([
                         'uuid'                => (string) Str::uuid(),
                         'nik_ktp'             => $nikKtp,
-                        'full_name'           => $row[1] ?? '',
-                        'nickname'            => $row[2] ?? null,
+                        'no_kk'               => $cleanNumber($row[1] ?? null),
+                        'full_name'           => $row[2] ?? '',
                         'gender'              => strtoupper($row[3] ?? 'L'),
                         'birth_place'         => $row[4] ?? '-',
                         'birth_date'          => !empty($row[5]) ? date('Y-m-d', strtotime($row[5])) : now()->format('Y-m-d'),
@@ -123,7 +124,7 @@ class EmployeeController extends Controller
         }
     }
 
-    // 3. BARU: Method Export Data Karyawan ke CSV
+    // 3. Export CSV
     public function export()
     {
         $filename = 'Export_Master_Karyawan_PT_Batu_Karang_' . date('Ymd_His') . '.csv';
@@ -136,7 +137,7 @@ class EmployeeController extends Controller
         $employees = Employee::with(['province', 'city'])->latest('id_employee')->get();
 
         $columns = [
-            'NIK KTP', 'Nama Lengkap', 'Panggilan', 'Jenis Kelamin', 'Tempat Lahir', 'Tanggal Lahir',
+            'NIK KTP', 'No KK', 'Nama Lengkap', 'Jenis Kelamin', 'Tempat Lahir', 'Tanggal Lahir',
             'Agama', 'Status Pernikahan', 'No HP', 'Email', 'Alamat KTP', 'Provinsi', 'Kota/Kabupaten',
             'NPWP', 'Nama Bank', 'No Rekening', 'Pemilik Rekening'
         ];
@@ -148,8 +149,8 @@ class EmployeeController extends Controller
             foreach ($employees as $emp) {
                 fputcsv($file, [
                     $emp->nik_ktp,
+                    $emp->no_kk,
                     $emp->full_name,
-                    $emp->nickname,
                     $emp->gender,
                     $emp->birth_place,
                     $emp->birth_date,
@@ -173,6 +174,7 @@ class EmployeeController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
+    // 4. Download Template CSV
     public function downloadTemplate()
     {
         $headers = [
@@ -181,14 +183,14 @@ class EmployeeController extends Controller
         ];
 
         $columns = [
-            'nik_ktp', 'nama_lengkap', 'panggilan', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
+            'nik_ktp', 'no_kk', 'nama_lengkap', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
             'agama', 'status_pernikahan', 'no_hp', 'email', 'alamat_ktp', 'alamat_domisili',
             'kode_provinsi', 'kode_kota', 'kode_kecamatan', 'kode_kelurahan',
             'npwp', 'nama_bank', 'no_rekening', 'pemilik_rekening'
         ];
 
         $sampleData = [
-            '3578123456780001', 'Budi Santoso', 'Budi', 'L', 'Surabaya', '1995-08-17',
+            '3578123456780001', '3578123456780002', 'Budi Santoso', 'L', 'Surabaya', '1995-08-17',
             'Islam', 'single', '081234567890', 'budi@batukarang.com', 'Jl. Merdeka No. 45', 'Jl. Merdeka No. 45',
             '35', '3578', '357801', '3578011001',
             '12.345.678.9-012.000', 'BCA', '1234567890', 'BUDI SANTOSO'
@@ -204,12 +206,13 @@ class EmployeeController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
+    // 5. Store (Simpan Data Baru)
     public function store(Request $request)
     {
         $validated = $request->validate([
             'nik_ktp'             => 'required|digits:16|unique:employees,nik_ktp',
+            'no_kk'               => 'nullable|digits:16',
             'full_name'           => 'required|string|max:255',
-            'nickname'            => 'nullable|string|max:100',
             'gender'              => 'required|in:L,P',
             'birth_place'         => 'required|string|max:100',
             'birth_date'          => 'required|date',
@@ -253,12 +256,13 @@ class EmployeeController extends Controller
         return view('employees.edit', compact('employee', 'provinces', 'cities', 'districts', 'villages'));
     }
 
+    // 6. Update Data Karyawan
     public function update(Request $request, Employee $employee)
     {
         $validated = $request->validate([
             'nik_ktp'             => 'required|digits:16|unique:employees,nik_ktp,' . $employee->id_employee . ',id_employee',
+            'no_kk'               => 'nullable|digits:16',
             'full_name'           => 'required|string|max:255',
-            'nickname'            => 'nullable|string|max:100',
             'gender'              => 'required|in:L,P',
             'birth_place'         => 'required|string|max:100',
             'birth_date'          => 'required|date',

@@ -7,23 +7,28 @@
             </h6>
 
             <div class="row g-3">
+                <!-- NOMOR KK (BARU) -->
+                <div class="col-md-12">
+                    <label class="form-label fw-semibold text-dark">Nomor Kartu Keluarga (KK)</label>
+                    <input type="text" name="no_kk" class="form-control @error('no_kk') is-invalid @enderror" value="{{ old('no_kk', $employee->no_kk ?? '') }}" maxlength="16" placeholder="16 digit nomor Kartu Keluarga">
+                    @error('no_kk') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                </div>
+
+                <!-- NIK KTP -->
                 <div class="col-md-12">
                     <label class="form-label fw-semibold text-dark">NIK KTP <span class="text-danger">*</span></label>
                     <input type="text" name="nik_ktp" class="form-control @error('nik_ktp') is-invalid @enderror" value="{{ old('nik_ktp', $employee->nik_ktp ?? '') }}" maxlength="16" required placeholder="16 digit angka KTP">
                     @error('nik_ktp') <div class="invalid-feedback">{{ $message }}</div> @enderror
                 </div>
 
-                <div class="col-md-8">
+                <!-- NAMA LENGKAP -->
+                <div class="col-md-12">
                     <label class="form-label fw-semibold text-dark">Nama Lengkap <span class="text-danger">*</span></label>
                     <input type="text" name="full_name" class="form-control @error('full_name') is-invalid @enderror" value="{{ old('full_name', $employee->full_name ?? '') }}" required placeholder="Nama lengkap sesuai KTP">
                     @error('full_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                 </div>
 
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold text-dark">Panggilan</label>
-                    <input type="text" name="nickname" class="form-control" value="{{ old('nickname', $employee->nickname ?? '') }}" placeholder="Nama panggilan">
-                </div>
-
+                <!-- JENIS KELAMIN -->
                 <div class="col-md-6">
                     <label class="form-label fw-semibold text-dark">Jenis Kelamin <span class="text-danger">*</span></label>
                     <select name="gender" class="form-select" required>
@@ -32,6 +37,7 @@
                     </select>
                 </div>
 
+                <!-- AGAMA -->
                 <div class="col-md-6">
                     <label class="form-label fw-semibold text-dark">Agama</label>
                     <select name="religion" class="form-select">
@@ -42,16 +48,19 @@
                     </select>
                 </div>
 
+                <!-- TEMPAT LAHIR -->
                 <div class="col-md-6">
                     <label class="form-label fw-semibold text-dark">Tempat Lahir <span class="text-danger">*</span></label>
                     <input type="text" name="birth_place" class="form-control" value="{{ old('birth_place', $employee->birth_place ?? '') }}" required placeholder="Kota kelahiran">
                 </div>
 
+                <!-- TANGGAL LAHIR -->
                 <div class="col-md-6">
                     <label class="form-label fw-semibold text-dark">Tanggal Lahir <span class="text-danger">*</span></label>
                     <input type="date" name="birth_date" class="form-control" value="{{ old('birth_date', $employee->birth_date ?? '') }}" required>
                 </div>
 
+                <!-- STATUS PERNIKAHAN -->
                 <div class="col-md-12">
                     <label class="form-label fw-semibold text-dark">Status Pernikahan <span class="text-danger">*</span></label>
                     <select name="marital_status" class="form-select" required>
@@ -177,6 +186,7 @@
         </div>
     </div>
 </div>
+
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {

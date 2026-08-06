@@ -10,7 +10,7 @@
             <h5 class="fw-bold text-dark m-0">
                 <i class="fa-solid fa-file-signature text-primary me-2"></i> Daftar Penempatan & Gaji Acuan
             </h5>
-            <small class="text-muted">Kelola status hubungan kerja, jabatan, level, kategori, acuan Gapok, Tunjangan, BPJS & PPh 21</small>
+            <small class="text-muted">Kelola status hubungan kerja, divisi, area, jabatan, acuan Gapok, Tunjangan, BPJS & PPh 21</small>
         </div>
     </div>
 
@@ -20,11 +20,11 @@
                 <tr>
                     <th class="py-3 text-center" style="width: 50px;">No</th>
                     <th class="py-3">Karyawan</th>
-                    <th class="py-3">Jabatan & Level</th>
+                    <th class="py-3">Jabatan & Divisi</th>
                     <th class="py-3 text-center">Status Kerja</th>
                     <th class="py-3 text-end">Gaji Pokok (GAPOK)</th>
                     <th class="py-3 text-end">Tunjangan (TJ)</th>
-                    <th class="py-3 text-center">PTKP / Kategori TER</th>
+                    <th class="py-3 text-center">PTKP / TER</th>
                     <th class="py-3 text-center">Status BPJS</th>
                     <th class="py-3 text-center">Aksi</th>
                 </tr>
@@ -34,7 +34,6 @@
                 @php 
                     $contract = $emp->activeContract; 
                     
-                    // Logika Penentuan Kategori TER dari PTKP
                     $ptkp = $contract->ptkp_status ?? 'TK/0';
                     $terCategory = match($ptkp) {
                         'TK/0', 'TK/1', 'K/0' => 'TER A',
@@ -52,8 +51,13 @@
                         <small class="text-muted">NIK: {{ $emp->nik_ktp }}</small>
                     </td>
                     <td>
-                        <div class="fw-semibold text-dark">{{ $contract->job_title ?? '-' }}</div>
-                        <small class="text-muted">Kat: {{ $contract->category ?? '-' }} | Level: {{ $contract->level ?? '-' }}</small>
+                        <div class="fw-semibold text-dark">{{ $contract?->job_title ?? '-' }}</div>
+                        <small class="text-muted">
+                            Div: {{ $contract?->department ?? '-' }} 
+                            @if(!empty($contract?->placement_area)) 
+                                | Area: {{ $contract->placement_area }} 
+                            @endif
+                        </small>
                     </td>
                     <td class="text-center">
                         @if($contract)
@@ -75,7 +79,6 @@
                         Rp {{ number_format($contract->allowance ?? 0, 0, ',', '.') }}
                     </td>
                     
-                    <!-- KOLOM STATUS PTKP DAN KATEGORI TER PPH 21 -->
                     <td class="text-center">
                         @if($contract && $contract->ptkp_status)
                             <div class="fw-bold text-dark small">{{ $ptkp }}</div>
@@ -88,8 +91,12 @@
                     </td>
 
                     <td class="text-center">
-                        <span class="badge {{ ($contract->is_bpjstk_active ?? false) ? 'bg-success' : 'bg-light text-muted border' }}" title="BPJS Ketenagakerjaan">BPJS TK</span>
-                        <span class="badge {{ ($contract->is_bpjs_health_active ?? false) ? 'bg-info text-dark' : 'bg-light text-muted border' }}" title="BPJS Kesehatan">BPJS KS</span>
+                        @if($contract && $contract->use_manual_bpjs)
+                            <span class="badge bg-warning text-dark border border-warning" title="Menggunakan Nominal BPJS Manual Input">BPJS Manual</span>
+                        @else
+                            <span class="badge {{ ($contract->is_bpjstk_active ?? false) ? 'bg-success' : 'bg-light text-muted border' }}" title="BPJS Ketenagakerjaan">BPJS TK</span>
+                            <span class="badge {{ ($contract->is_bpjs_health_active ?? false) ? 'bg-info text-dark' : 'bg-light text-muted border' }}" title="BPJS Kesehatan">BPJS KS</span>
+                        @endif
                     </td>
                     <td class="text-center">
                         <a href="{{ route('contracts.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-primary rounded-2" title="Kelola Kontrak & Gaji">

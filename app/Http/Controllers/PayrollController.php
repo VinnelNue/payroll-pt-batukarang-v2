@@ -10,6 +10,10 @@ use Illuminate\Support\Facades\Mail;
 use App\Mail\SalarySlipMail;
 use App\Models\CompanySetting;
 use Illuminate\Support\Facades\Auth;
+use App\Imports\AttendanceImport;
+use Maatwebsite\Excel\Facades\Excel;
+use ZipArchive;
+use Illuminate\Support\Facades\Storage;
 
 class PayrollController extends Controller
 {
@@ -42,17 +46,71 @@ class PayrollController extends Controller
 
         return view('payrolls.create', compact('employees', 'period', 'isLocked'));
     }
+public function import(Request $request)
+{
+    $request->validate([
+        'file' => 'required|file|mimes:zip,rar,xlsx,xls,csv|max:20480',
+    ]);
 
-    // Import Rekap Absensi dari File Excel
-    public function import(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|mimes:xlsx,xls,csv|max:2048',
-        ]);
+    $period = $request->input('period_month', date('Y-m'));
+    $file = $request->file('file');
+    $extension = strtolower($file->getClientOriginalExtension());
 
-        return redirect()->route('absensi.create')
-            ->with('success', 'File rekap absensi berhasil di-upload dan diproses!');
+    try {
+        if ($extension === 'zip') {
+            $zip = new ZipArchive();
+            $status = $zip->open($file->getRealPath());
+
+            if ($status === true) {
+                // Folder temporary tempat ekstraksi
+                $folderName = 'temp_absensi_' . time() . '_' . uniqid();
+                $extractPath = storage_path('app/' . $folderName);
+
+                if (!file_exists($extractPath)) {
+                    mkdir($extractPath, 0777, true);
+                }
+
+                $zip->extractTo($extractPath);
+                $zip->close();
+
+                // Ambil semua file excel/csv di dalam folder ekstrak (termasuk subfolder)
+                $extractedFiles = array_merge(
+                    glob($extractPath . '/*.{xls,xlsx,csv}', GLOB_BRACE) ?: [],
+                    glob($extractPath . '/*/*.{xls,xlsx,csv}', GLOB_BRACE) ?: []
+                );
+
+                if (empty($extractedFiles)) {
+                    // Clean up folder kosong
+                    Storage::deleteDirectory($folderName);
+                    return redirect()->back()->with('error', 'Tidak ditemukan file Excel/CSV di dalam archive ZIP.');
+                }
+
+                // Import setiap file harian
+                foreach ($extractedFiles as $filePath) {
+                    Excel::import(new AttendanceImport($period), $filePath);
+                }
+
+                // Simpan akumulasi ke DB
+                AttendanceImport::saveSummaryToDatabase($period);
+
+                // Cleanup folder temporary secara bersih
+                Storage::deleteDirectory($folderName);
+
+                return redirect()->back()->with('success', 'File ZIP Absensi (' . count($extractedFiles) . ' log harian) berhasil diproses!');
+            } else {
+                return redirect()->back()->with('error', 'Gagal membuka file ZIP.');
+            }
+        } else {
+            // Jika upload 1 file Excel biasa
+            Excel::import(new AttendanceImport($period), $file);
+            AttendanceImport::saveSummaryToDatabase($period);
+
+            return redirect()->back()->with('success', 'File absensi berhasil diimpor!');
+        }
+    } catch (\Exception $e) {
+        return redirect()->back()->with('error', 'Gagal memproses file absensi: ' . $e->getMessage());
     }
+}
 
     // Simpan & Hitung Otomatis Process Payroll
     public function store(Request $request)

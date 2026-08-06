@@ -23,14 +23,14 @@ class EmployeeImport implements ToModel, WithHeadingRow, SkipsEmptyRows
             return sprintf('%.0f', (float) $value);
         }
 
-        // Hapus karakter non-digit jika ada pemisah titik/koma liar
         return trim($str);
     }
 
     public function model(array $row)
     {
-        // 1. Bersihkan NIK dari Scientific Notation
+        // 1. Bersihkan NIK KTP & NO KK dari Scientific Notation
         $nikKtp = $this->cleanNumber($row['nik_ktp'] ?? $row['nik'] ?? null);
+        $noKk   = $this->cleanNumber($row['no_kk'] ?? $row['nomor_kk'] ?? null);
 
         // 2. Jika NIK Kosong atau Sudah Terdaftar di Database -> SKIP (Cegah Duplicate Exception)
         if (empty($nikKtp) || Employee::where('nik_ktp', $nikKtp)->exists()) {
@@ -48,8 +48,9 @@ class EmployeeImport implements ToModel, WithHeadingRow, SkipsEmptyRows
         return new Employee([
             'uuid'                => (string) Str::uuid(),
             'nik_ktp'             => $nikKtp,
+            'no_kk'               => $noKk, // Tambahkan NO KK
             'full_name'           => $row['nama_lengkap'] ?? $row['nama_len'] ?? '',
-            'nickname'            => $row['panggilan'] ?? null,
+            // 'nickname' dihapus
             'gender'              => strtoupper($row['jenis_kelamin'] ?? 'L'),
             'birth_place'         => $row['tempat_lahir'] ?? '-',
             'birth_date'          => $birthDate,

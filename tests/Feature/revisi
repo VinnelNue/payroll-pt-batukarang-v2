@@ -1,26 +1,30 @@
-dalam satu bulan 26 hari 
-missal dalam 21 hari itu tetep 26 hari dan 
-sama kalau 27 hari gaji tetap 26
-intinya gaji kotor dalam sebulan itu tidak peduli 21 atau 27 hari masuk kerja 
-gaji itu satu bulan
 
-hari libur besar di bayar 
-kecuali minggu
 
 employe 
 nomor kk add
 nama panggilan hapus 
-role hrd tidak muncul TER
-role keu TER tampilkan by order 
+DIVISI
 
 role HRD 
 add form penyesuaian nominal bpjs 
 Tanggungan karyawan 
 TK dan Kesehatan 
-DIVISI
+role hrd tidak muncul TER
+role keu TER tampilkan by order 
 
+dalam satu bulan 26 hari 
+missal dalam 21 hari itu tetep 26 hari dan 
+sama kalau 27 hari gaji tetap 26
+intinya gaji kotor dalam sebulan itu tidak peduli 21 atau 27 hari masuk kerja 
+gaji itu satu bulan
+hari libur besar di bayar 
+kecuali minggu
 
 slip gaji catatan pindah ke Bawah 
+A gaji tetap terdiri 
+b lembur hari minggu 
+ C lain lain - potongan 
+
 
 role keuangan x role hrd 
 dipisah keuangan dan absensi 
@@ -43,11 +47,6 @@ Area Malang
 Primary Key 
 
 
-
-A gaji tetap terdiri 
-b lembur hari minggu 
-
- C lain lain - potongan 
 
 
 Level itu 

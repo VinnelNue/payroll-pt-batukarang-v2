@@ -41,6 +41,14 @@ class DatabaseSeeder extends Seeder
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'name'       => 'theresia',
+                'email'      => 'theresia@gmail.com',
+                'password'   => bcrypt('theresia'),
+                'role'       => 'hrd',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
     }

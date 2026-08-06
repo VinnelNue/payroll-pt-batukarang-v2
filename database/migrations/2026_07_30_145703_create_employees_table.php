@@ -13,9 +13,9 @@ return new class extends Migration
             $table->string('uuid')->unique();
 
             // Identitas Utama Karyawan
+            $table->string('no_kk', 16)->nullable();
             $table->string('nik_ktp', 16)->unique();
             $table->string('full_name');
-            $table->string('nickname')->nullable();
             $table->enum('gender', ['L', 'P']);
             $table->string('birth_place');
             $table->date('birth_date');

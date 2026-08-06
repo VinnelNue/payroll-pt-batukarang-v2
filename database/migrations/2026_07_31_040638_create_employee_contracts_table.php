@@ -13,8 +13,10 @@ return new class extends Migration
             $table->uuid('uuid')->unique();
             $table->foreignId('employee_id')->constrained('employees', 'id_employee')->onDelete('cascade');
             
-            // Jabatan, Kategori & Level (Sesuai Excel)
-            $table->string('job_title'); // Contoh: Manager Regional Area
+            // Jabatan, Divisi, Area, Kategori & Level
+            $table->string('job_title'); // Contoh: Staff Accounting
+            $table->string('department')->nullable(); // Divisi (Contoh: Finance / HRD)
+            $table->string('placement_area')->nullable(); // Area Penempatan (Contoh: Site Batu Karang / HQ)
             $table->string('category', 10)->nullable(); // Contoh: A
             $table->integer('level')->nullable(); // Contoh: 21
             
@@ -22,9 +24,15 @@ return new class extends Migration
             $table->decimal('basic_salary', 15, 2)->default(0); // GAPOK
             $table->decimal('allowance', 15, 2)->default(0); // TJ (Tunjangan)
             
-            // Status Keaktifan BPJS
+            // Setting BPJS Otomatis vs Manual Input
             $table->boolean('is_bpjstk_active')->default(true);
             $table->boolean('is_bpjs_health_active')->default(true);
+            
+            // Opsi Input Manual BPJS (Jika diisi, kalkulasi akan mengabaikan persentase)
+            $table->boolean('use_manual_bpjs')->default(false); // Flag acuan manual
+            $table->decimal('manual_bpjs_tk_employee', 15, 2)->default(0); // Potongan BPJS TK Karyawan
+            $table->decimal('manual_bpjs_ks_employee', 15, 2)->default(0); // Potongan BPJS KS Karyawan
+            $table->decimal('manual_bpjs_company', 15, 2)->default(0);     // BPJS Dibayar Perusahaan
             
             // Status Kontrak & Keaktifan
             $table->enum('employment_type', ['PKWT', 'PKWTT', 'Probation', 'Internship'])->default('PKWT');

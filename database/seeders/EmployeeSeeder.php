@@ -16,7 +16,7 @@ class EmployeeSeeder extends Seeder
     {
         $faker = \Faker\Factory::create('id_ID');
 
-        // Ambil beberapa sampel wilayah untuk di-assign secara acak
+        // Ambil beberapa sampel wilayah Laravolt
         $provinces = Province::limit(10)->get();
 
         if ($provinces->isEmpty()) {
@@ -27,82 +27,73 @@ class EmployeeSeeder extends Seeder
         $banks = ['BCA', 'Mandiri', 'BRI', 'BNI', 'CIMB Niaga'];
         $religions = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha'];
 
-        // Sample wilayah untuk Yohana
-        $provYohana = $provinces->random();
-        $cityYohana = City::where('province_code', $provYohana->code)->inRandomOrder()->first();
-        $distYohana = $cityYohana ? District::where('city_code', $cityYohana->code)->inRandomOrder()->first() : null;
-        $villYohana = $distYohana ? Village::where('district_code', $distYohana->code)->inRandomOrder()->first() : null;
+        // Daftar 28 Karyawan Asli dari Log Mesin Fingerprint
+        $realEmployees = [
+            ['nik' => '14SR05', 'name' => 'PEDRO LAKSANA PUTRA', 'gender' => 'L'],
+            ['nik' => '15GB01', 'name' => 'SUSIANTO', 'gender' => 'L'],
+            ['nik' => '15GB02', 'name' => 'Viky Tridianto', 'gender' => 'L'],
+            ['nik' => '15GB03', 'name' => 'AGUNG HARI WIBOWO', 'gender' => 'L'],
+            ['nik' => '15GB04', 'name' => 'DEFRI FAUJANTO', 'gender' => 'L'],
+            ['nik' => '15GB05', 'name' => 'NANDO RISQI WAHYUDI', 'gender' => 'L'],
+            ['nik' => '15GB08', 'name' => 'AYUN DWI TIARANDA', 'gender' => 'P'],
+            ['nik' => '15GB09', 'name' => 'Hengki Yohanes Pranata', 'gender' => 'L'],
+            ['nik' => '15GB10', 'name' => 'Maulana Nur Pramujah', 'gender' => 'L'],
+            ['nik' => '16RJ01', 'name' => 'SUGENG HARIYANTO', 'gender' => 'L'],
+            ['nik' => '16RJ02', 'name' => 'VICKY DARMA FIRMANSYA', 'gender' => 'L'],
+            ['nik' => '16RJ04', 'name' => 'SUPANDRI', 'gender' => 'L'],
+            ['nik' => '16RJ05', 'name' => 'M. ANGGI WIJAKSONO', 'gender' => 'L'],
+            ['nik' => '17GP03', 'name' => 'EMI SUGIARTI', 'gender' => 'P'],
+            ['nik' => '17GP04', 'name' => 'SUMARTIN', 'gender' => 'P'],
+            ['nik' => '17GP05', 'name' => 'YAYUK WIYANTI', 'gender' => 'P'],
+            ['nik' => '17GP06', 'name' => 'SANDI MAULANA', 'gender' => 'L'],
+            ['nik' => '17GP07', 'name' => 'GILANG SATRIYA FERDIANSAH', 'gender' => 'L'],
+            ['nik' => '18HS02', 'name' => 'RIBOWO', 'gender' => 'L'],
+            ['nik' => '18HS03', 'name' => 'AHMAD NURUL ANWAR', 'gender' => 'L'],
+            ['nik' => '18HS04', 'name' => 'DEBI NUR ALYUBI', 'gender' => 'L'],
+            ['nik' => '18RT01', 'name' => 'SUPATMI', 'gender' => 'P'],
+            ['nik' => '18RT02', 'name' => 'SUPRAPTI', 'gender' => 'P'],
+            ['nik' => '18RT03', 'name' => 'IMAYAH', 'gender' => 'P'],
+            ['nik' => '18RT04', 'name' => 'SUMARIYANI', 'gender' => 'P'],
+            ['nik' => '18RT06', 'name' => "SAB'I MUBAROK", 'gender' => 'L'],
+            ['nik' => '18RT07', 'name' => 'MOHAMMAD YUSSRIL', 'gender' => 'L'],
+            ['nik' => '18RT08', 'name' => 'DIAS KHOLIFATUR AKBAR', 'gender' => 'L'],
+        ];
 
-        // ==========================================
-        // 1. DATA KHUSUS: YOHANA FERNANDEZ
-        // ==========================================
-        Employee::updateOrCreate(
-            ['email' => 'yohanafernandez@gmail.com'], // Patokan unik agar tidak bentrok
-            [
-                'uuid'                => (string) Str::uuid(),
-                'nik_ktp'             => '35' . $faker->unique()->numerify('##############'),
-                'full_name'           => 'Yohana Fernandez',
-                'nickname'            => 'Yohana',
-                'gender'              => 'P',
-                'birth_place'         => $faker->city,
-                'birth_date'          => '1996-05-15',
-                'religion'            => 'Katolik',
-                'marital_status'      => 'single',
-                'phone_number'        => '08' . $faker->numerify('##########'),
-                'address_ktp'         => $faker->streetAddress,
-                'address_domicile'    => null,
-                'province_code'       => $provYohana->code,
-                'city_code'           => $cityYohana?->code,
-                'district_code'       => $distYohana?->code,
-                'village_code'        => $villYohana?->code,
-                'npwp_number'         => $faker->numerify('##.###.###.#-###.###'),
-                'bank_name'           => 'BCA',
-                'bank_account_number' => $faker->bankAccountNumber,
-                'bank_account_holder' => 'YOHANA FERNANDEZ',
-                'ktp_path'            => null,
-                'is_active'           => true,
-            ]
-        );
-
-        // ==========================================
-        // 2. GENERATE 14 DUMMY KARYAWAN LAINNYA
-        // ==========================================
-        for ($i = 1; $i <= 14; $i++) {
-            $gender = $faker->randomElement(['L', 'P']);
-            $firstName = $gender == 'L' ? $faker->firstNameMale : $faker->firstNameFemale;
-            $fullName = $firstName . ' ' . $faker->lastName;
-
-            // Pilih provinsi acak dan cascading child-nya
+        foreach ($realEmployees as $empData) {
+            // Pick random location from Laravolt
             $province = $provinces->random();
-            $city = City::where('province_code', $province->code)->inRandomOrder()->first();
+            $city     = City::where('province_code', $province->code)->inRandomOrder()->first();
             $district = $city ? District::where('city_code', $city->code)->inRandomOrder()->first() : null;
-            $village = $district ? Village::where('district_code', $district->code)->inRandomOrder()->first() : null;
+            $village  = $district ? Village::where('district_code', $district->code)->inRandomOrder()->first() : null;
 
-            Employee::create([
-                'uuid'                => (string) Str::uuid(),
-                'nik_ktp'             => '35' . $faker->unique()->numerify('##############'),
-                'full_name'           => $fullName,
-                'nickname'            => $firstName,
-                'gender'              => $gender,
-                'birth_place'         => $faker->city,
-                'birth_date'          => $faker->dateTimeBetween('-40 years', '-20 years')->format('Y-m-d'),
-                'religion'            => $faker->randomElement($religions),
-                'marital_status'      => $faker->randomElement(['single', 'married', 'divorced']),
-                'phone_number'        => '08' . $faker->numerify('##########'),
-                'email'               => strtolower(Str::slug($fullName)) . '@batukarang.com',
-                'address_ktp'         => $faker->streetAddress,
-                'address_domicile'    => $faker->optional(0.3)->streetAddress,
-                'province_code'       => $province->code,
-                'city_code'           => $city?->code,
-                'district_code'       => $district?->code,
-                'village_code'        => $village?->code,
-                'npwp_number'         => $faker->numerify('##.###.###.#-###.###'),
-                'bank_name'           => $faker->randomElement($banks),
-                'bank_account_number' => $faker->bankAccountNumber,
-                'bank_account_holder' => strtoupper($fullName),
-                'ktp_path'            => null,
-                'is_active'           => true,
-            ]);
+            Employee::updateOrCreate(
+                ['nik_ktp' => $empData['nik']], // Kunci unik dari Fingerprint Excel
+                [
+                    'uuid'                => (string) Str::uuid(),
+                    'no_kk'               => '35' . $faker->numerify('##############'),
+                    'full_name'           => $empData['name'],
+                    // 'nickname' disembunyikan/dihapus sesuai skema baru
+                    'gender'              => $empData['gender'],
+                    'birth_place'         => $faker->city,
+                    'birth_date'          => $faker->dateTimeBetween('-40 years', '-20 years')->format('Y-m-d'),
+                    'religion'            => $faker->randomElement($religions),
+                    'marital_status'      => $faker->randomElement(['single', 'married']),
+                    'phone_number'        => '08' . $faker->numerify('##########'),
+                    'email'               => strtolower(Str::slug($empData['name'])) . '@batukarang.com',
+                    'address_ktp'         => $faker->streetAddress,
+                    'address_domicile'    => null,
+                    'province_code'       => $province->code,
+                    'city_code'           => $city?->code,
+                    'district_code'       => $district?->code,
+                    'village_code'        => $village?->code,
+                    'npwp_number'         => $faker->numerify('##.###.###.#-###.###'),
+                    'bank_name'           => $faker->randomElement($banks),
+                    'bank_account_number' => $faker->bankAccountNumber,
+                    'bank_account_holder' => strtoupper($empData['name']),
+                    'ktp_path'            => null,
+                    'is_active'           => true,
+                ]
+            );
         }
     }
-}   
+}
