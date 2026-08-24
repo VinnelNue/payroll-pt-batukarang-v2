@@ -21,7 +21,6 @@ class DatabaseSeeder extends Seeder
             \Laravolt\Indonesia\Seeds\CitiesSeeder::class,
             \Laravolt\Indonesia\Seeds\DistrictsSeeder::class,
             \Laravolt\Indonesia\Seeds\VillagesSeeder::class,
-            EmployeeSeeder::class, // Panggil EmployeeSeeder setelah data wilayah terisi
         ]);
 
         User::insert([
