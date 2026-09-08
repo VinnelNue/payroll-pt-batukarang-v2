@@ -11,7 +11,7 @@ class EmployeeContractController extends Controller
     // 1. Menampilkan Tabel Master Penempatan & Kontrak
     public function index()
     {
-        $employees = Employee::with('activeContract')->latest('id_employee')->paginate(10);
+        $employees = Employee::with('activeContract')->oldest('id_employee')->paginate(10);
 
         return view('contracts.index', compact('employees'));
     }
@@ -50,15 +50,17 @@ class EmployeeContractController extends Controller
             $request->merge([
                 'basic_salary' => $contract?->basic_salary ?? 0,
                 'allowance'    => $contract?->allowance ?? 0,
-                'ptkp_status'  => $contract?->ptkp_status ?? 'TK/0',
+                'ptkp_status'  => $contract?->ptkp_status ?? 'TK0',
             ]);
         }
 
-        // 3. Validasi Input Data
+        // 3. Validasi Input Data (Termasuk PIN & NIK Fingerprint)
         $validated = $request->validate([
             'job_title'               => 'required|string|max:255',
             'department'              => 'nullable|string|max:255', // Divisi
             'placement_area'          => 'nullable|string|max:255', // Area Penempatan
+            'fingerprint_pin'         => 'nullable|string|max:50',  // PIN Mesin Absen
+            'nik_fingerprint'         => 'nullable|string|max:50',  // NIK Mesin Absen
             'category'                => 'nullable|string|max:10',
             'level'                   => 'nullable|integer',
             'basic_salary'            => 'required|numeric|min:0',

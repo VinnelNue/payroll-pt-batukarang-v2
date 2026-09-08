@@ -13,9 +13,6 @@ use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
 
 class EmployeeImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 {
-    /**
-     * Helper konversi scientific notation (e.g. 3.57812E+15) atau float Excel ke string angka murni
-     */
     private function cleanNumber($value)
     {
         if (empty($value)) return null;
@@ -31,24 +28,23 @@ class EmployeeImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     public function collection(Collection $rows)
     {
         foreach ($rows as $row) {
-            // 1. Bersihkan NIK KTP & NO KK dari Scientific Notation
+            // 1. Ambil & Bersihkan NIK KTP
             $nikKtp = $this->cleanNumber($row['nik_ktp'] ?? $row['nik'] ?? null);
-            $noKk   = $this->cleanNumber($row['no_kk'] ?? $row['nomor_kk'] ?? null);
 
-            // 2. Jika NIK Kosong atau Sudah Terdaftar -> SKIP
+            // Jika NIK Kosong atau Sudah Terdaftar di Database -> SKIP
             if (empty($nikKtp) || Employee::where('nik_ktp', $nikKtp)->exists()) {
                 continue;
             }
 
-            // 3. Tangani Konversi Tanggal Lahir
-            $birthDate = $row['tanggal_lahir'] ?? null;
+            // 2. Konversi Tanggal Lahir
+            $birthDate = $row['birth_date'] ?? $row['tanggal_lahir'] ?? null;
             if (is_numeric($birthDate)) {
                 $birthDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($birthDate)->format('Y-m-d');
             } else {
                 $birthDate = $birthDate ? date('Y-m-d', strtotime($birthDate)) : now()->format('Y-m-d');
             }
 
-            // 4. Tangani Konversi Tanggal Mulai Kontrak (jika ada di kolom Excel)
+            // 3. Konversi Tanggal Mulai Kontrak (start_date)
             $startDate = $row['start_date'] ?? $row['tanggal_mulai'] ?? null;
             if (is_numeric($startDate)) {
                 $startDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($startDate)->format('Y-m-d');
@@ -56,49 +52,72 @@ class EmployeeImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 $startDate = $startDate ? date('Y-m-d', strtotime($startDate)) : now()->format('Y-m-d');
             }
 
-            // Bungkus dalam Transaction agar aman (atomic)
-            DB::transaction(function () use ($row, $nikKtp, $noKk, $birthDate, $startDate) {
-                // Buat data Employee
+            // 4. Konversi Tanggal Berakhir Kontrak (end_date)
+            $endDate = $row['end_date'] ?? $row['tanggal_berakhir'] ?? null;
+            if (!empty($endDate)) {
+                if (is_numeric($endDate)) {
+                    $endDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($endDate)->format('Y-m-d');
+                } else {
+                    $endDate = date('Y-m-d', strtotime($endDate));
+                }
+            } else {
+                $endDate = null;
+            }
+
+            // Bungkus dalam Transaction agar aman secara atomic
+            DB::transaction(function () use ($row, $nikKtp, $birthDate, $startDate, $endDate) {
+                // Simpan data identitas personal karyawan
                 $employee = Employee::create([
                     'uuid'                => (string) Str::uuid(),
+                    'no_kk'               => $this->cleanNumber($row['no_kk'] ?? $row['nomor_kk'] ?? null),
                     'nik_ktp'             => $nikKtp,
-                    'no_kk'               => $noKk,
-                    'full_name'           => $row['nama_lengkap'] ?? $row['nama_len'] ?? '',
-                    'gender'              => strtoupper($row['jenis_kelamin'] ?? 'L'),
-                    'birth_place'         => $row['tempat_lahir'] ?? '-',
+                    'full_name'           => $row['full_name'] ?? $row['nama_lengkap'] ?? $row['nama'] ?? '',
+                    'gender'              => strtoupper($row['gender'] ?? $row['jenis_kelamin'] ?? 'L'),
+                    'religion'            => $row['religion'] ?? $row['agama'] ?? null,
+                    'birth_place'         => $row['birth_place'] ?? $row['tempat_lahir'] ?? '-',
                     'birth_date'          => $birthDate,
-                    'religion'            => $row['agama'] ?? null,
-                    'marital_status'      => strtolower($row['status_pernikahan'] ?? $row['status_pe'] ?? 'single'),
-                    'phone_number'        => $this->cleanNumber($row['no_hp'] ?? null),
+                    'marital_status'      => strtolower($row['marital_status'] ?? $row['status_pernikahan'] ?? 'single'),
+                    'phone_number'        => $this->cleanNumber($row['phone_number'] ?? $row['no_hp'] ?? null),
                     'email'               => $row['email'] ?? null,
-                    'address_ktp'         => $row['alamat_ktp'] ?? $row['alamat_kt'] ?? '-',
-                    'address_domicile'    => $row['alamat_domisili'] ?? $row['alamat_domisi'] ?? null,
-                    'province_code'       => $this->cleanNumber($row['kode_provinsi'] ?? $row['kode_pro'] ?? null),
-                    'city_code'           => $this->cleanNumber($row['kode_kota'] ?? null),
-                    'district_code'       => $this->cleanNumber($row['kode_kecamatan'] ?? $row['kode_kec'] ?? null),
-                    'village_code'        => $this->cleanNumber($row['kode_kelurahan'] ?? $row['kode_kelu'] ?? null),
-                    'npwp_number'         => $this->cleanNumber($row['npwp'] ?? null),
-                    'bank_name'           => $row['nama_bank'] ?? $row['nama_bar'] ?? null,
-                    'bank_account_number' => $this->cleanNumber($row['no_rekening'] ?? $row['no_rekeni'] ?? null),
-                    'bank_account_holder' => $row['pemilik_rekening'] ?? null,
+                    'address_ktp'         => $row['address_ktp'] ?? $row['alamat_ktp'] ?? $row['alamat'] ?? '-',
+                    'province_code'       => $this->cleanNumber($row['province_code'] ?? $row['kode_provinsi'] ?? null),
+                    'city_code'           => $this->cleanNumber($row['city_code'] ?? $row['kode_kota'] ?? null),
+                    'district_code'       => $this->cleanNumber($row['district_code'] ?? $row['kode_kecamatan'] ?? null),
+                    'village_code'        => $this->cleanNumber($row['village_code'] ?? $row['kode_kelurahan'] ?? null),
+                    'address_domicile'    => $row['address_domicile'] ?? $row['alamat_domisili'] ?? null,
+                    'npwp_number'         => $this->cleanNumber($row['npwp_number'] ?? $row['npwp'] ?? null),
+                    'bank_name'           => $row['bank_name'] ?? $row['nama_bank'] ?? null,
+                    'bank_account_number' => $this->cleanNumber($row['bank_account_number'] ?? $row['no_rekening'] ?? null),
+                    'bank_account_holder' => $row['bank_account_holder'] ?? $row['pemilik_rekening'] ?? null,
                     'is_active'           => true,
                 ]);
 
-                // Nonaktifkan kontrak lama (jika ada)
+                // Nonaktifkan kontrak lama jika ada
                 EmployeeContract::where('employee_id', $employee->id_employee)->update(['is_active' => false]);
 
-                // Otomatis buat data Contract / Posisi / Gaji dari kolom Excel yang sama
+                // Simpan data kontrak, posisi, acuan finansial, pajak & identitas mesin absensi
                 EmployeeContract::create([
-                    'employee_id'     => $employee->id_employee,
-                    'job_title'       => $row['job_title'] ?? $row['jabatan'] ?? 'Staff',
-                    'department'      => $row['department'] ?? $row['divisi'] ?? '-',
-                    'placement_area'  => $row['placement_area'] ?? $row['area_penempatan'] ?? '-',
-                    'basic_salary'    => (float) ($row['basic_salary'] ?? $row['gaji_pokok'] ?? 0),
-                    'allowance'       => (float) ($row['allowance'] ?? $row['tunjangan'] ?? 0),
-                    'employment_type' => $row['employment_type'] ?? $row['status_kontrak'] ?? 'PKWT',
-                    'start_date'      => $startDate,
-                    'ptkp_status'     => $row['ptkp_status'] ?? $row['ptkp'] ?? 'TK/0',
-                    'is_active'       => true,
+                    'employee_id'           => $employee->id_employee,
+                    'job_title'             => $row['job_title'] ?? $row['jabatan'] ?? 'Staff',
+                    'department'            => $row['department'] ?? $row['divisi'] ?? '-',
+                    'placement_area'        => $row['placement_area'] ?? $row['area_penempatan'] ?? '-',
+                    
+                    // Mapping PIN & NIK Mesin Fingerprint dari Excel
+                    'fingerprint_pin'       => $this->cleanNumber($row['fingerprint_pin'] ?? $row['pin'] ?? null),
+                    'nik_fingerprint'       => $this->cleanNumber($row['nik_fingerprint'] ?? $row['nik_mesin'] ?? null),
+                    
+                    'category'              => $row['category'] ?? $row['kategori'] ?? null,
+                    'level'                 => isset($row['level']) && is_numeric($row['level']) ? (int)$row['level'] : null,
+                    'employment_type'       => $row['employment_type'] ?? $row['status_hubungan_kerja'] ?? 'PKWT',
+                    'start_date'            => $startDate,
+                    'end_date'              => $endDate,
+                    'basic_salary'          => (float) ($row['basic_salary'] ?? $row['gaji_pokok'] ?? 0),
+                    'allowance'             => (float) ($row['allowance'] ?? $row['tunjangan_tetap'] ?? $row['tunjangan'] ?? 0),
+                    'is_bpjstk_active'      => filter_var($row['is_bpjstk_active'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                    'is_bpjs_health_active' => filter_var($row['is_bpjs_health_active'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                    'use_manual_bpjs'       => false,
+                    'ptkp_status'           => $row['status_karyawan'] ?? $row['ptkp_status'] ?? $row['ptkp'] ?? 'TK0',
+                    'is_active'             => true,
                 ]);
             });
         }

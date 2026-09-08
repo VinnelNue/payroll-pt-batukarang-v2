@@ -34,10 +34,8 @@ class PayrollController extends Controller
     {
         $period = $request->get('period', date('Y-m'));
 
-        // Cek apakah periode ini sudah terkunci
         $isLocked = Payroll::where('period_month', $period)->where('is_locked', true)->exists();
 
-        // Ambil karyawan aktif beserta data payroll periode terpilih
         $employees = Employee::with(['activeContract', 'payrolls' => function($q) use ($period) {
             $q->where('period_month', $period);
         }])
@@ -46,73 +44,67 @@ class PayrollController extends Controller
 
         return view('payrolls.create', compact('employees', 'period', 'isLocked'));
     }
-public function import(Request $request)
-{
-    $request->validate([
-        'file' => 'required|file|mimes:zip,rar,xlsx,xls,csv|max:20480',
-    ]);
 
-    $period = $request->input('period_month', date('Y-m'));
-    $file = $request->file('file');
-    $extension = strtolower($file->getClientOriginalExtension());
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:zip,rar,xlsx,xls,csv|max:20480',
+        ]);
 
-    try {
-        if ($extension === 'zip') {
-            $zip = new ZipArchive();
-            $status = $zip->open($file->getRealPath());
+        $period = $request->input('period_month', date('Y-m'));
+        $file = $request->file('file');
+        $extension = strtolower($file->getClientOriginalExtension());
 
-            if ($status === true) {
-                // Folder temporary tempat ekstraksi
-                $folderName = 'temp_absensi_' . time() . '_' . uniqid();
-                $extractPath = storage_path('app/' . $folderName);
+        try {
+            if ($extension === 'zip') {
+                $zip = new ZipArchive();
+                $status = $zip->open($file->getRealPath());
 
-                if (!file_exists($extractPath)) {
-                    mkdir($extractPath, 0777, true);
-                }
+                if ($status === true) {
+                    $folderName = 'temp_absensi_' . time() . '_' . uniqid();
+                    $extractPath = storage_path('app/' . $folderName);
 
-                $zip->extractTo($extractPath);
-                $zip->close();
+                    if (!file_exists($extractPath)) {
+                        mkdir($extractPath, 0777, true);
+                    }
 
-                // Ambil semua file excel/csv di dalam folder ekstrak (termasuk subfolder)
-                $extractedFiles = array_merge(
-                    glob($extractPath . '/*.{xls,xlsx,csv}', GLOB_BRACE) ?: [],
-                    glob($extractPath . '/*/*.{xls,xlsx,csv}', GLOB_BRACE) ?: []
-                );
+                    $zip->extractTo($extractPath);
+                    $zip->close();
 
-                if (empty($extractedFiles)) {
-                    // Clean up folder kosong
+                    $extractedFiles = array_merge(
+                        glob($extractPath . '/*.{xls,xlsx,csv}', GLOB_BRACE) ?: [],
+                        glob($extractPath . '/*/*.{xls,xlsx,csv}', GLOB_BRACE) ?: []
+                    );
+
+                    if (empty($extractedFiles)) {
+                        Storage::deleteDirectory($folderName);
+                        return redirect()->back()->with('error', 'Tidak ditemukan file Excel/CSV di dalam archive ZIP.');
+                    }
+
+                    foreach ($extractedFiles as $filePath) {
+                        Excel::import(new AttendanceImport($period), $filePath);
+                    }
+
+                    AttendanceImport::saveSummaryToDatabase($period);
+
                     Storage::deleteDirectory($folderName);
-                    return redirect()->back()->with('error', 'Tidak ditemukan file Excel/CSV di dalam archive ZIP.');
-                }
 
-                // Import setiap file harian
-                foreach ($extractedFiles as $filePath) {
-                    Excel::import(new AttendanceImport($period), $filePath);
+                    return redirect()->back()->with('success', 'File ZIP Absensi (' . count($extractedFiles) . ' log harian) berhasil diproses!');
+                } else {
+                    return redirect()->back()->with('error', 'Gagal membuka file ZIP.');
                 }
-
-                // Simpan akumulasi ke DB
+            } else {
+                Excel::import(new AttendanceImport($period), $file);
                 AttendanceImport::saveSummaryToDatabase($period);
 
-                // Cleanup folder temporary secara bersih
-                Storage::deleteDirectory($folderName);
-
-                return redirect()->back()->with('success', 'File ZIP Absensi (' . count($extractedFiles) . ' log harian) berhasil diproses!');
-            } else {
-                return redirect()->back()->with('error', 'Gagal membuka file ZIP.');
+                return redirect()->back()->with('success', 'File absensi berhasil diimpor!');
             }
-        } else {
-            // Jika upload 1 file Excel biasa
-            Excel::import(new AttendanceImport($period), $file);
-            AttendanceImport::saveSummaryToDatabase($period);
-
-            return redirect()->back()->with('success', 'File absensi berhasil diimpor!');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal memproses file absensi: ' . $e->getMessage());
         }
-    } catch (\Exception $e) {
-        return redirect()->back()->with('error', 'Gagal memproses file absensi: ' . $e->getMessage());
     }
-}
 
-    // Simpan & Hitung Otomatis Process Payroll
+    // Simpan & Hitung Otomatis Process Payroll (Gaji Flat Bulanan)
     public function store(Request $request)
     {
         $request->validate([
@@ -122,7 +114,6 @@ public function import(Request $request)
 
         $period = $request->period_month;
 
-        // Cegah penyimpanan jika periode sudah terkunci
         $isLocked = Payroll::where('period_month', $period)->where('is_locked', true)->exists();
         if ($isLocked) {
             return redirect()->back()->with('error', 'Gagal menyimpan! Kalkulasi Payroll periode ini sudah dikunci (Locked).');
@@ -134,7 +125,6 @@ public function import(Request $request)
 
             $contract = $employee->activeContract;
 
-            // Helper pembersih format ribuan
             $cleanNumber = function ($value) {
                 if (empty($value)) return 0;
                 $cleaned = preg_replace('/[^0-9]/', '', (string)$value);
@@ -142,21 +132,23 @@ public function import(Request $request)
             };
 
             // 1. Clean Input Formatting
-            $workDays          = (float) ($data['work_days'] ?? 27);
-            $unpaidLeave       = (float) ($data['unpaid_leave'] ?? 0);
+            $workDays          = (float) ($data['work_days'] ?? 26);
+            $unpaidLeave       = (float) ($data['unpaid_leave'] ?? 0); // Hanya Alpha / Izin dipotong
             $overtimeHours     = (float) ($data['overtime_hours'] ?? 0);
             $maternityLeavePay = $cleanNumber($data['maternity_leave_pay'] ?? 0);
             $incentive         = $cleanNumber($data['incentive'] ?? 0);
             $cashAdvance       = $cleanNumber($data['cash_advance'] ?? 0);
             $otherDeductions   = $cleanNumber($data['other_deductions'] ?? 0);
 
-            // 2. Acuan Master Kontrak Karyawan
+            // 2. Acuan Master Kontrak Karyawan (Gaji Bulanan Utuh)
             $basicSalary = (float) $contract->basic_salary;
             $allowance   = (float) $contract->allowance;
 
-            // 3. Kalkulasi Potongan Unpaid Leave (Pro-rata Hari Kerja)
-            $basicSalaryDeduction = ($unpaidLeave > 0) ? ($basicSalary / 27) * $unpaidLeave : 0;
-            $allowanceDeduction   = ($unpaidLeave > 0) ? ($allowance / 27) * $unpaidLeave : 0;
+            // 3. Kalkulasi Potongan Unpaid Leave (Pro-rata berbasis standar 26 hari kerja flat)
+            // Hari libur besar dan hari Minggu otomatis dibayar penuh karena tidak dihitung sebagai unpaid leave.
+            $standardWorkDays = 26; 
+            $basicSalaryDeduction = ($unpaidLeave > 0) ? ($basicSalary / $standardWorkDays) * $unpaidLeave : 0;
+            $allowanceDeduction   = ($unpaidLeave > 0) ? ($allowance / $standardWorkDays) * $unpaidLeave : 0;
 
             $netBasicSalary = max(0, $basicSalary - $basicSalaryDeduction);
             $netAllowance   = max(0, $allowance - $allowanceDeduction);
@@ -176,7 +168,7 @@ public function import(Request $request)
             $bpjsKsDeduction = $contract->is_bpjs_health_active ? ($basisBpjsKs * $ksRate) : 0;
 
             // 6. TER PPh 21 Otomatis
-            $pph21Rate      = $this->calculateTerRate($contract->ptkp_status ?? 'TK/0', $grossSalary);
+            $pph21Rate       = $this->calculateTerRate($contract->ptkp_status ?? 'TK/0', $grossSalary);
             $pph21Deduction = $grossSalary * $pph21Rate;
 
             // 7. Hitung Take Home Pay (Net Salary)
@@ -213,7 +205,8 @@ public function import(Request $request)
         return redirect()->route('payrolls.index', ['period' => $period])
             ->with('success', 'Data Absensi & Payroll Periode ' . $period . ' Berhasil Diproses!');
     }
-// Lock Calculation
+
+    // Lock Calculation
     public function lockCalculation(Request $request)
     {
         $period = $request->input('period');
@@ -228,7 +221,6 @@ public function import(Request $request)
         return redirect()->back()->with('success', "Kalkulasi Payroll periode {$period} berhasil DIKUNCI (Locked)!");
     }
 
-    // 1. HRD Mengajukan Request Unlock
     public function requestUnlock(Request $request)
     {
         $request->validate([
@@ -247,12 +239,10 @@ public function import(Request $request)
         return redirect()->back()->with('success', 'Pengajuan Buka Kunci (Request Unlock) berhasil dikirim ke Manager Keuangan!');
     }
 
-    // Manager Keuangan ATAU Super Admin bisa langsung Unlock
     public function unlockCalculation(Request $request)
     {
         $userRole = Auth::user()->role;
 
-        // Izinkan jika role adalah manager_keuangan ATAU super_admin
         if (!in_array($userRole, ['manager_keuangan', 'super_admin'])) {
             return redirect()->back()->with('error', 'Anda tidak memiliki hak akses untuk membuka kuncian payroll!');
         }
@@ -272,7 +262,6 @@ public function import(Request $request)
         return redirect()->back()->with('success', "Kuncian Payroll periode {$period} berhasil DIBUKA kembali!");
     }
 
-    // Manager Keuangan ATAU Super Admin bisa Menolak Request Unlock
     public function rejectUnlock(Request $request)
     {
         $userRole = Auth::user()->role;
@@ -291,7 +280,7 @@ public function import(Request $request)
 
         return redirect()->back()->with('info', "Permohonan Buka Kunci periode {$period} telah DITOLAK.");
     }
-    // Export CSV BCA Mass Transfer
+
     public function exportBca(Request $request)
     {
         $period = $request->input('period', date('Y-m'));
@@ -329,10 +318,9 @@ public function import(Request $request)
 
         return response()->stream($callback, 200, $headers);
     }
-    // Download / Preview Slip Gaji PDF via UUID Employee
+
     public function printPdf($uuid)
     {
-        // Cari Payroll yang terhubung dengan Employee berdasarkan UUID Employee
         $payroll = Payroll::with(['employee.activeContract'])
             ->whereHas('employee', function ($query) use ($uuid) {
                 $query->where('uuid', $uuid);
@@ -344,7 +332,6 @@ public function import(Request $request)
         return $pdf->stream('Slip_Gaji_' . $payroll->employee->full_name . '_' . $payroll->period_month . '.pdf');
     }
 
-    // Kirim Slip Gaji PDF ke Email Karyawan via UUID Employee
     public function sendEmail($uuid)
     {
         $payroll = Payroll::with(['employee.activeContract'])
@@ -366,7 +353,6 @@ public function import(Request $request)
         return redirect()->back()->with('success', 'Slip Gaji berhasil dikirim ke email: ' . $emailDestination);
     }
 
-    // Master TER PPh 21 & BPJS
     public function taxBpjsMaster()
     {
         $bpjsSettings = [
@@ -412,7 +398,6 @@ public function import(Request $request)
         return view('payrolls.tax_bpjs_master', compact('terCategories', 'bpjsSettings'));
     }
 
-    // Update Setting BPJS
     public function updateBpjsSetting(Request $request)
     {
         $request->validate([
@@ -428,7 +413,6 @@ public function import(Request $request)
         return redirect()->back()->with('success', 'Parameter BPJS Berhasil Diperbarui!');
     }
 
-    // Helper Hitung Persentase TER PPh 21 (PP 58/2023)
     private function calculateTerRate($ptkp, $gross)
     {
         $category = match($ptkp) {

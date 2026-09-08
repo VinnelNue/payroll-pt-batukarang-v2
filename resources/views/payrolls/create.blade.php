@@ -188,15 +188,15 @@
                             <th rowspan="2" class="py-3 px-2 sticky-col-1 bg-dark text-white" style="width: 40px;">No</th>
                             <th rowspan="2" class="py-3 px-3 text-start sticky-col-2 bg-dark text-white" style="min-width: 220px;">Karyawan & Jabatan</th>
                             
-                            @if($isFinancialRole)
-                                <th rowspan="2" class="py-3 px-3 text-start bg-dark text-white" style="min-width: 170px;">Level, Kat & TER</th>
-                            @endif
+                            <!-- KOLOM LEVEL, KAT & TER (SEKARANG SELALU MUNCUL TANPA BATASAN) -->
+                            <th rowspan="2" class="py-3 px-3 text-start bg-dark text-white" style="min-width: 170px;">Level, Kat & TER</th>
 
                             <th colspan="{{ $daysInMonth }}" class="py-2 bg-primary bg-gradient text-white fw-bold">
                                 <i class="fa-solid fa-calendar-days me-1"></i> Timesheet Absensi Harian (Tgl 1 s/d {{ $daysInMonth }})
                             </th>
                             <th colspan="2" class="py-2 bg-info bg-gradient text-dark fw-bold">Rekap Jam/Hari</th>
                             
+                            <!-- VARIABEL FINANSIAL (TETAP DI-HIDDEN JIKA BUKAN MANAGER KEUANGAN) -->
                             @if($isFinancialRole)
                                 <th colspan="4" class="py-2 bg-success bg-gradient text-white fw-bold">
                                     <i class="fa-solid fa-hand-holding-dollar me-1"></i> Variabel Finansial (Manager Keuangan Only)
@@ -237,6 +237,16 @@
                                     ? $existing->daily_attendance 
                                     : (json_decode($existing->daily_attendance, true) ?? []);
                             }
+
+                            // LOGIKA PROTEKSI LEVEL / KAT / PTKP
+                            $jabatan = strtolower($contract->job_title ?? '');
+                            $isHighLevel = str_contains($jabatan, 'manager') || 
+                                           str_contains($jabatan, 'kepala') || 
+                                           str_contains($jabatan, 'hrd') || 
+                                           str_contains($jabatan, 'direktur');
+                            
+                            // Bisa melihat data lengkap jika dia Manager Keuangan ATAU karyawan ybs bukan level tinggi
+                            $canViewLevel = $isFinancialRole || !$isHighLevel;
                         @endphp
                         <tr>
                             <td class="text-center fw-bold text-muted sticky-col-1">{{ $index + 1 }}</td>
@@ -252,17 +262,26 @@
                                 </span>
                             </td>
 
-                            <!-- LEVEL, KAT & TER (KHUSUS MANAGER KEUANGAN) -->
-                            @if($isFinancialRole)
-                                <td>
+                            <!-- LEVEL, KAT & TER (SELALU MUNCUL, HANYA ISINYA YANG DIFILTER) -->
+                            <td>
+                                @if($canViewLevel)
+                                    <!-- Jika staf biasa atau role Executive, tampil normal -->
                                     <small class="text-muted d-block" style="font-size: 0.73rem;">
                                         Kat: <strong>{{ $contract->category ?? '-' }}</strong> | Lvl: <strong>{{ $contract->level ?? '-' }}</strong>
                                     </small>
                                     <span class="badge bg-primary-subtle text-primary border border-primary border-opacity-25 rounded-pill mt-1" style="font-size: 0.68rem;">
                                         PTKP: {{ $contract->ptkp_status ?? 'TK/0' }}
                                     </span>
-                                </td>
-                            @endif
+                                @else
+                                    <!-- Jika HRD yang melihat data atasan/petinggi, ganti bintang -->
+                                    <small class="text-danger fw-bold d-block" style="font-size: 0.73rem;">
+                                        <i class="fa-solid fa-lock" style="font-size: 10px;"></i> Kat: *** | Lvl: ***
+                                    </small>
+                                    <span class="badge bg-danger-subtle text-danger border border-danger border-opacity-25 rounded-pill mt-1" style="font-size: 0.68rem;">
+                                        <i class="fa-solid fa-lock" style="font-size: 9px;"></i> PTKP: ***
+                                    </span>
+                                @endif
+                            </td>
 
                             <!-- LOOPING SPREADSHEET TANGGAL HARI 1 S/D 31 -->
                             @for($d = 1; $d <= $daysInMonth; $d++)
