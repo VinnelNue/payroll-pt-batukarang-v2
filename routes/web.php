@@ -60,7 +60,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/payrolls/lock', [PayrollController::class, 'lockCalculation'])->name('payrolls.lock');
     Route::post('/payrolls/request-unlock', [PayrollController::class, 'requestUnlock'])->name('payrolls.requestUnlock');
     Route::post('/payrolls/unlock', [PayrollController::class, 'unlockCalculation'])->name('payrolls.unlock');
-    Route::post('/payrolls/reject-unlock', [PayrollController::class, 'rejectUnlock'])->name('payrolls.reject-unlock');
+    // SESUDAH (SUDAH DIPERBAIKI):
+    Route::post('/payrolls/reject-unlock', [PayrollController::class, 'rejectUnlock'])->name('payrolls.rejectUnlock');
 
     Route::get('/tax-bpjs-master', [PayrollController::class, 'taxBpjsMaster'])->name('tax-bpjs.index');
     Route::post('/tax-bpjs-master/update-bpjs', [PayrollController::class, 'updateBpjsSetting'])->name('tax-bpjs.update-bpjs');
