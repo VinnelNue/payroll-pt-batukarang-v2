@@ -9,12 +9,12 @@
         <h5 class="fw-bold text-dark m-0">Setup Jabatan & Gaji: {{ $employee->full_name }}</h5>
         <small class="text-muted">NIK: {{ $employee->nik_ktp }} | Kelola acuan Gapok, Tunjangan, BPJS & PPh 21</small>
     </div>
-    <a href="{{ route('contracts.index') }}" class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3">
+    <a href="{{ route('contracts.local.index') }}" class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3">
         <i class="fa-solid fa-arrow-left me-1"></i> Kembali
     </a>
 </div>
 
-<form action="{{ route('contracts.update', $employee->uuid) }}" method="POST">
+<form action="{{ route('contracts.local.update', $employee->uuid) }}" method="POST">
     @csrf
     @method('PUT')
 
@@ -247,7 +247,7 @@
         </div>
 
         <div class="col-12 text-end">
-            <a href="{{ route('contracts.index') }}" class="btn btn-light border px-4 me-2">Batal</a>
+            <a href="{{ route('contracts.local.index') }}" class="btn btn-light border px-4 me-2">Batal</a>
             <button type="submit" class="btn btn-primary px-5 fw-bold">
                 <i class="fa-solid fa-floppy-disk me-1"></i> Simpan Kontrak & Gaji
             </button>

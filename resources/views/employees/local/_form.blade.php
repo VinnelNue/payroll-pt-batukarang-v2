@@ -202,7 +202,7 @@ document.addEventListener('DOMContentLoaded', function () {
         villageSelect.innerHTML = '<option value="">-- Pilih Kelurahan --</option>';
 
         if (provCode) {
-            fetch(`{{ route('employees.get-cities') }}?province_code=${provCode}`)
+            fetch(`{{ route('api.cities') }}?province_code=${provCode}`)
                 .then(res => res.json())
                 .then(data => {
                     Object.entries(data).forEach(([code, name]) => {
@@ -219,7 +219,7 @@ document.addEventListener('DOMContentLoaded', function () {
         villageSelect.innerHTML = '<option value="">-- Pilih Kelurahan --</option>';
 
         if (cityCode) {
-            fetch(`{{ route('employees.get-districts') }}?city_code=${cityCode}`)
+            fetch(`{{ route('api.districts') }}?city_code=${cityCode}`)
                 .then(res => res.json())
                 .then(data => {
                     Object.entries(data).forEach(([code, name]) => {
@@ -235,7 +235,7 @@ document.addEventListener('DOMContentLoaded', function () {
         villageSelect.innerHTML = '<option value="">-- Pilih Kelurahan --</option>';
 
         if (distCode) {
-            fetch(`{{ route('employees.get-villages') }}?district_code=${distCode}`)
+            fetch(`{{ route('api.villages') }}?district_code=${distCode}`)
                 .then(res => res.json())
                 .then(data => {
                     Object.entries(data).forEach(([code, name]) => {

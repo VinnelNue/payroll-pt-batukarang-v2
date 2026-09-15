@@ -13,7 +13,7 @@
                 <p class="mb-0 mt-1 opacity-75 small">Modul terpadu pengelolaan Data Diri Master Karyawan, Jabatan, Site Placement, PPh 21 TER, dan BPJS.</p>
             </div>
             <div class="d-none d-md-block">
-                <a href="{{ route('absensi.create') }}" class="btn btn-light text-primary fw-bold px-3 py-2 rounded-3 shadow-sm">
+                <a href="{{ route('payrolls.local.create') }}" class="btn btn-light text-primary fw-bold px-3 py-2 rounded-3 shadow-sm">
                     <i class="fa-solid fa-calculator me-1"></i> Input Absensi Bulanan
                 </a>
             </div>
@@ -117,7 +117,7 @@
             <h6 class="fw-bold text-dark m-0">
                 <i class="fa-solid fa-clock-rotate-left text-info me-2"></i> Status Penggajian Periode {{ $currentPeriod }}
             </h6>
-            <a href="{{ route('payrolls.index') }}" class="btn btn-sm btn-link text-decoration-none fw-bold">Lihat Semua Rekap →</a>
+            <a href="{{ route('payrolls.local.index') }}" class="btn btn-sm btn-link text-decoration-none fw-bold">Lihat Semua Rekap →</a>
         </div>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">

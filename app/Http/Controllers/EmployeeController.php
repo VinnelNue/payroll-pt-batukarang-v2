@@ -32,13 +32,13 @@ class EmployeeController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        return view('employees.index', compact('employees', 'search'));
+        return view('employees.local.index', compact('employees', 'search'));
     }
 
     public function create()
     {
         $provinces = Province::pluck('name', 'code');
-        return view('employees.create', compact('provinces'));
+        return view('employees.local.create', compact('provinces'));
     }
 
     // 2. Import CSV/Excel
@@ -105,7 +105,7 @@ class EmployeeController extends Controller
                 }
                 fclose($handle);
 
-                return redirect()->route('employees.index')->with('success', "Berhasil mengimpor $successCount data karyawan via CSV!");
+                return redirect()->route('employees.local.index')->with('success', "Berhasil mengimpor $successCount data karyawan via CSV!");
             } catch (\Exception $e) {
                 return redirect()->back()->with('error', 'Gagal memproses file CSV: ' . $e->getMessage());
             }
@@ -113,7 +113,7 @@ class EmployeeController extends Controller
 
         try {
             Excel::import(new EmployeeImport, $file);
-            return redirect()->route('employees.index')->with('success', 'Data Master Karyawan berhasil diimpor via Excel!');
+            return redirect()->route('employees.local.index')->with('success', 'Data Master Karyawan berhasil diimpor via Excel!');
         } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
             $failures = $e->failures();
             $rowNum = isset($failures[0]) ? $failures[0]->row() : 'tertentu';
@@ -243,7 +243,7 @@ class EmployeeController extends Controller
 
         Employee::create($validated);
 
-        return redirect()->route('employees.index')->with('success', 'Data Master Karyawan berhasil ditambahkan!');
+        return redirect()->route('employees.local.index')->with('success', 'Data Master Karyawan berhasil ditambahkan!');
     }
 
     public function edit(Employee $employee)
@@ -253,7 +253,7 @@ class EmployeeController extends Controller
         $districts = $employee->city_code ? District::where('city_code', $employee->city_code)->pluck('name', 'code') : [];
         $villages = $employee->district_code ? Village::where('district_code', $employee->district_code)->pluck('name', 'code') : [];
 
-        return view('employees.edit', compact('employee', 'provinces', 'cities', 'districts', 'villages'));
+        return view('employees.local.edit', compact('employee', 'provinces', 'cities', 'districts', 'villages'));
     }
 
     // 6. Update Data Karyawan
@@ -294,7 +294,7 @@ class EmployeeController extends Controller
 
         $employee->update($validated);
 
-        return redirect()->route('employees.index')->with('success', 'Data Master Karyawan berhasil diperbarui!');
+        return redirect()->route('employees.local.index')->with('success', 'Data Master Karyawan berhasil diperbarui!');
     }
 
     public function destroy(Employee $employee)
@@ -304,7 +304,7 @@ class EmployeeController extends Controller
         }
 
         $employee->delete();
-        return redirect()->route('employees.index')->with('success', 'Data Master Karyawan berhasil dihapus!');
+        return redirect()->route('employees.local.index')->with('success', 'Data Master Karyawan berhasil dihapus!');
     }
 
     public function getCities(Request $request)

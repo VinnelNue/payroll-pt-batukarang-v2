@@ -15,7 +15,7 @@
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <!-- TOMBOL EXPORT CSV -->
-            <a href="{{ route('employees.export') }}" class="btn btn-outline-secondary px-3 py-2 rounded-3 fw-semibold">
+            <a href="{{ route('employees.local.export') }}" class="btn btn-outline-secondary px-3 py-2 rounded-3 fw-semibold">
                 <i class="fa-solid fa-file-export me-1"></i> Export CSV
             </a>
             <!-- TOMBOL IMPOR EXCEL -->
@@ -23,7 +23,7 @@
                 <i class="fa-solid fa-file-excel me-1"></i> Impor Excel
             </button>
             <!-- TOMBOL TAMBAH MANUAL -->
-            <a href="{{ route('employees.create') }}" class="btn btn-primary px-3 py-2 rounded-3 fw-semibold">
+            <a href="{{ route('employees.local.create') }}" class="btn btn-primary px-3 py-2 rounded-3 fw-semibold">
                 <i class="fa-solid fa-user-plus me-1"></i> Tambah Karyawan
             </a>
         </div>
@@ -32,7 +32,7 @@
     <!-- BARIS FITUR SEARCH & FILTER -->
     <div class="row g-2 mb-3">
         <div class="col-md-5 col-lg-4">
-            <form action="{{ route('employees.index') }}" method="GET">
+            <form action="{{ route('employees.local.index') }}" method="GET">
                 <div class="input-group">
                     <span class="input-group-text bg-light border-end-0 rounded-start-3">
                         <i class="fa-solid fa-magnifying-glass text-muted"></i>
@@ -40,7 +40,7 @@
                     <input type="text" name="search" class="form-control bg-light border-start-0" placeholder="Cari Nama, NIK, Email, No HP..." value="{{ request('search') }}">
                     <button class="btn btn-primary rounded-end-3" type="submit">Cari</button>
                     @if(request('search'))
-                        <a href="{{ route('employees.index') }}" class="btn btn-outline-secondary rounded-3 ms-1" title="Reset Pencarian">
+                        <a href="{{ route('employees.local.index') }}" class="btn btn-outline-secondary rounded-3 ms-1" title="Reset Pencarian">
                             <i class="fa-solid fa-xmark"></i>
                         </a>
                     @endif
@@ -154,11 +154,11 @@
                     </td>
                     <td class="text-center">
                         <div class="d-flex justify-content-center gap-1">
-                            <a href="{{ route('employees.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-warning rounded-2" title="Edit">
+                            <a href="{{ route('employees.local.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-warning rounded-2" title="Edit">
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </a>
                             
-                            <form action="{{ route('employees.destroy', $emp->uuid) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data karyawan ini?');">
+                            <form action="{{ route('employees.local.destroy', $emp->uuid) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data karyawan ini?');">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="btn btn-sm btn-outline-danger rounded-2" title="Hapus">
@@ -201,7 +201,7 @@
                 </h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ route('employees.import') }}" method="POST" enctype="multipart/form-data">
+            <form action="{{ route('employees.local.import') }}" method="POST" enctype="multipart/form-data">
                 @csrf
                 <div class="modal-body p-4">
                     <div class="alert alert-info border-0 rounded-3 small mb-3">
@@ -211,7 +211,7 @@
                     <div class="mb-3">
                         <label class="form-label fw-semibold text-dark">Download Format Template</label>
                         <div>
-                            <a href="{{ route('employees.download-template') }}" class="btn btn-sm btn-light border text-primary fw-semibold rounded-2">
+                            <a href="{{ route('employees.local.download-template') }}" class="btn btn-sm btn-light border text-primary fw-semibold rounded-2">
                                 <i class="fa-solid fa-download me-1"></i> Download Template CSV/Excel
                             </a>
                         </div>

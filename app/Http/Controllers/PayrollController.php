@@ -26,7 +26,7 @@ class PayrollController extends Controller
             ->where('period_month', $period)
             ->get();
 
-        return view('payrolls.index', compact('payrolls', 'period'));
+        return view('payrolls.local.index', compact('payrolls', 'period'));
     }
 
     // Halaman Form Input Absensi & Variabel Bulanan (/absensi/input)
@@ -34,7 +34,12 @@ class PayrollController extends Controller
     {
         $period = $request->get('period', date('Y-m'));
 
+        // 1. Cek lock bulan berjalan
         $isLocked = Payroll::where('period_month', $period)->where('is_locked', true)->exists();
+
+        // 2. Cek lock bulan berikutnya (untuk mengunci tanggal > cutoff_day)
+        $nextPeriodStr = \Carbon\Carbon::parse($period . '-01')->addMonth()->format('Y-m');
+        $isNextPeriodLocked = Payroll::where('period_month', $nextPeriodStr)->where('is_locked', true)->exists();
 
         $employees = Employee::with(['activeContract', 'payrolls' => function($q) use ($period) {
             $q->where('period_month', $period);
@@ -42,9 +47,8 @@ class PayrollController extends Controller
         ->where('is_active', true)
         ->get();
 
-        return view('payrolls.create', compact('employees', 'period', 'isLocked'));
+        return view('payrolls.local.create', compact('employees', 'period', 'isLocked', 'isNextPeriodLocked'));
     }
-
     public function import(Request $request)
     {
         $request->validate([
@@ -182,6 +186,7 @@ class PayrollController extends Controller
                     'period_month' => $period,
                 ],
                 [
+                    'daily_attendance'    => $data['daily_attendance'] ?? [],
                     'work_days'           => $workDays,
                     'unpaid_leave'        => $unpaidLeave,
                     'overtime_hours'      => $overtimeHours,
@@ -202,7 +207,7 @@ class PayrollController extends Controller
             );
         }
 
-        return redirect()->route('payrolls.index', ['period' => $period])
+        return redirect()->route('payrolls.local.index', ['period' => $period])
             ->with('success', 'Data Absensi & Payroll Periode ' . $period . ' Berhasil Diproses!');
     }
 
@@ -327,7 +332,7 @@ class PayrollController extends Controller
             })
             ->firstOrFail();
 
-        $pdf = Pdf::loadView('payrolls.pdf_slip', compact('payroll'))->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('payrolls.local.pdf_slip', compact('payroll'))->setPaper('a4', 'portrait');
 
         return $pdf->stream('Slip_Gaji_' . $payroll->employee->full_name . '_' . $payroll->period_month . '.pdf');
     }
@@ -346,7 +351,7 @@ class PayrollController extends Controller
             return redirect()->back()->with('error', 'Email karyawan ' . $payroll->employee->full_name . ' belum diisi di Master Karyawan!');
         }
 
-        $pdfBinary = Pdf::loadView('payrolls.pdf_slip', compact('payroll'))->setPaper('a4', 'portrait')->output();
+        $pdfBinary = Pdf::loadView('payrolls.local.pdf_slip', compact('payroll'))->setPaper('a4', 'portrait')->output();
 
         Mail::to($emailDestination)->send(new SalarySlipMail($payroll, $pdfBinary));
 
@@ -395,7 +400,7 @@ class PayrollController extends Controller
             ],
         ];
 
-        return view('payrolls.tax_bpjs_master', compact('terCategories', 'bpjsSettings'));
+        return view('payrolls.local.tax_bpjs_master', compact('terCategories', 'bpjsSettings'));
     }
 
     public function updateBpjsSetting(Request $request)

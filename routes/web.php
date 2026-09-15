@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\OuterIslandEmployeeController;
 use App\Http\Controllers\EmployeeContractController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
@@ -14,66 +15,266 @@ use App\Http\Controllers\UserController;
 | ROUTE GUEST (LOGIN & LOGOUT)
 |--------------------------------------------------------------------------
 */
-Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
-Route::post('/login', [LoginController::class, 'login'])->name('login.perform');
-Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
+
+Route::get('/login', [LoginController::class, 'showLoginForm'])
+    ->name('login');
+
+Route::post('/login', [LoginController::class, 'login'])
+    ->name('login.perform');
+
+Route::post('/logout', [LoginController::class, 'logout'])
+    ->name('logout');
+
 
 /*
 |--------------------------------------------------------------------------
-| ROUTE TERKUNCI (HARUS LOGIN / MIDDLEWARE AUTH)
+| ROUTE TERKUNCI (MIDDLEWARE AUTH)
 |--------------------------------------------------------------------------
 */
 
 Route::middleware(['auth'])->group(function () {
 
-    // 1. Dashboard Utama
-    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+    /*
+    |--------------------------------------------------------------------------
+    | 1. DASHBOARD UTAMA
+    |--------------------------------------------------------------------------
+    */
 
-    // 2. Modul Master Karyawan
-    Route::get('employees/export', [EmployeeController::class, 'export'])->name('employees.export');
-    Route::post('employees/import', [EmployeeController::class, 'import'])->name('employees.import');
-    Route::get('employees/download-template', [EmployeeController::class, 'downloadTemplate'])->name('employees.download-template');
+    Route::get('/', [DashboardController::class, 'index'])
+        ->name('dashboard');
 
-    Route::get('employees/get-cities', [EmployeeController::class, 'getCities'])->name('employees.get-cities');
-    Route::get('employees/get-districts', [EmployeeController::class, 'getDistricts'])->name('employees.get-districts');
-    Route::get('employees/get-villages', [EmployeeController::class, 'getVillages'])->name('employees.get-villages');
 
-    Route::get('api/cities', [EmployeeController::class, 'getCities'])->name('api.cities');
-    Route::get('api/districts', [EmployeeController::class, 'getDistricts'])->name('api.districts');
-    Route::get('api/villages', [EmployeeController::class, 'getVillages'])->name('api.villages');
+    /*
+    |--------------------------------------------------------------------------
+    | 2A. MODUL MASTER KARYAWAN LOKAL
+    |--------------------------------------------------------------------------
+    */
 
-    Route::resource('employees', EmployeeController::class);
+    Route::prefix('employees/local')
+        ->name('employees.local.')
+        ->group(function () {
 
-    // 3. Modul Kontrak Kerja
-    Route::get('contracts', [EmployeeContractController::class, 'index'])->name('contracts.index');
-    Route::get('contracts/{employee}/edit', [EmployeeContractController::class, 'edit'])->name('contracts.edit');
-    Route::put('contracts/{employee}', [EmployeeContractController::class, 'update'])->name('contracts.update');
+            Route::get('export', [EmployeeController::class, 'export'])
+                ->name('export');
 
-    // 4. Modul Payroll & Tax
-    Route::get('/payrolls', [PayrollController::class, 'index'])->name('payrolls.index');
-    Route::get('/absensi/input', [PayrollController::class, 'create'])->name('absensi.create');
-    Route::get('/payrolls/export-bca', [PayrollController::class, 'exportBca'])->name('payrolls.export-bca');
-    Route::post('/payrolls/store', [PayrollController::class, 'store'])->name('payrolls.store');
-    Route::post('/payrolls/import', [PayrollController::class, 'import'])->name('payrolls.import');
+            Route::post('import', [EmployeeController::class, 'import'])
+                ->name('import');
 
-    // Action Lock, Request Unlock, Unlock, Reject
-    Route::post('/payrolls/lock', [PayrollController::class, 'lockCalculation'])->name('payrolls.lock');
-    Route::post('/payrolls/request-unlock', [PayrollController::class, 'requestUnlock'])->name('payrolls.requestUnlock');
-    Route::post('/payrolls/unlock', [PayrollController::class, 'unlockCalculation'])->name('payrolls.unlock');
-    // SESUDAH (SUDAH DIPERBAIKI):
-    Route::post('/payrolls/reject-unlock', [PayrollController::class, 'rejectUnlock'])->name('payrolls.rejectUnlock');
+            Route::get('download-template', [EmployeeController::class, 'downloadTemplate'])
+                ->name('download-template');
+        });
 
-    Route::get('/tax-bpjs-master', [PayrollController::class, 'taxBpjsMaster'])->name('tax-bpjs.index');
-    Route::post('/tax-bpjs-master/update-bpjs', [PayrollController::class, 'updateBpjsSetting'])->name('tax-bpjs.update-bpjs');
+    Route::resource('employees/local', EmployeeController::class)
+        ->parameters(['local' => 'employee'])
+        ->names('employees.local');
 
-    Route::get('/payrolls/{uuid}/print-pdf', [PayrollController::class, 'printPdf'])->name('payrolls.print-pdf');
-    Route::get('/payrolls/{uuid}/send-email', [PayrollController::class, 'sendEmail'])->name('payrolls.send-email');
-        // 5. Modul Personal Profile Settings
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
 
-    // 6. User Management
-    Route::get('/users', [UserController::class, 'index'])->name('users.index');
-    Route::post('/users', [UserController::class, 'store'])->name('users.store');
-    Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+    /*
+    |--------------------------------------------------------------------------
+    | 2B. MODUL MASTER KARYAWAN LUAR PULAU
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('employees/outer-island')
+        ->name('employees.outer-island.')
+        ->group(function () {
+
+            Route::get('export', [OuterIslandEmployeeController::class, 'export'])
+                ->name('export');
+
+            Route::post('import', [OuterIslandEmployeeController::class, 'import'])
+                ->name('import');
+
+            Route::get('download-template', [OuterIslandEmployeeController::class, 'downloadTemplate'])
+                ->name('download-template');
+        });
+
+    Route::resource('employees/outer-island', OuterIslandEmployeeController::class)
+        ->names('employees.outer-island');
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3. API REGION INDONESIA
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('api')
+        ->name('api.')
+        ->group(function () {
+
+            Route::get('cities', [EmployeeController::class, 'getCities'])
+                ->name('cities');
+
+            Route::get('districts', [EmployeeController::class, 'getDistricts'])
+                ->name('districts');
+
+            Route::get('villages', [EmployeeController::class, 'getVillages'])
+                ->name('villages');
+        });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 4. MODUL KONTRAK KERJA LOKAL
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('contracts/local')
+        ->name('contracts.local.')
+        ->group(function () {
+
+            Route::get('/', [EmployeeContractController::class, 'index'])
+                ->name('index');
+
+            Route::get('{employee}/edit', [EmployeeContractController::class, 'edit'])
+                ->name('edit');
+
+            Route::put('{employee}', [EmployeeContractController::class, 'update'])
+                ->name('update');
+        });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 5. MODUL PAYROLL & TAX - LOCAL
+    |--------------------------------------------------------------------------
+    |
+    | Sebelumnya:
+    |
+    | /payrolls
+    | /absensi/input
+    |
+    | Sekarang:
+    |
+    | /payrolls/local
+    | /payrolls/local/create
+    |
+    */
+
+    Route::prefix('payrolls/local')
+        ->name('payrolls.local.')
+        ->group(function () {
+
+            /*
+            |--------------------------------------------------------------------------
+            | Payroll Index / Rekap
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get('/', [PayrollController::class, 'index'])
+                ->name('index');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Input Absensi & Variabel Payroll
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get('create', [PayrollController::class, 'create'])
+                ->name('create');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Simpan Payroll
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post('store', [PayrollController::class, 'store'])
+                ->name('store');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Import Absensi
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post('import', [PayrollController::class, 'import'])
+                ->name('import');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Export BCA
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get('export-bca', [PayrollController::class, 'exportBca'])
+                ->name('export-bca');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | LOCK & UNLOCK
+            |--------------------------------------------------------------------------
+            */
+
+            Route::post('lock', [PayrollController::class, 'lockCalculation'])
+                ->name('lock');
+
+            Route::post('request-unlock', [PayrollController::class, 'requestUnlock'])
+                ->name('requestUnlock');
+
+            Route::post('unlock', [PayrollController::class, 'unlockCalculation'])
+                ->name('unlock');
+
+            Route::post('reject-unlock', [PayrollController::class, 'rejectUnlock'])
+                ->name('rejectUnlock');
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | DOCUMENT OUTPUT
+            |--------------------------------------------------------------------------
+            */
+
+            Route::get('{uuid}/print-pdf', [PayrollController::class, 'printPdf'])
+                ->name('print-pdf');
+
+            Route::get('{uuid}/send-email', [PayrollController::class, 'sendEmail'])
+                ->name('send-email');
+        });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 6. TAX & BPJS MASTER
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get('/tax-bpjs-master', [PayrollController::class, 'taxBpjsMaster'])
+        ->name('tax-bpjs.index');
+
+    Route::post('/tax-bpjs-master/update-bpjs', [PayrollController::class, 'updateBpjsSetting'])
+        ->name('tax-bpjs.update-bpjs');
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 7. PROFILE SETTINGS
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get('/profile', [ProfileController::class, 'edit'])
+        ->name('profile.edit');
+
+    Route::put('/profile', [ProfileController::class, 'update'])
+        ->name('profile.update');
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 8. USER MANAGEMENT
+    |--------------------------------------------------------------------------
+    */
+
+    Route::resource('users', UserController::class)
+        ->only([
+            'index',
+            'store',
+            'destroy'
+        ]);
 });

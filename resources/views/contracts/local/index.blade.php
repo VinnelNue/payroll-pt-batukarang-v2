@@ -99,7 +99,7 @@
                         @endif
                     </td>
                     <td class="text-center">
-                        <a href="{{ route('contracts.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-primary rounded-2" title="Kelola Kontrak & Gaji">
+                        <a href="{{ route('contracts.local.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-primary rounded-2" title="Kelola Kontrak & Gaji">
                             <i class="fa-solid fa-pen-to-square me-1"></i> Edit Kontrak
                         </a>
                     </td>

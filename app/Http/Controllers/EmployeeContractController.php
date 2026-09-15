@@ -13,7 +13,7 @@ class EmployeeContractController extends Controller
     {
         $employees = Employee::with('activeContract')->oldest('id_employee')->paginate(10);
 
-        return view('contracts.index', compact('employees'));
+        return view('contracts.local.index', compact('employees'));
     }
 
     // 2. Menampilkan Form Setup Kontrak untuk 1 Karyawan
@@ -21,7 +21,7 @@ class EmployeeContractController extends Controller
     {
         $contract = $employee->activeContract;
 
-        return view('contracts.contract', compact('employee', 'contract'));
+        return view('contracts.local.contract', compact('employee', 'contract'));
     }
 
     // 3. Menyimpan / Meng-update Kontrak Karyawan
@@ -108,6 +108,6 @@ class EmployeeContractController extends Controller
             ? 'Status karyawan telah diperbarui menjadi ' . $request->employment_type . ' (Non-Aktif).'
             : 'Data Penempatan, Divisi, & Gaji Acuan karyawan berhasil disimpan!';
 
-        return redirect()->route('contracts.index')->with('success', $message);
+        return redirect()->route('contracts.local.index')->with('success', $message);
     }
 }

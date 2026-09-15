@@ -41,20 +41,20 @@
 
         <div class="d-flex flex-wrap align-items-center gap-2">
             <!-- FILTER PERIODE BULAN -->
-            <form action="{{ route('payrolls.index') }}" method="GET" class="d-flex gap-2">
+            <form action="{{ route('payrolls.local.index') }}" method="GET" class="d-flex gap-2">
                 <input type="month" name="period" class="form-control form-control-sm fw-bold border-secondary-subtle" value="{{ $period }}" onchange="this.form.submit()">
             </form>
 
             <!-- EXPORT BCA MASS TRANSFER (HANYA MANAGER KEUANGAN) -->
             @if($payrolls->count() > 0 && $isExecutive)
-                <a href="{{ route('payrolls.export-bca', ['period' => $period]) }}" class="btn btn-outline-success btn-sm px-3 py-2 rounded-3 fw-semibold">
+                <a href="{{ route('payrolls.local.export-bca', ['period' => $period]) }}" class="btn btn-outline-success btn-sm px-3 py-2 rounded-3 fw-semibold">
                     <i class="fa-solid fa-file-excel me-1"></i> Export BCA CSV
                 </a>
             @endif
 
             <!-- ACTION EDIT ABSENSI (HANYA MUNCUL JIKA BELUM LOCKED) -->
             @if(!$isLocked)
-                <a href="{{ route('absensi.create', ['period' => $period]) }}" class="btn btn-primary btn-sm px-3 py-2 rounded-3 fw-semibold">
+               <a href="{{ route('payrolls.local.create', ['period' => $period]) }}" class="btn btn-primary btn-sm px-3 py-2 rounded-3 fw-semibold">
                     <i class="fa-solid fa-pen-to-square me-1"></i> Edit Absensi & Variabel
                 </a>
             @endif
@@ -63,7 +63,7 @@
             @if(!$isLocked)
                 {{-- JIKA UNLOCKED: MUNCUL TOMBOL KUNCI --}}
                 @if($payrolls->count() > 0)
-                    <form action="{{ route('payrolls.lock') }}" method="POST" class="d-inline">
+                    <form action="{{ route('payrolls.local.lock') }}" method="POST" class="d-inline">
                         @csrf
                         <input type="hidden" name="period" value="{{ $period }}">
                         <button type="submit" class="btn btn-danger btn-sm px-3 py-2 rounded-3 fw-semibold" onclick="return confirm('Kunci kalkulasi payroll periode {{ $period }}? Data tidak bisa diubah setelah dikunci.')">
@@ -75,7 +75,7 @@
                 {{-- JIKA LOCKED: CEK HAK AKSES --}}
                 @if($isExecutive)
                     {{-- Manager Keuangan & Super Admin BISA LANGSUNG UNLOCK TANPA PERIZINAN --}}
-                    <form action="{{ route('payrolls.unlock') }}" method="POST" class="d-inline">
+                    <form action="{{ route('payrolls.local.unlock') }}" method="POST" class="d-inline">
                         @csrf
                         <input type="hidden" name="period" value="{{ $period }}">
                         <button type="submit" class="btn btn-warning btn-sm px-3 py-2 rounded-3 fw-semibold" onclick="return confirm('Buka kuncian payroll periode {{ $period }}?')">
@@ -109,7 +109,7 @@
             @if($isExecutive)
                 {{-- Action untuk Manager Keuangan & Super Admin --}}
                 <div class="d-flex gap-2">
-                    <form action="{{ route('payrolls.unlock') }}" method="POST" class="d-inline">
+                    <form action="{{ route('payrolls.local.unlock') }}" method="POST" class="d-inline">
                         @csrf
                         <input type="hidden" name="period" value="{{ $period }}">
                         <button type="submit" class="btn btn-success btn-sm px-3 rounded-3 fw-semibold" onclick="return confirm('Setujui dan buka kuncian payroll?')">
@@ -117,7 +117,7 @@
                         </button>
                     </form>
 
-                    <form action="{{ route('payrolls.rejectUnlock') }}" method="POST" class="d-inline">
+                    <form action="{{ route('payrolls.local.rejectUnlock') }}" method="POST" class="d-inline">
                         @csrf
                         <input type="hidden" name="period" value="{{ $period }}">
                         <button type="submit" class="btn btn-outline-secondary btn-sm px-3 rounded-3 fw-semibold">
@@ -295,10 +295,10 @@
                         </td>
                         <td class="text-center px-3">
                             <div class="d-flex justify-content-center gap-1">
-                                <a href="{{ route('payrolls.print-pdf', $pay->employee->uuid) }}" target="_blank" class="btn btn-light btn-sm border rounded-3 text-danger hover-bg-danger" title="Cetak Slip PDF">
+                                <a href="{{ route('payrolls.local.print-pdf', $pay->employee->uuid) }}" target="_blank" class="btn btn-light btn-sm border rounded-3 text-danger hover-bg-danger" title="Cetak Slip PDF">
                                     <i class="fa-solid fa-file-pdf fs-6"></i>
                                 </a>
-                                <a href="{{ route('payrolls.send-email', $pay->employee->uuid) }}" class="btn btn-light btn-sm border rounded-3 text-primary hover-bg-primary" title="Kirim Email Slip Gaji" onclick="return confirm('Kirim slip gaji ke email karyawan?')">
+                                <a href="{{ route('payrolls.local.send-email', $pay->employee->uuid) }}" class="btn btn-light btn-sm border rounded-3 text-primary hover-bg-primary" title="Kirim Email Slip Gaji" onclick="return confirm('Kirim slip gaji ke email karyawan?')">
                                     <i class="fa-solid fa-paper-plane fs-6"></i>
                                 </a>
                             </div>
@@ -311,7 +311,7 @@
                         <i class="fa-solid fa-file-circle-xmark fs-2 d-block mb-2 text-secondary opacity-50"></i>
                         Belum ada data payroll diproses untuk periode {{ $period }}.
                         <div class="mt-2">
-                            <a href="{{ route('absensi.create') }}" class="btn btn-sm btn-primary px-3 rounded-3">
+                            <a href="{{ route('payrolls.local.create') }}" class="btn btn-sm btn-primary px-3 rounded-3">
                                 <i class="fa-solid fa-plus me-1"></i> Input Absensi
                             </a>
                         </div>
@@ -327,7 +327,7 @@
 @if($isLocked && !$isExecutive)
 <div class="modal fade" id="requestUnlockModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <form action="{{ route('payrolls.requestUnlock') }}" method="POST">
+        <form action="{{ route('payrolls.local.requestUnlock') }}" method="POST">
             @csrf
             <input type="hidden" name="period" value="{{ $period }}">
             <div class="modal-content rounded-4 border-0 shadow">

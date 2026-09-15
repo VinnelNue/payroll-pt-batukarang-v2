@@ -42,29 +42,116 @@
                 <span>Dashboard</span>
             </a>
 
-            <!-- GROUP 2: MASTER KARYAWAN & KONTRAK -->
+            <!-- GROUP 2: MASTER KARYAWAN -->
             <div class="menu-header mt-3">Master Karyawan</div>
-            <a href="{{ route('employees.index') }}" class="nav-link-custom {{ request()->routeIs('employees.*') ? 'active' : '' }}" title="Data Diri Karyawan">
-                <i class="fa-solid fa-user-gear"></i>
-                <span>Data Diri Karyawan</span>
-            </a>
 
-            <a href="{{ route('contracts.index') }}" class="nav-link-custom {{ request()->routeIs('contracts.*') ? 'active' : '' }}" title="Penempatan & Kontrak">
-                <i class="fa-solid fa-file-signature"></i>
-                <span>Penempatan & Kontrak</span>
+            <!-- 1. WILAYAH MALANG -->
+            @php
+                $isMalangActive = request()->routeIs('employees.malang.*') || request()->routeIs('contracts.malang.*');
+            @endphp
+            <a class="nav-link-custom d-flex align-items-center justify-content-between {{ $isMalangActive ? '' : 'collapsed' }}" 
+            data-bs-toggle="collapse" href="#menuMalang" role="button" aria-expanded="{{ $isMalangActive ? 'true' : 'false' }}">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-city"></i>
+                    <span>Karyawan Malang</span>
+                </div>
+                <i class="fa-solid fa-chevron-down small transition-icon"></i>
             </a>
+            <div class="collapse {{ $isMalangActive ? 'show' : '' }} ms-3 ps-2 border-start border-white border-opacity-25" id="menuMalang">
+                <a href="{{ route('employees.local.index') }}" class="nav-link-custom py-2 my-1 {{ request()->routeIs('employees.index') ? 'active' : '' }}">
+                    <i class="fa-solid fa-user me-2"></i><span>Data Diri</span>
+                </a>
+                <a href="{{ route('contracts.local.index') }}" class="nav-link-custom py-2 my-1 {{ request()->routeIs('contracts.index') ? 'active' : '' }}">
+                    <i class="fa-solid fa-file-signature me-2"></i><span>Penempatan & Kontrak</span>
+                </a>
+            </div>
+
+            <!-- 2. WILAYAH LUAR PULAU -->
+            @php
+                $isLuarPulauActive = request()->routeIs('employees.luar.*') || request()->routeIs('contracts.luar.*');
+            @endphp
+            <a class="nav-link-custom d-flex align-items-center justify-content-between mt-1 {{ $isLuarPulauActive ? '' : 'collapsed' }}" 
+            data-bs-toggle="collapse" href="#menuLuarPulau" role="button" aria-expanded="{{ $isLuarPulauActive ? 'true' : 'false' }}">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-plane-departure"></i>
+                    <span>Karyawan Luar Pulau</span>
+                </div>
+                <i class="fa-solid fa-chevron-down small transition-icon"></i>
+            </a>
+            <div class="collapse {{ $isLuarPulauActive ? 'show' : '' }} ms-3 ps-2 border-start border-white border-opacity-25" id="menuLuarPulau">
+                <a href="#" class="nav-link-custom py-2 my-1">
+                    <i class="fa-solid fa-user me-2"></i><span>Data Diri</span>
+                </a>
+                <a href="#" class="nav-link-custom py-2 my-1">
+                    <i class="fa-solid fa-file-signature me-2"></i><span>Penempatan & Kontrak</span>
+                </a>
+            </div>
 
             <!-- GROUP 3: PENGGAJIAN & PERPAJAKAN -->
             <div class="menu-header mt-3">Penggajian & Tax</div>
-            <a href="{{ route('absensi.create') }}" class="nav-link-custom {{ request()->routeIs('absensi.create') ? 'active' : '' }}" title="Input Absensi & Variabel">
-                <i class="fa-solid fa-calendar-check"></i>
-                <span>Input Absensi</span>
+                <!-- 1. INPUT ABSENSI (COLLAPSE) -->
+
+                @php
+                    $isAbsensiActive = request()->routeIs('payrolls.local.create');
+                @endphp
+
+                <a class="nav-link-custom d-flex align-items-center justify-content-between {{ $isAbsensiActive ? '' : 'collapsed' }}"
+                data-bs-toggle="collapse"
+                href="#menuAbsensi"
+                role="button"
+                aria-expanded="{{ $isAbsensiActive ? 'true' : 'false' }}">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-calendar-check"></i>
+                    <span>Input Absensi</span>
+                </div>
+
+                <i class="fa-solid fa-chevron-down small transition-icon"></i>
+                </a>
+
+                <div class="collapse {{ $isAbsensiActive ? 'show' : '' }} ms-3 ps-2 border-start border-white border-opacity-25"
+                    id="menuAbsensi">
+                <!-- ABSENSI LOCAL -->
+                <a href="{{ route('payrolls.local.create') }}"
+                class="nav-link-custom py-2 my-1 {{ request()->routeIs('payrolls.local.create') ? 'active' : '' }}">
+
+                    <i class="fa-solid fa-location-dot me-2"></i>
+                    <span>Absensi Malang</span>
+                </a>
+
+                <!-- ABSENSI OUTER ISLAND -->
+                <!-- Route akan dibuat nanti ketika modul Outer Island sudah dibuat -->
+                <a href="#"
+                class="nav-link-custom py-2 my-1">
+
+                    <i class="fa-solid fa-plane-departure me-2"></i>
+                    <span>Absensi Luar Pulau</span>
+                </a>
+                </div>
+
+
+            <!-- 2. PROCESS PAYROLL (COLLAPSE / TERPISAH) -->
+            @php
+                $isPayrollActive = request()->routeIs('payrolls.*') && !request()->routeIs('absensi.*');
+            @endphp
+            <a class="nav-link-custom d-flex align-items-center justify-content-between mt-1 {{ $isPayrollActive ? '' : 'collapsed' }}" 
+            data-bs-toggle="collapse" href="#menuPayroll" role="button" aria-expanded="{{ $isPayrollActive ? 'true' : 'false' }}">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="fa-solid fa-file-invoice-dollar"></i>
+                    <span>Process Payroll</span>
+                </div>
+                <i class="fa-solid fa-chevron-down small transition-icon"></i>
             </a>
-            <a href="{{ route('payrolls.index') }}" class="nav-link-custom {{ request()->routeIs('payrolls.*') && !request()->routeIs('absensi.create') ? 'active' : '' }}" title="Process Payroll">
-                <i class="fa-solid fa-file-invoice-dollar"></i>
-                <span>Process Payroll</span>
-            </a>
-            <a href="{{ route('tax-bpjs.index') }}" class="nav-link-custom {{ request()->routeIs('tax-bpjs.*') ? 'active' : '' }}" title="PPh 21 & BPJS Master">
+            <div class="collapse {{ $isPayrollActive ? 'show' : '' }} ms-3 ps-2 border-start border-white border-opacity-25" id="menuPayroll">
+                <a href="{{ route('payrolls.local.index', ['region' => 'malang']) }}" class="nav-link-custom py-2 my-1">
+                    <i class="fa-solid fa-location-dot me-2"></i><span>Payroll Malang</span>
+                </a>
+                <a href="#" class="nav-link-custom py-2 my-1">
+                    <i class="fa-solid fa-plane-departure me-2"></i><span>Payroll Luar Pulau</span>
+                </a>
+            </div>
+
+            <!-- 3. PPH 21 & BPJS (TETAP TUNGGAL) -->
+            <a href="{{ route('tax-bpjs.index') }}" class="nav-link-custom mt-1 {{ request()->routeIs('tax-bpjs.*') ? 'active' : '' }}" title="PPh 21 & BPJS Master">
                 <i class="fa-solid fa-calculator"></i>
                 <span>PPh 21 & BPJS Master</span>
             </a>
