@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
-use App\Http\Controllers\OuterIslandEmployeeController;
+use App\Http\Controllers\EmployeeOuterIslandController;
 use App\Http\Controllers\EmployeeContractController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
@@ -75,22 +75,22 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     */
 
-    Route::prefix('employees/outer-island')
-        ->name('employees.outer-island.')
+    Route::prefix('employees/outer_island')
+        ->name('employees.outer_island.')
         ->group(function () {
 
-            Route::get('export', [OuterIslandEmployeeController::class, 'export'])
+            Route::get('export', [EmployeeOuterIslandController::class, 'export'])
                 ->name('export');
 
-            Route::post('import', [OuterIslandEmployeeController::class, 'import'])
+            Route::post('import', [EmployeeOuterIslandController::class, 'import'])
                 ->name('import');
 
-            Route::get('download-template', [OuterIslandEmployeeController::class, 'downloadTemplate'])
+            Route::get('download-template', [EmployeeOuterIslandController::class, 'downloadTemplate'])
                 ->name('download-template');
         });
 
-    Route::resource('employees/outer-island', OuterIslandEmployeeController::class)
-        ->names('employees.outer-island');
+    Route::resource('employees/outer_island', EmployeeOuterIslandController::class)
+        ->names('employees.outer_island');
 
 
     /*

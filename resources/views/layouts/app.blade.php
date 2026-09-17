@@ -79,7 +79,7 @@
                 <i class="fa-solid fa-chevron-down small transition-icon"></i>
             </a>
             <div class="collapse {{ $isLuarPulauActive ? 'show' : '' }} ms-3 ps-2 border-start border-white border-opacity-25" id="menuLuarPulau">
-                <a href="#" class="nav-link-custom py-2 my-1">
+                <a href="{{ route('employees.outer_island.index') }}" class="nav-link-custom py-2 my-1">
                     <i class="fa-solid fa-user me-2"></i><span>Data Diri</span>
                 </a>
                 <a href="#" class="nav-link-custom py-2 my-1">

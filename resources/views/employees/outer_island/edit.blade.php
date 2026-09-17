@@ -6,8 +6,8 @@
 @section('content')
 <div class="mb-4 d-flex justify-content-between align-items-center">
     <div>
-        <h5 class="fw-bold text-dark m-0">Edit Data Diri: {{ $employee->full_name }}</h5>
-        <small class="text-muted">Perbarui data identitas pribadi, berkas KTP atau rekening payroll karyawan</small>
+        <h5 class="fw-bold text-dark m-0">Edit Data Diri: {{ $employee->full_name_outer }}</h5>
+        <small class="text-muted">Perbarui data identitas pribadi, berkas KTP atau rekening payroll karyawan Luar Pulau</small>
     </div>
     <a href="{{ route('employees.outer_island.index') }}" class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3">
         <i class="fa-solid fa-arrow-left me-1"></i> Kembali

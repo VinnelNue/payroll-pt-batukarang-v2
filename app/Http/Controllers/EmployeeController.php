@@ -7,10 +7,6 @@ use App\Imports\EmployeeImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Laravolt\Indonesia\Models\Province;
-use Laravolt\Indonesia\Models\City;
-use Laravolt\Indonesia\Models\District;
-use Laravolt\Indonesia\Models\Village;
 use Maatwebsite\Excel\Facades\Excel;
 
 class EmployeeController extends Controller
@@ -20,8 +16,7 @@ class EmployeeController extends Controller
     {
         $search = $request->get('search');
 
-        $employees = Employee::with(['province', 'city'])
-            ->when($search, function ($query) use ($search) {
+        $employees = Employee::when($search, function ($query) use ($search) {
                 $query->where('full_name', 'LIKE', "%{$search}%")
                       ->orWhere('nik_ktp', 'LIKE', "%{$search}%")
                       ->orWhere('no_kk', 'LIKE', "%{$search}%")
@@ -37,8 +32,7 @@ class EmployeeController extends Controller
 
     public function create()
     {
-        $provinces = Province::pluck('name', 'code');
-        return view('employees.local.create', compact('provinces'));
+        return view('employees.local.create');
     }
 
     // 2. Import CSV/Excel
@@ -90,14 +84,10 @@ class EmployeeController extends Controller
                         'email'               => $row[9] ?? null,
                         'address_ktp'         => $row[10] ?? '-',
                         'address_domicile'    => $row[11] ?? null,
-                        'province_code'       => $cleanNumber($row[12] ?? null),
-                        'city_code'           => $cleanNumber($row[13] ?? null),
-                        'district_code'       => $cleanNumber($row[14] ?? null),
-                        'village_code'        => $cleanNumber($row[15] ?? null),
-                        'npwp_number'         => $cleanNumber($row[16] ?? null),
-                        'bank_name'           => $row[17] ?? null,
-                        'bank_account_number' => $cleanNumber($row[18] ?? null),
-                        'bank_account_holder' => $row[19] ?? null,
+                        'npwp_number'         => $cleanNumber($row[12] ?? null),
+                        'bank_name'           => $row[13] ?? null,
+                        'bank_account_number' => $cleanNumber($row[14] ?? null),
+                        'bank_account_holder' => $row[15] ?? null,
                         'is_active'           => true,
                     ]);
 
@@ -134,16 +124,17 @@ class EmployeeController extends Controller
             'Content-Disposition' => "attachment; filename=\"$filename\"",
         ];
 
-        $employees = Employee::with(['province', 'city'])->latest('id_employee')->get();
+        $employees = Employee::latest('id_employee')->get();
 
         $columns = [
             'NIK KTP', 'No KK', 'Nama Lengkap', 'Jenis Kelamin', 'Tempat Lahir', 'Tanggal Lahir',
-            'Agama', 'Status Pernikahan', 'No HP', 'Email', 'Alamat KTP', 'Provinsi', 'Kota/Kabupaten',
+            'Agama', 'Status Pernikahan', 'No HP', 'Email', 'Alamat KTP', 'Alamat Domisili',
             'NPWP', 'Nama Bank', 'No Rekening', 'Pemilik Rekening'
         ];
 
         $callback = function () use ($employees, $columns) {
             $file = fopen('php://output', 'w');
+            fputs($file, "\xEF\xBB\xBF"); // UTF-8 BOM untuk Excel
             fputcsv($file, $columns);
 
             foreach ($employees as $emp) {
@@ -159,8 +150,7 @@ class EmployeeController extends Controller
                     $emp->phone_number,
                     $emp->email,
                     $emp->address_ktp,
-                    $emp->province->name ?? '',
-                    $emp->city->name ?? '',
+                    $emp->address_domicile,
                     $emp->npwp_number,
                     $emp->bank_name,
                     $emp->bank_account_number,
@@ -185,19 +175,18 @@ class EmployeeController extends Controller
         $columns = [
             'nik_ktp', 'no_kk', 'nama_lengkap', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
             'agama', 'status_pernikahan', 'no_hp', 'email', 'alamat_ktp', 'alamat_domisili',
-            'kode_provinsi', 'kode_kota', 'kode_kecamatan', 'kode_kelurahan',
             'npwp', 'nama_bank', 'no_rekening', 'pemilik_rekening'
         ];
 
         $sampleData = [
             '3578123456780001', '3578123456780002', 'Budi Santoso', 'L', 'Surabaya', '1995-08-17',
             'Islam', 'single', '081234567890', 'budi@batukarang.com', 'Jl. Merdeka No. 45', 'Jl. Merdeka No. 45',
-            '35', '3578', '357801', '3578011001',
             '12.345.678.9-012.000', 'BCA', '1234567890', 'BUDI SANTOSO'
         ];
 
         $callback = function () use ($columns, $sampleData) {
             $file = fopen('php://output', 'w');
+            fputs($file, "\xEF\xBB\xBF"); // UTF-8 BOM
             fputcsv($file, $columns);
             fputcsv($file, $sampleData);
             fclose($file);
@@ -222,15 +211,11 @@ class EmployeeController extends Controller
             'email'               => 'nullable|email|max:255',
             'address_ktp'         => 'required|string',
             'address_domicile'    => 'nullable|string',
-            'province_code'       => 'nullable|string',
-            'city_code'           => 'nullable|string',
-            'district_code'       => 'nullable|string',
-            'village_code'        => 'nullable|string',
             'npwp_number'         => 'nullable|string|max:30',
             'bank_name'           => 'nullable|string|max:50',
             'bank_account_number' => 'nullable|string|max:50',
             'bank_account_holder' => 'nullable|string|max:255',
-            'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
+            'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5000',
         ]);
 
         $validated['uuid'] = (string) Str::uuid();
@@ -248,12 +233,7 @@ class EmployeeController extends Controller
 
     public function edit(Employee $employee)
     {
-        $provinces = Province::pluck('name', 'code');
-        $cities = $employee->province_code ? City::where('province_code', $employee->province_code)->pluck('name', 'code') : [];
-        $districts = $employee->city_code ? District::where('city_code', $employee->city_code)->pluck('name', 'code') : [];
-        $villages = $employee->district_code ? Village::where('district_code', $employee->district_code)->pluck('name', 'code') : [];
-
-        return view('employees.local.edit', compact('employee', 'provinces', 'cities', 'districts', 'villages'));
+        return view('employees.local.edit', compact('employee'));
     }
 
     // 6. Update Data Karyawan
@@ -272,10 +252,6 @@ class EmployeeController extends Controller
             'email'               => 'nullable|email|max:255',
             'address_ktp'         => 'required|string',
             'address_domicile'    => 'nullable|string',
-            'province_code'       => 'nullable|string',
-            'city_code'           => 'nullable|string',
-            'district_code'       => 'nullable|string',
-            'village_code'        => 'nullable|string',
             'npwp_number'         => 'nullable|string|max:30',
             'bank_name'           => 'nullable|string|max:50',
             'bank_account_number' => 'nullable|string|max:50',
@@ -305,23 +281,5 @@ class EmployeeController extends Controller
 
         $employee->delete();
         return redirect()->route('employees.local.index')->with('success', 'Data Master Karyawan berhasil dihapus!');
-    }
-
-    public function getCities(Request $request)
-    {
-        $cities = City::where('province_code', $request->province_code)->pluck('name', 'code');
-        return response()->json($cities);
-    }
-
-    public function getDistricts(Request $request)
-    {
-        $districts = District::where('city_code', $request->city_code)->pluck('name', 'code');
-        return response()->json($districts);
-    }
-
-    public function getVillages(Request $request)
-    {
-        $villages = Village::where('district_code', $request->district_code)->pluck('name', 'code');
-        return response()->json($villages);
     }
 }

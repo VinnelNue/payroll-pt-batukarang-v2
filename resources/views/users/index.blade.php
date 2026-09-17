@@ -29,6 +29,14 @@
         </div>
     @endif
 
+    {{-- Alert jika ada error validasi formulir --}}
+    @if ($errors->any())
+        <div class="alert alert-danger alert-dismissible fade show rounded-3 mb-3">
+            <i class="fa-solid fa-triangle-exclamation me-2"></i> Terdapat kesalahan pada pengisian form. Silakan periksa kembali.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
     <div class="table-responsive">
         <table class="table table-hover align-middle border-top">
             <thead class="table-light">
@@ -42,7 +50,7 @@
             </thead>
             <tbody>
                 @forelse($users as $u)
-                <!-- PROTEKSI KEDUA: JIKA ADA BAPAK SUPER ADMIN, JANGAN RENDER BARISNYA -->
+                <!-- PROTEKSI: JIKA SUPER ADMIN, JANGAN RENDER BARISNYA -->
                 @if($u->role === 'super_admin') @continue @endif
 
                 <tr>
@@ -61,9 +69,13 @@
                     <td>{{ $u->email }}</td>
                     <td>
                         @if($u->role == 'manager_keuangan')
-                            <span class="badge bg-primary-subtle text-primary border rounded-pill px-3 py-1">Manager Keuangan</span>
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-1">Manager Keuangan</span>
+                        @elseif($u->role == 'finance')
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-3 py-1">Staff Keuangan</span>
+                        @elseif($u->role == 'head_hrd')
+                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3 py-1">Kepala HRD</span>
                         @elseif($u->role == 'hrd')
-                            <span class="badge bg-success-subtle text-success border rounded-pill px-3 py-1">HRD Admin</span>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1">HRD Staff</span>
                         @else
                             <span class="badge bg-secondary-subtle text-secondary border rounded-pill px-3 py-1">Karyawan</span>
                         @endif
@@ -109,32 +121,63 @@
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label fw-semibold small">Pilih Karyawan</label>
-                        <select name="employee_id" class="form-select" required>
+                        <select name="employee_id" class="form-select @error('employee_id') is-invalid @enderror" required>
                             <option value="">-- Pilih Master Karyawan --</option>
                             @foreach($employees as $emp)
-                                <option value="{{ $emp->id_employee }}">{{ $emp->full_name }} (NIK: {{ $emp->nik_ktp }})</option>
+                                <option value="{{ $emp->id_employee }}" {{ old('employee_id') == $emp->id_employee ? 'selected' : '' }}>
+                                    {{ $emp->full_name }} (NIK: {{ $emp->nik_ktp }})
+                                </option>
                             @endforeach
                         </select>
-                        <small class="text-muted">Hanya menampilkan karyawan yang belum memiliki akun login.</small>
+                        @error('employee_id')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                        <small class="text-muted d-block mt-1">Hanya menampilkan karyawan yang belum memiliki akun login.</small>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold small">Alamat Email Login</label>
-                        <input type="email" name="email" class="form-control" placeholder="nama@batukarang.com" required>
+                        <input type="email" name="email" value="{{ old('email') }}" class="form-control @error('email') is-invalid @enderror" placeholder="nama@batukarang.com" required>
+                        @error('email')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold small">Role / Hak Akses</label>
-                        <select name="role" class="form-select" required>
-                            <option value="manager_keuangan">Manager Keuangan / Finance</option>
-                            <option value="hrd">HRD / Payroll Admin</option>
-                            <option value="karyawan">Karyawan Biasa</option>
+                        <select name="role" class="form-select @error('role') is-invalid @enderror" required>
+                            <option value="" disabled {{ old('role') ? '' : 'selected' }}>-- Pilih Hak Akses --</option>
+                            <optgroup label="Divisi Keuangan">
+                                <option value="manager_keuangan" {{ old('role') == 'manager_keuangan' ? 'selected' : '' }}>Manager Keuangan (Approval & Lock Payroll)</option>
+                                <option value="finance" {{ old('role') == 'finance' ? 'selected' : '' }}>Staff Keuangan (Export BCA & Rekap Gaji)</option>
+                            </optgroup>
+                            <optgroup label="Divisi HRD">
+                                <option value="head_hrd" {{ old('role') == 'head_hrd' ? 'selected' : '' }}>Kepala HRD (Approval Master Data & Request Unlock)</option>
+                                <option value="hrd" {{ old('role') == 'hrd' ? 'selected' : '' }}>HRD Staff (Input Master Karyawan & Kontrak)</option>
+                            </optgroup>
+                            <optgroup label="Lainnya">
+                                <option value="karyawan" {{ old('role') == 'karyawan' ? 'selected' : '' }}>Karyawan Biasa (Akses Slip Gaji Pribadi)</option>
+                            </optgroup>
                         </select>
+                        @error('role')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold small">Password Default</label>
-                        <input type="password" name="password" class="form-control" placeholder="Minimal 6 karakter" required>
+                        <!-- Penambahan minlength="6" dan penanganan error validasi Laravel -->
+                        <input type="password" 
+                               name="password" 
+                               class="form-control @error('password') is-invalid @enderror" 
+                               placeholder="Minimal 6 karakter" 
+                               minlength="6" 
+                               required>
+                        @error('password')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @else
+                            <div class="form-text small text-muted">Password minimal terdiri dari 6 karakter.</div>
+                        @enderror
                     </div>
                 </div>
                 <div class="modal-footer border-top bg-light rounded-bottom-4">
@@ -145,4 +188,16 @@
         </div>
     </div>
 </div>
+
+@push('scripts')
+@if ($errors->any())
+<script>
+    // Otomatis membuka kembali Modal jika ada error validasi dari server (Laravel Controller)
+    document.addEventListener("DOMContentLoaded", function() {
+        var modalTambahUser = new bootstrap.Modal(document.getElementById('modalTambahUser'));
+        modalTambahUser.show();
+    });
+</script>
+@endif
+@endpush
 @endsection

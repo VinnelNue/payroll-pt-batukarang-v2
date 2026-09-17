@@ -4,6 +4,27 @@
 @section('page_title', 'Setup Jabatan, Kontrak & Gaji Acuan')
 
 @section('content')
+@php
+    $userRole = Auth::user()->role ?? '';
+    $contractLevel = $contract->level ?? null;
+    $isHighLevel = !is_null($contractLevel) && $contractLevel !== '' && (int)$contractLevel > 13;
+
+    // Logika Hak Akses:
+    // 1. Super Admin & Manager Keuangan: Akses penuh ke seluruh level & data keuangan.
+    // 2. Kepala HRD & HRD Staff: Terkunci untuk Level > 13.
+    $canEditHighLevel = in_array($userRole, ['super_admin', 'manager_keuangan']);
+
+    // Hak akses data finansial (Gaji, Tunjangan, BPJS, PPh 21):
+    $canSeeSalary = false;
+    if ($canEditHighLevel) {
+        $canSeeSalary = true;
+    } elseif ($userRole === 'head_hrd') {
+        $canSeeSalary = !$isHighLevel; // Hanya bisa lihat jika level <= 13
+    } elseif ($userRole === 'hrd') {
+        $canSeeSalary = false; // HRD Staff tidak bisa melihat data finansial
+    }
+@endphp
+
 <div class="mb-4 d-flex justify-content-between align-items-center">
     <div>
         <h5 class="fw-bold text-dark m-0">Setup Jabatan & Gaji: {{ $employee->full_name }}</h5>
@@ -14,7 +35,7 @@
     </a>
 </div>
 
-<form action="{{ route('contracts.local.update', $employee->uuid) }}" method="POST">
+<form action="{{ route('contracts.local.update', $employee->uuid) }}" method="POST" id="contractForm">
     @csrf
     @method('PUT')
 
@@ -45,7 +66,7 @@
                         <input type="text" name="placement_area" class="form-control" value="{{ old('placement_area', $contract->placement_area ?? '') }}" placeholder="Contoh: Site Batu Karang / HQ">
                     </div>
 
-                    <!-- PIN MESIN & NIK FINGERPRINT (BARU) -->
+                    <!-- PIN MESIN & NIK FINGERPRINT -->
                     <div class="col-md-6">
                         <label class="form-label fw-semibold text-dark">PIN Mesin Absen</label>
                         <input type="text" name="fingerprint_pin" class="form-control" value="{{ old('fingerprint_pin', $contract->fingerprint_pin ?? '') }}" placeholder="Contoh: 12008">
@@ -58,15 +79,37 @@
                         <small class="text-muted">Kode NIK pada mesin absensi.</small>
                     </div>
 
-                    <!-- KATEGORI & LEVEL -->
+                    <!-- KATEGORI -->
                     <div class="col-md-6">
                         <label class="form-label fw-semibold text-dark">Kategori</label>
-                        <input type="text" name="category" class="form-control" value="{{ old('category', $contract->category ?? '') }}" placeholder="Contoh: A / B / C">
+                        @if(!$canEditHighLevel && $isHighLevel)
+                            {{-- Proteksi Kategori untuk Level > 13 --}}
+                            <input type="text" class="form-control bg-light text-muted" value="{{ $contract->category ?? '-' }}" readonly>
+                            <input type="hidden" name="category" value="{{ $contract->category ?? '' }}">
+                            <small class="text-danger fs-7">* Kategori terkunci (Level > 13).</small>
+                        @else
+                            <input type="text" name="category" class="form-control" value="{{ old('category', $contract->category ?? '') }}" placeholder="Contoh: A / B / C">
+                        @endif
                     </div>
 
+                    <!-- LEVEL -->
                     <div class="col-md-6">
                         <label class="form-label fw-semibold text-dark">Level</label>
-                        <input type="number" name="level" class="form-control" value="{{ old('level', $contract->level ?? '') }}" placeholder="Contoh: 21">
+                        @if(!$canEditHighLevel && $isHighLevel)
+                            {{-- Jika Level > 13 dan user bukan Manager Keuangan / Super Admin --}}
+                            <input type="number" class="form-control bg-light text-muted" value="{{ $contractLevel }}" readonly>
+                            <input type="hidden" name="level" value="{{ $contractLevel }}">
+                            <small class="text-danger fs-7">* Level > 13 terkunci (Khusus Manager Keuangan / Super Admin).</small>
+                        @else
+                            <input type="number" name="level" class="form-control" 
+                                value="{{ old('level', $contract->level ?? '') }}" 
+                                placeholder="Contoh: 12"
+                                @if(in_array($userRole, ['head_hrd', 'hrd'])) max="13" @endif>
+                            
+                            @if(in_array($userRole, ['head_hrd', 'hrd']))
+                                <small class="text-muted fs-7">* Maksimal Level 13 untuk akses HRD.</small>
+                            @endif
+                        @endif
                     </div>
 
                     <!-- STATUS HUBUNGAN KERJA -->
@@ -128,10 +171,6 @@
                     <i class="fa-solid fa-money-bill-wave me-2"></i> Acuan Financial, BPJS & Pajak
                 </h6>
 
-                @php
-                    $canSeeSalary = in_array(Auth::user()->role, ['manager_keuangan', 'super_admin']);
-                @endphp
-
                 <!-- GAJI POKOK (GAPOK) -->
                 <div class="col-md-12">
                     <label class="form-label fw-semibold text-dark">Gaji Pokok (GAPOK) <span class="text-danger">*</span></label>
@@ -146,7 +185,7 @@
                         @endif
                     </div>
                     @if(!$canSeeSalary)
-                        <small class="text-danger fs-7">* Nominal hanya dapat diakses oleh Manager Keuangan.</small>
+                        <small class="text-danger fs-7">* Nominal finansial terproteksi (Khusus Manager Keuangan / Kepala HRD maks. Level 13).</small>
                     @endif
                 </div>
 
@@ -164,7 +203,7 @@
                         @endif
                     </div>
                     @if(!$canSeeSalary)
-                        <small class="text-danger fs-7">* Nominal hanya dapat diakses oleh Manager Keuangan.</small>
+                        <small class="text-danger fs-7">* Nominal finansial terproteksi (Khusus Manager Keuangan / Kepala HRD maks. Level 13).</small>
                     @endif
                 </div>
 
@@ -199,21 +238,36 @@
                                 <label class="form-label fw-semibold text-dark small">Potongan BPJS TK Karyawan</label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="text" name="manual_bpjs_tk_employee" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_tk_employee', $contract->manual_bpjs_tk_employee ?? 0), 0, ',', '.') }}">
+                                    @if($canSeeSalary)
+                                        <input type="text" name="manual_bpjs_tk_employee" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_tk_employee', $contract->manual_bpjs_tk_employee ?? 0), 0, ',', '.') }}">
+                                    @else
+                                        <input type="text" class="form-control bg-light text-muted" value="**********" readonly>
+                                        <input type="hidden" name="manual_bpjs_tk_employee" value="{{ $contract->manual_bpjs_tk_employee ?? 0 }}">
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold text-dark small">Potongan BPJS KS Karyawan</label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="text" name="manual_bpjs_ks_employee" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_ks_employee', $contract->manual_bpjs_ks_employee ?? 0), 0, ',', '.') }}">
+                                    @if($canSeeSalary)
+                                        <input type="text" name="manual_bpjs_ks_employee" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_ks_employee', $contract->manual_bpjs_ks_employee ?? 0), 0, ',', '.') }}">
+                                    @else
+                                        <input type="text" class="form-control bg-light text-muted" value="**********" readonly>
+                                        <input type="hidden" name="manual_bpjs_ks_employee" value="{{ $contract->manual_bpjs_ks_employee ?? 0 }}">
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-12">
                                 <label class="form-label fw-semibold text-dark small">Tunjangan BPJS Perusahaan (Beban PT)</label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="text" name="manual_bpjs_company" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_company', $contract->manual_bpjs_company ?? 0), 0, ',', '.') }}">
+                                    @if($canSeeSalary)
+                                        <input type="text" name="manual_bpjs_company" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_company', $contract->manual_bpjs_company ?? 0), 0, ',', '.') }}">
+                                    @else
+                                        <input type="text" class="form-control bg-light text-muted" value="**********" readonly>
+                                        <input type="hidden" name="manual_bpjs_company" value="{{ $contract->manual_bpjs_company ?? 0 }}">
+                                    @endif
                                 </div>
                                 <small class="text-muted" style="font-size: 0.75rem;">Iuran BPJS yang dibayarkan oleh perusahaan (bukan potongan karyawan).</small>
                             </div>
@@ -223,7 +277,7 @@
 
                 <hr class="my-3">
 
-                <!-- STATUS PTKP / PPH 21 (KODE PABRIK) -->
+                <!-- STATUS PTKP / PPH 21 -->
                 <div class="col-md-12">
                     <label class="form-label fw-semibold text-dark">Status PTKP & Kategori TER (PPh 21) <span class="text-danger">*</span></label>
                     
@@ -240,7 +294,7 @@
                     @else
                         <input type="text" class="form-control bg-light fw-bold text-muted" value="********** (Terproteksi)" readonly>
                         <input type="hidden" name="ptkp_status" value="{{ $contract?->ptkp_status ?? 'TK0' }}">
-                        <small class="text-danger fs-7">* Pengaturan PPh 21 / PTKP hanya dapat diakses oleh Manager Keuangan.</small>
+                        <small class="text-danger fs-7">* Pengaturan PPh 21 / PTKP terproteksi (Khusus Manager Keuangan / Kepala HRD maks. Level 13).</small>
                     @endif
                 </div>
             </div>
@@ -259,9 +313,10 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // 1. FORMATTER CURRENCY RUPIAH REAL-TIME
+    const contractForm = document.getElementById('contractForm');
     const currencyInputs = document.querySelectorAll('.currency-input');
 
+    // 1. FORMATTER CURRENCY RUPIAH REAL-TIME
     currencyInputs.forEach(function (input) {
         input.addEventListener('input', function () {
             let value = this.value.replace(/[^0-9]/g, '');
@@ -284,6 +339,15 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    // UNFORMAT NILAI CURRENCY SEBELUM FORM SUBMIT
+    if (contractForm) {
+        contractForm.addEventListener('submit', function () {
+            currencyInputs.forEach(function (input) {
+                input.value = input.value.replace(/[^0-9]/g, '');
+            });
+        });
+    }
 
     // 2. TOGGLE BOX PHK / RESIGN
     const empTypeSelect = document.getElementById('employmentTypeSelect');

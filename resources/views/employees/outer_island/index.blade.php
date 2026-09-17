@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Master Data Diri Karyawan')
-@section('page_title', 'Master Data Diri Karyawan')
+@section('title', 'Master Data Diri Karyawan Luar Pulau')
+@section('page_title', 'Master Data Diri Karyawan Luar Pulau')
 
 @section('content')
 <div class="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white">
@@ -9,27 +9,30 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
             <h5 class="fw-bold text-dark m-0">
-                <i class="fa-solid fa-users text-primary me-2"></i> Daftar Master Karyawan
+                <i class="fa-solid fa-users text-primary me-2"></i> Daftar Master Karyawan Luar Pulau
             </h5>
-            <small class="text-muted">Data identitas pribadi, kontak, alamat & rekening payroll karyawan PT Batu Karang</small>
+            <small class="text-muted">Data identitas pribadi, kontak, alamat & rekening payroll karyawan PT Batu Karang Luar Pulau</small>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a href="{{ route('employees.local.export') }}" class="btn btn-outline-secondary px-3 py-2 rounded-3 fw-semibold">
+            <!-- TOMBOL EXPORT CSV -->
+            <a href="{{ route('employees.outer_island.export') }}" class="btn btn-outline-secondary px-3 py-2 rounded-3 fw-semibold">
                 <i class="fa-solid fa-file-export me-1"></i> Export CSV
             </a>
+            <!-- TOMBOL IMPOR EXCEL -->
             <button type="button" class="btn btn-outline-success px-3 py-2 rounded-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#modalImportExcel">
                 <i class="fa-solid fa-file-excel me-1"></i> Impor Excel
             </button>
-            <a href="{{ route('employees.local.create') }}" class="btn btn-primary px-3 py-2 rounded-3 fw-semibold">
+            <!-- TOMBOL TAMBAH MANUAL -->
+            <a href="{{ route('employees.outer_island.create') }}" class="btn btn-primary px-3 py-2 rounded-3 fw-semibold">
                 <i class="fa-solid fa-user-plus me-1"></i> Tambah Karyawan
             </a>
         </div>
     </div>
 
-    <!-- BARIS FITUR SEARCH -->
+    <!-- BARIS FITUR SEARCH & FILTER -->
     <div class="row g-2 mb-3">
         <div class="col-md-5 col-lg-4">
-            <form action="{{ route('employees.local.index') }}" method="GET">
+            <form action="{{ route('employees.outer_island.index') }}" method="GET">
                 <div class="input-group">
                     <span class="input-group-text bg-light border-end-0 rounded-start-3">
                         <i class="fa-solid fa-magnifying-glass text-muted"></i>
@@ -37,7 +40,7 @@
                     <input type="text" name="search" class="form-control bg-light border-start-0" placeholder="Cari Nama, NIK, Email, No HP..." value="{{ request('search') }}">
                     <button class="btn btn-primary rounded-end-3" type="submit">Cari</button>
                     @if(request('search'))
-                        <a href="{{ route('employees.local.index') }}" class="btn btn-outline-secondary rounded-3 ms-1" title="Reset Pencarian">
+                        <a href="{{ route('employees.outer_island.index') }}" class="btn btn-outline-secondary rounded-3 ms-1" title="Reset Pencarian">
                             <i class="fa-solid fa-xmark"></i>
                         </a>
                     @endif
@@ -46,7 +49,7 @@
         </div>
     </div>
 
-    <!-- ALERT NOTIFIKASI -->
+    <!-- NOTIFIKASI / ALERT ERROR JIKA GAGAL -->
     @if(session('error'))
         <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm rounded-3 mb-3 auto-dismiss-alert" role="alert">
             <i class="fa-solid fa-triangle-exclamation me-2"></i> {{ session('error') }}
@@ -54,6 +57,7 @@
         </div>
     @endif
 
+    <!-- NOTIFIKASI / ALERT SUCCESS JIKA BERHASIL -->
     @if(session('success'))
         <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm rounded-3 mb-3 auto-dismiss-alert" role="alert">
             <i class="fa-solid fa-circle-check me-2"></i> {{ session('success') }}
@@ -61,7 +65,7 @@
         </div>
     @endif
 
-    <!-- TABEL KARYAWAN -->
+    <!-- TABEL KARYAWAN LUAR PULAU -->
     <div class="table-responsive">
         <table class="table table-hover align-middle border-top">
             <thead class="table-light">
@@ -78,41 +82,56 @@
             </thead>
             <tbody>
                 @forelse($employees as $index => $emp)
+                @php
+                    $ktpPath = $emp->ktp_path_outer ?? $emp->ktp_path ?? null;
+                    $fullName = $emp->full_name_outer ?? $emp->full_name ?? '';
+                    $nikKtp = $emp->nik_ktp_outer ?? $emp->nik_ktp ?? '';
+                    $gender = $emp->gender_outer ?? $emp->gender ?? 'L';
+                    $marital = $emp->marital_status_outer ?? $emp->marital_status ?? 'single';
+                    $phone = $emp->phone_number_outer ?? $emp->phone_number ?? null;
+                    $email = $emp->email_outer ?? $emp->email ?? null;
+                    $addressKtp = $emp->address_ktp_outer ?? $emp->address_ktp ?? '-';
+                    $bankName = $emp->bank_name_outer ?? $emp->bank_name ?? null;
+                    $bankAccount = $emp->bank_account_number_outer ?? $emp->bank_account_number ?? null;
+                @endphp
                 <tr>
+                    <!-- 1. LOOPING NOMOR URUT -->
                     <td class="text-center fw-semibold text-muted">
                         {{ $employees->firstItem() ? $employees->firstItem() + $index : $index + 1 }}
                     </td>
 
+                    <!-- 2. THUMBNAIL FOTO KTP & PREVIEW TRIGGER -->
                     <td class="text-center">
-                        @if($emp->ktp_path && Storage::disk('public')->exists($emp->ktp_path))
+                        @if($ktpPath && Storage::disk('public')->exists($ktpPath))
                             <button type="button" 
                                     class="btn btn-link p-0 border-0" 
                                     data-bs-toggle="modal" 
-                                    data-bs-target="#modalPreviewKtp-{{ $emp->id_employee ?? $loop->index }}"
+                                    data-bs-target="#modalPreviewKtp-{{ $emp->id_employee_outer ?? $emp->id ?? $loop->index }}"
                                     title="Klik untuk memperbesar Foto KTP">
-                                <img src="{{ asset('storage/' . $emp->ktp_path) }}" 
-                                     alt="KTP {{ $emp->full_name }}" 
+                                <img src="{{ asset('storage/' . $ktpPath) }}" 
+                                     alt="KTP {{ $fullName }}" 
                                      class="rounded-2 border shadow-sm object-fit-cover" 
                                      style="width: 48px; height: 36px; cursor: pointer;">
                             </button>
 
-                            <div class="modal fade" id="modalPreviewKtp-{{ $emp->id_employee ?? $loop->index }}" tabindex="-1" aria-hidden="true">
+                            <!-- MODAL POPUP PREVIEW KTP (PER KARYAWAN) -->
+                            <div class="modal fade" id="modalPreviewKtp-{{ $emp->id_employee_outer ?? $emp->id ?? $loop->index }}" tabindex="-1" aria-hidden="true">
                                 <div class="modal-dialog modal-dialog-centered modal-lg">
                                     <div class="modal-content border-0 shadow-lg rounded-4">
                                         <div class="modal-header border-bottom">
                                             <h6 class="modal-title fw-bold text-dark">
-                                                <i class="fa-solid fa-id-card text-primary me-2"></i> Foto KTP - {{ $emp->full_name }}
+                                                <i class="fa-solid fa-id-card text-primary me-2"></i> Foto KTP - {{ $fullName }}
                                             </h6>
                                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                         </div>
                                         <div class="modal-body p-3 text-center bg-light">
-                                            <img src="{{ asset('storage/' . $emp->ktp_path) }}" 
-                                                 alt="KTP {{ $emp->full_name }}" 
+                                            <img src="{{ asset('storage/' . $ktpPath) }}" 
+                                                 alt="KTP {{ $fullName }}" 
                                                  class="img-fluid rounded-3 shadow-sm border" 
                                                  style="max-height: 500px;">
                                         </div>
                                         <div class="modal-footer border-top bg-white">
-                                            <a href="{{ asset('storage/' . $emp->ktp_path) }}" target="_blank" class="btn btn-sm btn-outline-primary fw-semibold">
+                                            <a href="{{ asset('storage/' . $ktpPath) }}" target="_blank" class="btn btn-sm btn-outline-primary fw-semibold">
                                                 <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Buka Ukuran Asli
                                             </a>
                                             <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Tutup</button>
@@ -121,35 +140,49 @@
                                 </div>
                             </div>
                         @else
+                            <!-- Placeholder jika belum ada foto KTP -->
                             <span class="badge bg-light text-secondary border px-2 py-1 small" title="Foto KTP belum diunggah">
                                 <i class="fa-solid fa-image-slash"></i> No Foto
                             </span>
                         @endif
                     </td>
 
-                    <td class="fw-medium text-dark">{{ $emp->nik_ktp }}</td>
+                    <!-- 3. NIK KTP -->
+                    <td class="fw-medium text-dark">{{ $nikKtp }}</td>
+
+                    <!-- 4. NAMA LENGKAP -->
                     <td>
-                        <div class="fw-bold text-dark">{{ $emp->full_name }}</div>
-                        <small class="text-muted">{{ $emp->gender == 'L' ? 'Laki-laki' : 'Perempuan' }} | {{ ucfirst($emp->marital_status) }}</small>
+                        <div class="fw-bold text-dark">{{ $fullName }}</div>
+                        <small class="text-muted">{{ $gender == 'L' ? 'Laki-laki' : 'Perempuan' }} | {{ ucfirst($marital) }}</small>
                     </td>
+
+                    <!-- 5. KONTAK -->
                     <td>
-                        <div><i class="fa-solid fa-phone text-muted me-1 small"></i> {{ $emp->phone_number ?? '-' }}</div>
-                        <small class="text-muted"><i class="fa-solid fa-envelope me-1 small"></i> {{ $emp->email ?? '-' }}</small>
+                        <div><i class="fa-solid fa-phone text-muted me-1 small"></i> {{ $phone ?? '-' }}</div>
+                        <small class="text-muted"><i class="fa-solid fa-envelope me-1 small"></i> {{ $email ?? '-' }}</small>
                     </td>
-                    <!-- KOLOM ALAMAT KTP (LANGSUNG MEMANGGIL address_ktp) -->
-                    <td class="text-wrap" style="max-width: 250px;">
-                        <small class="text-dark">{{ $emp->address_ktp ?? '-' }}</small>
-                    </td>
+
+                    <!-- 6. ALAMAT KTP (PENGGANTI WILAYAH) -->
                     <td>
-                        <div class="fw-semibold text-dark">{{ $emp->bank_name ?? '-' }}</div>
-                        <small class="text-muted">{{ $emp->bank_account_number ?? '-' }}</small>
+                        <div class="small fw-semibold text-dark text-wrap" style="max-width: 220px;">
+                            {{ $addressKtp }}
+                        </div>
                     </td>
+
+                    <!-- 7. REKENING BANK -->
+                    <td>
+                        <div class="fw-semibold text-dark">{{ $bankName ?? '-' }}</div>
+                        <small class="text-muted">{{ $bankAccount ?? '-' }}</small>
+                    </td>
+
+                    <!-- 8. AKSI -->
                     <td class="text-center">
                         <div class="d-flex justify-content-center gap-1">
-                            <a href="{{ route('employees.local.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-warning rounded-2" title="Edit">
+                            <a href="{{ route('employees.outer_island.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-warning rounded-2" title="Edit">
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </a>
-                            <form action="{{ route('employees.local.destroy', $emp->uuid) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data karyawan ini?');">
+                            
+                            <form action="{{ route('employees.outer_island.destroy', $emp->uuid) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data karyawan luar pulau ini?');">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="btn btn-sm btn-outline-danger rounded-2" title="Hapus">
@@ -163,7 +196,7 @@
                 <tr>
                     <td colspan="8" class="text-center py-5 text-muted">
                         <i class="fa-solid fa-user-slash fs-2 mb-2 d-block text-secondary"></i>
-                        Data karyawan tidak ditemukan.
+                        Data karyawan luar pulau tidak ditemukan.
                     </td>
                 </tr>
                 @endforelse
@@ -171,7 +204,7 @@
         </table>
     </div>
 
-    <!-- PAGINATION -->
+    <!-- PAGINATION BARIS BAWAH -->
     <div class="d-flex justify-content-between align-items-center flex-wrap mt-4 pt-3 border-top">
         <div class="small text-muted mb-2 mb-md-0">
             Menampilkan <strong>{{ $employees->firstItem() ?? 0 }}</strong> sampai <strong>{{ $employees->lastItem() ?? 0 }}</strong> dari <strong>{{ $employees->total() }}</strong> karyawan
@@ -182,17 +215,17 @@
     </div>
 </div>
 
-<!-- MODAL IMPOR EXCEL/CSV -->
+<!-- MODAL POPUP IMPORT EXCEL / CSV -->
 <div class="modal fade" id="modalImportExcel" tabindex="-1" aria-labelledby="modalImportExcelLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4">
             <div class="modal-header border-bottom">
                 <h6 class="modal-title fw-bold text-dark" id="modalImportExcelLabel">
-                    <i class="fa-solid fa-file-excel text-success me-2"></i> Impor Master Karyawan
+                    <i class="fa-solid fa-file-excel text-success me-2"></i> Impor Master Karyawan Luar Pulau
                 </h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ route('employees.local.import') }}" method="POST" enctype="multipart/form-data">
+            <form action="{{ route('employees.outer_island.import') }}" method="POST" enctype="multipart/form-data">
                 @csrf
                 <div class="modal-body p-4">
                     <div class="alert alert-info border-0 rounded-3 small mb-3">
@@ -202,7 +235,7 @@
                     <div class="mb-3">
                         <label class="form-label fw-semibold text-dark">Download Format Template</label>
                         <div>
-                            <a href="{{ route('employees.local.download-template') }}" class="btn btn-sm btn-light border text-primary fw-semibold rounded-2">
+                            <a href="{{ route('employees.outer_island.download-template') }}" class="btn btn-sm btn-light border text-primary fw-semibold rounded-2">
                                 <i class="fa-solid fa-download me-1"></i> Download Template CSV/Excel
                             </a>
                         </div>
@@ -224,6 +257,7 @@
     </div>
 </div>
 
+<!-- SCRIPT AUTO-DISMISS ALERT SETELAH 4 DETIK -->
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         setTimeout(function () {

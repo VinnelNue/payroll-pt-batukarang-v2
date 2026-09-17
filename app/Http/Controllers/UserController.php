@@ -42,10 +42,11 @@ class UserController extends Controller
             'employee_id' => 'required|exists:employees,id_employee|unique:users,employee_id',
             'email'       => 'required|email|unique:users,email',
             'password'    => 'required|min:6',
-            'role'        => 'required|in:manager_keuangan,hrd,karyawan', // Super Admin tidak bisa dibuat lagi lewat UI
+            // DITAMBAHKAN: finance dan head_hrd
+            'role'        => 'required|in:manager_keuangan,finance,head_hrd,hrd,karyawan',
         ]);
 
-        $employee = Employee::findOrFail($request->employee_id);
+        $employee = Employee::where('id_employee', $request->employee_id)->firstOrFail();
 
         User::create([
             'name'        => $employee->full_name,

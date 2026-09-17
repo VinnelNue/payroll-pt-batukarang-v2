@@ -111,53 +111,6 @@
                     <textarea name="address_ktp" class="form-control" rows="2" required placeholder="Alamat lengkap sesuai KTP">{{ old('address_ktp', $employee->address_ktp ?? '') }}</textarea>
                 </div>
 
-                <!-- DROPDOWN WILAYAH LARAVOLT -->
-                <div class="col-md-6">
-                    <label class="form-label fw-semibold text-dark">Provinsi</label>
-                    <select name="province_code" id="province_code" class="form-select">
-                        <option value="">-- Pilih Provinsi --</option>
-                        @foreach($provinces as $code => $name)
-                            <option value="{{ $code }}" {{ old('province_code', $employee->province_code ?? '') == $code ? 'selected' : '' }}>{{ $name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div class="col-md-6">
-                    <label class="form-label fw-semibold text-dark">Kabupaten / Kota</label>
-                    <select name="city_code" id="city_code" class="form-select">
-                        <option value="">-- Pilih Kota --</option>
-                        @if(isset($cities))
-                            @foreach($cities as $code => $name)
-                                <option value="{{ $code }}" {{ old('city_code', $employee->city_code ?? '') == $code ? 'selected' : '' }}>{{ $name }}</option>
-                            @endforeach
-                        @endif
-                    </select>
-                </div>
-
-                <div class="col-md-6">
-                    <label class="form-label fw-semibold text-dark">Kecamatan</label>
-                    <select name="district_code" id="district_code" class="form-select">
-                        <option value="">-- Pilih Kecamatan --</option>
-                        @if(isset($districts))
-                            @foreach($districts as $code => $name)
-                                <option value="{{ $code }}" {{ old('district_code', $employee->district_code ?? '') == $code ? 'selected' : '' }}>{{ $name }}</option>
-                            @endforeach
-                        @endif
-                    </select>
-                </div>
-
-                <div class="col-md-6">
-                    <label class="form-label fw-semibold text-dark">Desa / Kelurahan</label>
-                    <select name="village_code" id="village_code" class="form-select">
-                        <option value="">-- Pilih Kelurahan --</option>
-                        @if(isset($villages))
-                            @foreach($villages as $code => $name)
-                                <option value="{{ $code }}" {{ old('village_code', $employee->village_code ?? '') == $code ? 'selected' : '' }}>{{ $name }}</option>
-                            @endforeach
-                        @endif
-                    </select>
-                </div>
-
                 <div class="col-md-12">
                     <label class="form-label fw-semibold text-dark">Alamat Domisili (opsional)</label>
                     <textarea name="address_domicile" class="form-control" rows="1" placeholder="Isi jika alamat domisili berbeda dengan KTP">{{ old('address_domicile', $employee->address_domicile ?? '') }}</textarea>
