@@ -9,6 +9,7 @@ use App\Http\Controllers\EmployeeContractController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ContractOuterIslandController;
 
 /*
 |--------------------------------------------------------------------------
@@ -116,7 +117,7 @@ Route::middleware(['auth'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | 4. MODUL KONTRAK KERJA LOKAL
+    | 4. MODUL KONTRAK KERJA LOKAL & Luar Pulau
     |--------------------------------------------------------------------------
     */
 
@@ -134,6 +135,20 @@ Route::middleware(['auth'])->group(function () {
                 ->name('update');
         });
 
+
+    Route::prefix('contracts/outer_island')
+        ->name('contracts.outer_island.')
+        ->group(function () {
+
+            Route::get('/', [ContractOuterIslandController::class, 'index'])
+                ->name('index');
+
+            Route::get('{employeeOuterIsland}/edit', [ContractOuterIslandController::class, 'edit'])
+                ->name('edit');
+
+            Route::put('{employeeOuterIsland}', [ContractOuterIslandController::class, 'update'])
+                ->name('update');
+        });
 
     /*
     |--------------------------------------------------------------------------

@@ -82,7 +82,7 @@
                 <a href="{{ route('employees.outer_island.index') }}" class="nav-link-custom py-2 my-1">
                     <i class="fa-solid fa-user me-2"></i><span>Data Diri</span>
                 </a>
-                <a href="#" class="nav-link-custom py-2 my-1">
+                <a href="{{ route('contracts.outer_island.index') }}" class="nav-link-custom py-2 my-1">
                     <i class="fa-solid fa-file-signature me-2"></i><span>Penempatan & Kontrak</span>
                 </a>
             </div>

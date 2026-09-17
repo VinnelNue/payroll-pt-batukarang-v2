@@ -15,13 +15,6 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // 1. Panggil Seeder Wilayah Laravolt Terlebih Dahulu
-        $this->call([
-            \Laravolt\Indonesia\Seeds\ProvincesSeeder::class,
-            \Laravolt\Indonesia\Seeds\CitiesSeeder::class,
-            \Laravolt\Indonesia\Seeds\DistrictsSeeder::class,
-            \Laravolt\Indonesia\Seeds\VillagesSeeder::class,
-        ]);
 
         User::insert([
             [

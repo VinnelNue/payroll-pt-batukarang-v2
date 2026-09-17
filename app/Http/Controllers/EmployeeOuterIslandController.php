@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\EmployeeOuterIsland;
+use App\Models\ContractOuterIsland;
 use App\Imports\EmployeeOuterIslandImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -13,17 +14,23 @@ use Carbon\Carbon;
 
 class EmployeeOuterIslandController extends Controller
 {
-    // 1. Index: Fitur Search & Pengurutan
+    // 1. Index: Fitur Search, Pengurutan & Relasi Kontrak
     public function index(Request $request)
     {
         $search = $request->get('search');
 
-        $employees = EmployeeOuterIsland::when($search, function ($query) use ($search) {
+        $employees = EmployeeOuterIsland::with(['latestContract'])
+            ->when($search, function ($query) use ($search) {
                 $query->where('full_name_outer', 'LIKE', "%{$search}%")
-                      ->orWhere('nik_ktp_outer', 'LIKE', "%{$search}%")
-                      ->orWhere('no_kk_outer', 'LIKE', "%{$search}%")
-                      ->orWhere('email_outer', 'LIKE', "%{$search}%")
-                      ->orWhere('phone_number_outer', 'LIKE', "%{$search}%");
+                    ->orWhere('nik_ktp_outer', 'LIKE', "%{$search}%")
+                    ->orWhere('no_kk_outer', 'LIKE', "%{$search}%")
+                    ->orWhere('email_outer', 'LIKE', "%{$search}%")
+                    ->orWhere('phone_number_outer', 'LIKE', "%{$search}%")
+                    ->orWhereHas('latestContract', function ($q) use ($search) {
+                        $q->where('job_title', 'LIKE', "%{$search}%")
+                            ->orWhere('department', 'LIKE', "%{$search}%")
+                            ->orWhere('placement_area', 'LIKE', "%{$search}%");
+                    });
             })
             ->oldest('id_employee_outer_island')
             ->paginate(10)
@@ -37,10 +44,11 @@ class EmployeeOuterIslandController extends Controller
         return view('employees.outer_island.create');
     }
 
-    // 2. Store: Simpan Data Karyawan Luar Pulau Baru
+    // 2. Store: Simpan Data Karyawan Luar Pulau & Kontrak Awal (Opsional)
     public function store(Request $request)
     {
         $validated = $request->validate([
+            // Validasi Data Karyawan
             'nik_ktp_outer'             => 'required|string|size:16|unique:employees_outer_island,nik_ktp_outer',
             'no_kk_outer'               => 'nullable|string|size:16',
             'full_name_outer'           => 'required|string|max:255',
@@ -53,24 +61,59 @@ class EmployeeOuterIslandController extends Controller
             'email_outer'               => 'nullable|email|max:255',
             'address_ktp_outer'         => 'required|string',
             'address_domicile_outer'    => 'nullable|string',
-            'npwp_number_outer'        => 'nullable|string|max:255',
+            'npwp_number_outer'         => 'nullable|string|max:255',
             'bank_name_outer'           => 'nullable|string|max:255',
             'bank_account_number_outer' => 'nullable|string|max:255',
             'bank_account_holder_outer' => 'nullable|string|max:255',
             'ktp_path_outer'            => 'nullable|file|mimes:jpeg,png,jpg,webp,pdf|max:5000',
             'is_active'                 => 'boolean',
+
+            // Validasi Kontrak Outer Island (Jika diisi bersamaan saat pembuatan karyawan)
+            'contract_number'           => 'nullable|string|max:255',
+            'start_date'                => 'required_with:contract_number|nullable|date',
+            'end_date'                  => 'required_with:contract_number|nullable|date|after_or_equal:start_date',
+            'position'                  => 'nullable|string|max:255',
+            'placement'                 => 'nullable|string|max:255',
+            'contract_file'             => 'nullable|file|mimes:pdf|max:5000',
         ]);
 
-        $validated['uuid'] = (string) Str::uuid();
+        DB::beginTransaction();
+        try {
+            $validated['uuid'] = (string) Str::uuid();
 
-        if ($request->hasFile('ktp_path_outer')) {
-            $validated['ktp_path_outer'] = $request->file('ktp_path_outer')->store('employees_outer/ktp', 'public');
+            if ($request->hasFile('ktp_path_outer')) {
+                $validated['ktp_path_outer'] = $request->file('ktp_path_outer')->store('employees_outer/ktp', 'public');
+            }
+
+            $employee = EmployeeOuterIsland::create($validated);
+
+            // Simpan Kontrak jika nomor kontrak diisi
+            if (!empty($request->contract_number)) {
+                $contractPath = null;
+                if ($request->hasFile('contract_file')) {
+                    $contractPath = $request->file('contract_file')->store('contracts_outer', 'public');
+                }
+
+                $employee->contracts()->create([
+                    'uuid'            => (string) Str::uuid(),
+                    'contract_number' => $request->contract_number,
+                    'start_date'      => $request->start_date,
+                    'end_date'        => $request->end_date,
+                    'position'        => $request->position,
+                    'placement'       => $request->placement,
+                    'contract_path'   => $contractPath,
+                    'is_active'       => true,
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('employees.outer_island.index')
+                ->with('success', 'Data Karyawan Luar Pulau berhasil ditambahkan!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menyimpan data: ' . $e->getMessage())->withInput();
         }
-
-        EmployeeOuterIsland::create($validated);
-
-        return redirect()->route('employees.outer_island.index')
-            ->with('success', 'Data Karyawan Luar Pulau berhasil ditambahkan!');
     }
 
     // 3. Edit Form
@@ -81,6 +124,8 @@ class EmployeeOuterIslandController extends Controller
             : EmployeeOuterIsland::where('uuid', $outer_island)
                 ->orWhere('id_employee_outer_island', $outer_island)
                 ->firstOrFail();
+
+        $employee->load(['contracts', 'latestContract']);
 
         return view('employees.outer_island.edit', compact('employee'));
     }
@@ -107,7 +152,7 @@ class EmployeeOuterIslandController extends Controller
             'email_outer'               => 'nullable|email|max:255',
             'address_ktp_outer'         => 'required|string',
             'address_domicile_outer'    => 'nullable|string',
-            'npwp_number_outer'        => 'nullable|string|max:255',
+            'npwp_number_outer'         => 'nullable|string|max:255',
             'bank_name_outer'           => 'nullable|string|max:255',
             'bank_account_number_outer' => 'nullable|string|max:255',
             'bank_account_holder_outer' => 'nullable|string|max:255',
@@ -115,17 +160,25 @@ class EmployeeOuterIslandController extends Controller
             'is_active'                 => 'boolean',
         ]);
 
-        if ($request->hasFile('ktp_path_outer')) {
-            if ($employee->ktp_path_outer && Storage::disk('public')->exists($employee->ktp_path_outer)) {
-                Storage::disk('public')->delete($employee->ktp_path_outer);
+        DB::beginTransaction();
+        try {
+            if ($request->hasFile('ktp_path_outer')) {
+                if ($employee->ktp_path_outer && Storage::disk('public')->exists($employee->ktp_path_outer)) {
+                    Storage::disk('public')->delete($employee->ktp_path_outer);
+                }
+                $validated['ktp_path_outer'] = $request->file('ktp_path_outer')->store('employees_outer/ktp', 'public');
             }
-            $validated['ktp_path_outer'] = $request->file('ktp_path_outer')->store('employees_outer/ktp', 'public');
+
+            $employee->update($validated);
+
+            DB::commit();
+
+            return redirect()->route('employees.outer_island.index')
+                ->with('success', 'Data Karyawan Luar Pulau berhasil diperbarui!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal memperbarui data: ' . $e->getMessage())->withInput();
         }
-
-        $employee->update($validated);
-
-        return redirect()->route('employees.outer_island.index')
-            ->with('success', 'Data Karyawan Luar Pulau berhasil diperbarui!');
     }
 
     // 5. Destroy Data Karyawan Luar Pulau
@@ -137,14 +190,30 @@ class EmployeeOuterIslandController extends Controller
                 ->orWhere('id_employee_outer_island', $outer_island)
                 ->firstOrFail();
 
-        if ($employee->ktp_path_outer && Storage::disk('public')->exists($employee->ktp_path_outer)) {
-            Storage::disk('public')->delete($employee->ktp_path_outer);
+        DB::beginTransaction();
+        try {
+            // Hapus file KTP
+            if ($employee->ktp_path_outer && Storage::disk('public')->exists($employee->ktp_path_outer)) {
+                Storage::disk('public')->delete($employee->ktp_path_outer);
+            }
+
+            // Hapus file berkas kontrak terkait jika ada
+            foreach ($employee->contracts as $contract) {
+                if ($contract->contract_path && Storage::disk('public')->exists($contract->contract_path)) {
+                    Storage::disk('public')->delete($contract->contract_path);
+                }
+            }
+
+            $employee->delete();
+
+            DB::commit();
+
+            return redirect()->route('employees.outer_island.index')
+                ->with('success', 'Data Karyawan Luar Pulau berhasil dihapus!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menghapus data: ' . $e->getMessage());
         }
-
-        $employee->delete();
-
-        return redirect()->route('employees.outer_island.index')
-            ->with('success', 'Data Karyawan Luar Pulau berhasil dihapus!');
     }
 
     // 6. Import CSV/Excel
@@ -201,23 +270,23 @@ class EmployeeOuterIslandController extends Controller
 
                     EmployeeOuterIsland::create([
                         'uuid'                      => (string) Str::uuid(),
-                        'nik_ktp_outer'            => $nikKtp,
-                        'no_kk_outer'              => $cleanNumber($row[1] ?? null),
-                        'full_name_outer'          => $row[2] ?? '',
-                        'gender_outer'             => strtoupper($row[3] ?? 'L'),
-                        'birth_place_outer'        => $row[4] ?? '-',
-                        'birth_date_outer'         => $parseDate($row[5] ?? null),
-                        'religion_outer'           => $row[6] ?? null,
-                        'marital_status_outer'     => strtolower($row[7] ?? 'single'),
-                        'phone_number_outer'       => $cleanNumber($row[8] ?? null),
-                        'email_outer'              => $row[9] ?? null,
-                        'address_ktp_outer'        => $row[10] ?? '-',
-                        'address_domicile_outer'   => $row[11] ?? null,
-                        'npwp_number_outer'        => $cleanNumber($row[12] ?? null),
-                        'bank_name_outer'          => $row[13] ?? null,
-                        'bank_account_number_outer'=> $cleanNumber($row[14] ?? null),
-                        'bank_account_holder_outer'=> $row[15] ?? null,
-                        'is_active'                => true,
+                        'nik_ktp_outer'             => $nikKtp,
+                        'no_kk_outer'               => $cleanNumber($row[1] ?? null),
+                        'full_name_outer'           => $row[2] ?? '',
+                        'gender_outer'              => strtoupper($row[3] ?? 'L'),
+                        'birth_place_outer'         => $row[4] ?? '-',
+                        'birth_date_outer'          => $parseDate($row[5] ?? null),
+                        'religion_outer'            => $row[6] ?? null,
+                        'marital_status_outer'      => strtolower($row[7] ?? 'single'),
+                        'phone_number_outer'        => $cleanNumber($row[8] ?? null),
+                        'email_outer'               => $row[9] ?? null,
+                        'address_ktp_outer'         => $row[10] ?? '-',
+                        'address_domicile_outer'    => $row[11] ?? null,
+                        'npwp_number_outer'         => $cleanNumber($row[12] ?? null),
+                        'bank_name_outer'           => $row[13] ?? null,
+                        'bank_account_number_outer' => $cleanNumber($row[14] ?? null),
+                        'bank_account_holder_outer' => $row[15] ?? null,
+                        'is_active'                 => true,
                     ]);
 
                     $successCount++;
@@ -242,22 +311,24 @@ class EmployeeOuterIslandController extends Controller
         }
     }
 
-    // 7. Export CSV
+    // 7. Export CSV (Termasuk Informasi Kontrak Terakhir)
     public function export()
     {
         $filename = 'Export_Karyawan_Luar_Pulau_' . date('Ymd_His') . '.csv';
 
         $headers = [
-            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Type'        => 'text/csv; charset=UTF-8',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ];
 
-        $employees = EmployeeOuterIsland::latest('id_employee_outer_island')->get();
+        $employees = EmployeeOuterIsland::with('latestContract')
+            ->latest('id_employee_outer_island')
+            ->get();
 
         $columns = [
             'NIK KTP', 'No KK', 'Nama Lengkap', 'Jenis Kelamin', 'Tempat Lahir', 'Tanggal Lahir',
             'Agama', 'Status Pernikahan', 'No HP', 'Email', 'Alamat KTP', 'Alamat Domisili',
-            'NPWP', 'Nama Bank', 'No Rekening', 'Pemilik Rekening', 'Status Aktif'
+            'NPWP', 'Nama Bank', 'No Rekening', 'Pemilik Rekening', 'No Kontrak Terakhir', 'Jabatan', 'Penempatan', 'Status Aktif'
         ];
 
         $callback = function () use ($employees, $columns) {
@@ -283,6 +354,9 @@ class EmployeeOuterIslandController extends Controller
                     $emp->bank_name_outer,
                     $emp->bank_account_number_outer,
                     $emp->bank_account_holder_outer,
+                    $emp->latestContract?->contract_number ?? '-',
+                    $emp->latestContract?->position ?? '-',
+                    $emp->latestContract?->placement ?? '-',
                     $emp->is_active ? 'Aktif' : 'Non-Aktif',
                 ]);
             }
@@ -297,7 +371,7 @@ class EmployeeOuterIslandController extends Controller
     public function downloadTemplate()
     {
         $headers = [
-            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Type'        => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="Template_Import_Karyawan_Luar_Pulau.csv"',
         ];
 

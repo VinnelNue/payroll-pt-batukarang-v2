@@ -180,7 +180,7 @@ class EmployeeController extends Controller
 
         $sampleData = [
             '3578123456780001', '3578123456780002', 'Budi Santoso', 'L', 'Surabaya', '1995-08-17',
-            'Islam', 'single', '081234567890', 'budi@batukarang.com', 'Jl. Merdeka No. 45', 'Jl. Merdeka No. 45',
+            'Islam', 'single', '081234567890', 'budi@batAukarang.com', 'Jl. Merdeka No. 45', 'Jl. Merdeka No. 45',
             '12.345.678.9-012.000', 'BCA', '1234567890', 'BUDI SANTOSO'
         ];
 

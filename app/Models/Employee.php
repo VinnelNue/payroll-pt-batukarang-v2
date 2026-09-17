@@ -47,26 +47,6 @@ class Employee extends Model
     |--------------------------------------------------------------------------
     */
 
-    public function province()
-    {
-        return $this->belongsTo(Province::class, 'province_code', 'code');
-    }
-
-    public function city()
-    {
-        return $this->belongsTo(City::class, 'city_code', 'code');
-    }
-
-    public function district()
-    {
-        return $this->belongsTo(District::class, 'district_code', 'code');
-    }
-
-    public function village()
-    {
-        return $this->belongsTo(Village::class, 'village_code', 'code');
-    }
-
     /*
     |--------------------------------------------------------------------------
     | RELASI MODUL JABATAN & KONTRAK (MODUL 2)
