@@ -41,6 +41,17 @@
                 <i class="fa-solid fa-chart-pie"></i>
                 <span>Dashboard</span>
             </a>
+            {{-- MASTER HARI LIBUR --}}
+            @if(Auth::check() && in_array(Auth::user()->role, ['manager_keuangan', 'super_admin'], true))
+                <a href="{{ route('holidays.index') }}"
+                class="nav-link-custom {{ request()->routeIs('holidays.*') ? 'active' : '' }}"
+                title="Master Hari Libur">
+
+                    <i class="fa-solid fa-calendar-days"></i>
+                    <span>Master Hari Libur</span>
+
+                </a>
+            @endif
 
             <!-- GROUP 2: MASTER KARYAWAN -->
             <div class="menu-header mt-3">Master Karyawan</div>

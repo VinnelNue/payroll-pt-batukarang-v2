@@ -1,11 +1,12 @@
 @extends('layouts.app')
 
 @section('title', 'Input Absensi & Variabel Gajian')
+
 @section('page_title', 'Form Input Absensi & Komponen Variabel')
 
 @push('styles')
+
 <style>
-    /* RESET FONT ABSENSI */
     .attendance-select {
         -webkit-appearance: none !important;
         -moz-appearance: none !important;
@@ -21,7 +22,6 @@
         transition: all 0.2s ease-in-out;
     }
 
-    /* Styling status absensi */
     .status-bg-empty {
         background-color: #f8f9fa !important;
         color: #6c757d !important;
@@ -31,6 +31,12 @@
     .status-bg-H {
         background-color: #ffffff !important;
         color: #198754 !important;
+    }
+
+    .status-bg-HB {
+        background-color: #dcfce7 !important;
+        color: #15803d !important;
+        font-weight: 900 !important;
     }
 
     .status-bg-SKD {
@@ -60,6 +66,18 @@
         font-weight: 900 !important;
     }
 
+    .status-bg-I {
+        background-color: #fee2e2 !important;
+        color: #dc2626 !important;
+        font-weight: 900 !important;
+    }
+
+    .status-bg-SUNDAY {
+        background-color: #e9ecef !important;
+        color: #6c757d !important;
+        font-weight: 800 !important;
+    }
+
     .attendance-select option {
         font-weight: bold;
         text-align: center;
@@ -67,9 +85,12 @@
         color: #333333;
     }
 
-    /* Visual pembeda untuk tanggal sisa (editable) */
     .cell-editable-draft {
         background-color: #fffbe2 !important;
+    }
+
+    .cell-locked {
+        background-color: #f1f3f5 !important;
     }
 
     .timesheet-container {
@@ -78,9 +99,6 @@
         white-space: nowrap;
     }
 
-    /* ============================================================
-       STICKY ACTION BAR
-       ============================================================ */
     .payroll-action-sticky {
         position: sticky;
         top: 12px;
@@ -99,9 +117,6 @@
         font-size: 0.76rem;
     }
 
-    /* ============================================================
-       DEPARTMENT GROUP
-       ============================================================ */
     .department-row td {
         background: linear-gradient(
             90deg,
@@ -126,21 +141,36 @@
         transition: transform 0.2s ease;
     }
 
-    .department-toggle[aria-expanded="true"] .department-chevron {
-        transform: rotate(0deg);
-    }
-
     .department-toggle[aria-expanded="false"] .department-chevron {
         transform: rotate(-90deg);
     }
 
-    .department-count {
-        font-size: 0.72rem;
+    .summary-box {
+        min-width: 64px;
+        padding: 0.25rem 0.35rem;
+        border-radius: 8px;
+        background: #fff;
+        text-align: center;
     }
 
-    /* ============================================================
-       MOBILE
-       ============================================================ */
+    .summary-value {
+        font-size: 0.82rem;
+        font-weight: 800;
+        line-height: 1.05;
+    }
+
+    .summary-label {
+        font-size: 0.58rem;
+        color: #6c757d;
+        line-height: 1.05;
+        margin-top: 2px;
+    }
+
+    .finance-masked {
+        color: #adb5bd;
+        background: #f8f9fa;
+    }
+
     @media (max-width: 768px) {
         .payroll-action-sticky {
             top: 8px;
@@ -161,244 +191,499 @@
         }
     }
 </style>
+
 @endpush
 
 @section('content')
 
 @php
-    $isFinancialRole = in_array(Auth::user()->role ?? '', ['manager_keuangan', 'super_admin']);
-    $lockedState     = (isset($isLocked) && $isLocked);
 
-    // TANGGAL CUT-OFF / CLOSE PERIODE
-    // Bisa diatur Manager Keuangan, Default: 26
-    $cutoffDay = request('cutoff_day', $savedCutoffDay ?? 26);
+$userRole = Auth::user()->role ?? '';
 
-    // TANGGAL KALENDER NORMAL BULAN BERJALAN
-    $currentPeriod  = \Carbon\Carbon::parse(($period ?? date('Y-m')) . '-01');
-    $startDate      = $currentPeriod->copy()->startOfMonth();
-    $endDate        = $currentPeriod->copy()->endOfMonth();
+$isFinanceRole = in_array(
+    $userRole,
+    ['manager_keuangan', 'super_admin'],
+    true
+);
 
-    $datePeriod     = \Carbon\CarbonPeriod::create($startDate, $endDate);
-    $totalDaysCount = iterator_count($datePeriod);
+$isHeadHrd = in_array(
+    $userRole,
+    ['head_hrd', 'kepala_hrd'],
+    true
+);
 
-    /*
-    |--------------------------------------------------------------------------
-    | GROUPING DEPARTMENT
-    |--------------------------------------------------------------------------
-    | Department diambil langsung dari ACTIVE CONTRACT masing-masing employee.
-    | Tidak ada daftar department hard-code.
-    |--------------------------------------------------------------------------
-    */
-    $employeesByDepartment = $employees->groupBy(function ($employee) {
-        return $employee->activeContract->department
-            ?? 'Tanpa Department';
-    });
+$showFinancialColumns =
+    $isFinanceRole
+    || $isHeadHrd;
 
-    $totalEmployeeCount = $employees->count();
+$canManageCutoff =
+    $isFinanceRole;
+
+$lockedState =
+    (bool) ($isLocked ?? false);
+
+$cutoffDay =
+    (int) (
+        $cutoffDay
+        ?? $savedCutoffDay
+        ?? 26
+    );
+
+$currentPeriod =
+    \Carbon\Carbon::parse(
+        ($period ?? date('Y-m')) . '-01'
+    );
+
+$startDate =
+    $currentPeriod
+        ->copy()
+        ->startOfMonth();
+
+$endDate =
+    $currentPeriod
+        ->copy()
+        ->endOfMonth();
+
+$datePeriod =
+    \Carbon\CarbonPeriod::create(
+        $startDate,
+        $endDate
+    );
+
+$totalDaysCount =
+    iterator_count(
+        \Carbon\CarbonPeriod::create(
+            $startDate,
+            $endDate
+        )
+    );
+
+$employeesByDepartment =
+    $employees->groupBy(
+        function ($employee) {
+            return $employee
+                ->activeContract
+                ?->department
+                ?? 'Tanpa Department';
+        }
+    );
+
+$totalEmployeeCount =
+    $employees->count();
+
+
+/*
+|--------------------------------------------------------------------------
+| HOLIDAY MASTER
+|--------------------------------------------------------------------------
+|
+| Dibuat SEKALI untuk seluruh employee.
+|
+*/
+
+$holidayData = [];
+
+foreach ($holidays ?? [] as $holiday) {
+
+    $holidayDate =
+        $holiday->holiday_date;
+
+    if (!$holidayDate) {
+        continue;
+    }
+
+    $holidayDate =
+        $holidayDate instanceof \Carbon\Carbon
+            ? $holidayDate
+            : \Carbon\Carbon::parse(
+                $holidayDate
+            );
+
+    if (
+        $holidayDate->format('Y-m')
+        !== $currentPeriod->format('Y-m')
+    ) {
+        continue;
+    }
+
+    $holidayData[
+        $holidayDate->format('Y-m-d')
+    ] = [
+        'name' =>
+            $holiday->name,
+
+        'type' =>
+            $holiday->type,
+    ];
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| BPJS PREVIEW SETTING
+|--------------------------------------------------------------------------
+*/
+
+$tkRatePreview =
+    (float) \App\Models\CompanySetting::get(
+        'bpjs_tk_employee_rate',
+        2.0
+    ) / 100;
+
+$ksRatePreview =
+    (float) \App\Models\CompanySetting::get(
+        'bpjs_ks_employee_rate',
+        1.0
+    ) / 100;
+
+$ksCapPreview =
+    (float) \App\Models\CompanySetting::get(
+        'bpjs_ks_max_cap',
+        12000000
+    );
+
+
+$recapColspan = 8;
+
+$bpjsColspan =
+    $showFinancialColumns
+        ? 2
+        : 0;
+
+$financeColspan =
+    $showFinancialColumns
+        ? 4
+        : 0;
+
+$tableColspan =
+    3
+    + $totalDaysCount
+    + $recapColspan
+    + $bpjsColspan
+    + $financeColspan;
+
 @endphp
+
 
 <div class="container-fluid p-0">
 
-    <!-- ============================================================
-         TOP BAR CONTROL & HEADER
-         ============================================================ -->
-    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4">
+{{-- ============================================================
+     HEADER
+============================================================ --}}
 
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+<div class="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4">
 
-            <div>
-                <h5 class="fw-bold text-dark m-0 d-flex align-items-center gap-2">
-                    <i class="fa-solid fa-calendar-check text-primary"></i>
-                    <span>Input Absensi Harian & Variabel Bulanan</span>
-                </h5>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
 
-                <p class="text-muted small m-0 mt-1">
-                    Gunakan form di bawah untuk input absensi kalender normal.
-                    Penutupan (*Close*) mengunci tanggal 01 s/d {{ $cutoffDay }}.
-                </p>
-            </div>
+        <div>
 
-            <div class="d-flex align-items-center gap-2">
+            <h5 class="fw-bold text-dark m-0 d-flex align-items-center gap-2">
 
-                @if($isFinancialRole)
-                    <a href="{{ route('payrolls.local.export-bca', ['period' => $period ?? date('Y-m')]) }}"
-                       class="btn btn-outline-success btn-sm px-3 py-2 rounded-3 fw-semibold">
-                        <i class="fa-solid fa-file-csv me-1"></i>
-                        Export CSV BCA
-                    </a>
-                @endif
+                <i class="fa-solid fa-calendar-check text-primary"></i>
 
-                <a href="{{ route('payrolls.local.index') }}"
-                   class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3 fw-medium">
-                    <i class="fa-solid fa-arrow-left me-1"></i>
-                    Kembali ke Rekap
-                </a>
+                <span>
+                    Input Absensi Harian & Rekap Payroll
+                </span>
 
-            </div>
+            </h5>
+
+            <p class="text-muted small m-0 mt-1">
+
+                Cut-off berlaku per periode.
+
+                Tanggal 01 s/d {{ $cutoffDay }}
+                masuk payroll bulan berjalan;
+
+                tanggal setelah cut-off tetap dicatat dan bila
+                A/H0.5 menjadi gantungan bulan berikutnya.
+
+            </p>
+
         </div>
 
-        <hr class="my-3 opacity-10">
 
-        <!-- ========================================================
-             CONTROL PANEL
-             ======================================================== -->
-        <div class="row g-3">
+        <div class="d-flex align-items-center gap-2">
 
-            <!-- IMPORT LOG MESIN -->
-            <div class="col-lg-5">
+            @if($isFinanceRole)
 
-                <div class="p-3 rounded-4 bg-success bg-opacity-10 border border-success border-opacity-25 h-100">
+                <a href="{{ route(
+                    'payrolls.local.export-bca',
+                    ['period' => $period ?? date('Y-m')]
+                ) }}"
+                   class="btn btn-outline-success btn-sm px-3 py-2 rounded-3 fw-semibold">
 
-                    <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="fa-solid fa-file-csv me-1"></i>
 
-                        <div class="bg-success text-white rounded-3 p-2 d-flex align-items-center justify-content-center"
-                             style="width: 32px; height: 32px;">
-                            <i class="fa-solid fa-file-zipper"></i>
-                        </div>
+                    Export CSV BCA
 
-                        <h6 class="fw-bold text-success m-0">
-                            Import Log Mesin Fingerprint
-                        </h6>
+                </a>
+
+            @endif
+
+
+            <a href="{{ route('payrolls.local.index') }}"
+               class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3 fw-medium">
+
+                <i class="fa-solid fa-arrow-left me-1"></i>
+
+                Kembali ke Rekap
+
+            </a>
+
+        </div>
+
+    </div>
+
+
+    <hr class="my-3 opacity-10">
+
+
+    <div class="row g-3">
+
+        {{-- IMPORT --}}
+
+        <div class="col-lg-5">
+
+            <div class="p-3 rounded-4 bg-success bg-opacity-10 border border-success border-opacity-25 h-100">
+
+                <div class="d-flex align-items-center gap-2 mb-2">
+
+                    <div class="bg-success text-white rounded-3 p-2 d-flex align-items-center justify-content-center"
+                         style="width:32px;height:32px;">
+
+                        <i class="fa-solid fa-file-zipper"></i>
 
                     </div>
 
-                    <p class="text-muted small mb-3">
-                        Upload file <strong>.ZIP</strong> atau Excel absensi mesin.
-                    </p>
+                    <h6 class="fw-bold text-success m-0">
 
-                    <form action="{{ route('payrolls.local.import') }}"
-                          method="POST"
-                          enctype="multipart/form-data"
-                          class="row g-2">
+                        Import Log Mesin Fingerprint
 
-                        @csrf
-
-                        <input type="hidden"
-                               name="period_month"
-                               value="{{ $period ?? date('Y-m') }}">
-
-                        <div class="col-7">
-                            <input type="file"
-                                   name="file"
-                                   accept=".zip,.rar,.xlsx,.xls,.csv"
-                                   required
-                                   class="form-control form-control-sm bg-white border-success border-opacity-25 rounded-3">
-                        </div>
-
-                        <div class="col-5">
-                            <button type="submit"
-                                    class="btn btn-success btn-sm fw-bold w-100 rounded-3 shadow-sm">
-                                <i class="fa-solid fa-file-import me-1"></i>
-                                Import Log
-                            </button>
-                        </div>
-
-                    </form>
+                    </h6>
 
                 </div>
 
+
+                <p class="text-muted small mb-3">
+
+                    Upload
+                    <strong>.ZIP</strong>
+                    atau file Excel/CSV absensi mesin.
+
+                </p>
+
+
+                <form action="{{ route('payrolls.local.import') }}"
+                      method="POST"
+                      enctype="multipart/form-data"
+                      class="row g-2">
+
+                    @csrf
+
+                    <input type="hidden"
+                           name="period_month"
+                           value="{{ $period ?? date('Y-m') }}">
+
+
+                    <div class="col-7">
+
+                        <input type="file"
+                               name="file"
+                               accept=".zip,.xlsx,.xls,.csv"
+                               required
+                               class="form-control form-control-sm bg-white border-success border-opacity-25 rounded-3">
+
+                    </div>
+
+
+                    <div class="col-5">
+
+                        <button type="submit"
+                                class="btn btn-success btn-sm fw-bold w-100 rounded-3 shadow-sm">
+
+                            <i class="fa-solid fa-file-import me-1"></i>
+
+                            Import Log
+
+                        </button>
+
+                    </div>
+
+                </form>
+
             </div>
 
-            <!-- SETTING PERIODE & TANGGAL CLOSE -->
-            <div class="col-lg-7">
+        </div>
 
-                <div class="p-3 rounded-4 bg-light border border-secondary border-opacity-10 h-100 d-flex flex-column justify-content-center">
 
-                    <div class="d-flex justify-content-between align-items-center mb-2">
+        {{-- PERIOD --}}
 
-                        <label class="form-label fw-bold text-dark small text-uppercase tracking-wider m-0">
-                            <i class="fa-regular fa-calendar-days text-primary me-1"></i>
-                            Periode Bulan & Tanggal Close
-                        </label>
+        <div class="col-lg-7">
 
-                        @if($lockedState)
+            <div class="p-3 rounded-4 bg-light border border-secondary border-opacity-10 h-100 d-flex flex-column justify-content-center">
 
-                            <span class="badge bg-danger-subtle text-danger border border-danger rounded-pill px-3 py-1 fw-bold">
-                                <i class="fa-solid fa-lock me-1"></i>
-                                Closed s/d Tgl {{ $cutoffDay }}
-                            </span>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+
+                    <label class="form-label fw-bold text-dark small text-uppercase tracking-wider m-0">
+
+                        <i class="fa-regular fa-calendar-days text-primary me-1"></i>
+
+                        Periode & Cut-off
+
+                    </label>
+
+
+                    @if($lockedState)
+
+                        <span class="badge bg-danger-subtle text-danger border border-danger rounded-pill px-3 py-1 fw-bold">
+
+                            <i class="fa-solid fa-lock me-1"></i>
+
+                            Closed s/d Tgl {{ $cutoffDay }}
+
+                        </span>
+
+                    @else
+
+                        <span class="badge bg-success-subtle text-success border border-success rounded-pill px-3 py-1 fw-bold">
+
+                            <i class="fa-solid fa-lock-open me-1"></i>
+
+                            Open
+
+                        </span>
+
+                    @endif
+
+                </div>
+
+
+                <div class="row g-2 align-items-center">
+
+                    <div class="col-md-6">
+
+                        <form id="periodForm"
+                              method="GET"
+                              action="{{ route('payrolls.local.create') }}">
+
+                            <div class="input-group input-group-sm">
+
+                                <span class="input-group-text bg-white border-end-0 text-muted">
+
+                                    <i class="fa-regular fa-calendar"></i>
+
+                                </span>
+
+
+                                <input type="month"
+                                       name="period"
+                                       class="form-control border-start-0 fw-bold text-dark"
+                                       value="{{ old(
+                                            'period',
+                                            $period ?? date('Y-m')
+                                       ) }}"
+                                       onchange="this.form.submit()"
+                                       required>
+
+                            </div>
+
+                        </form>
+
+                    </div>
+
+
+                    <div class="col-md-6">
+
+                        @if($canManageCutoff)
+
+                            <form id="cutoffForm"
+                                  method="POST"
+                                  action="{{ route('payrolls.local.cutoff.update') }}">
+
+                                @csrf
+
+                                <input type="hidden"
+                                       name="period"
+                                       value="{{ $period ?? date('Y-m') }}">
+
+
+                                <div class="input-group input-group-sm">
+
+                                    <span class="input-group-text bg-primary bg-opacity-10 border-end-0 text-primary fw-bold">
+
+                                        Close Tgl
+
+                                    </span>
+
+
+                                    <select name="cutoff_day"
+                                            class="form-select border-start-0 fw-bold text-primary"
+                                            onchange="this.form.submit()"
+                                            {{ $lockedState ? 'disabled' : '' }}>
+
+                                        @for($day = 20; $day <= 28; $day++)
+
+                                            <option value="{{ $day }}"
+                                                {{ $cutoffDay == $day ? 'selected' : '' }}>
+
+                                                Tanggal {{ $day }}
+
+                                            </option>
+
+                                        @endfor
+
+                                    </select>
+
+                                </div>
+
+                            </form>
 
                         @else
 
-                            <span class="badge bg-success-subtle text-success border border-success rounded-pill px-3 py-1 fw-bold">
-                                <i class="fa-solid fa-lock-open me-1"></i>
-                                Open (Semua Tgl Editable)
-                            </span>
+                            <div class="input-group input-group-sm">
+
+                                <span class="input-group-text bg-secondary bg-opacity-10 border-end-0 text-secondary fw-bold">
+
+                                    Cut-off
+
+                                </span>
+
+
+                                <input type="text"
+                                       class="form-control border-start-0 fw-bold text-secondary"
+                                       value="Tanggal {{ $cutoffDay }}"
+                                       readonly>
+
+                            </div>
 
                         @endif
 
                     </div>
 
-                    <div class="row g-2 align-items-center">
+                </div>
 
-                        <!-- SELECT BULAN -->
-                        <div class="col-md-6">
 
-                            <div class="input-group input-group-sm">
+                <div class="d-flex align-items-center gap-1 text-muted small mt-2"
+                     style="font-size:.76rem;">
 
-                                <span class="input-group-text bg-white border-end-0 text-muted">
-                                    <i class="fa-regular fa-calendar"></i>
-                                </span>
+                    <i class="fa-solid fa-circle-info text-primary"></i>
 
-                                <input type="month"
-                                       name="period_month"
-                                       form="mainPayrollForm"
-                                       class="form-control border-start-0 fw-bold text-dark"
-                                       value="{{ old('period_month', $period ?? date('Y-m')) }}"
-                                       onchange="window.location.href='{{ route('payrolls.local.create') }}?period='+this.value+'&cutoff_day={{ $cutoffDay }}'"
-                                       required>
+                    <span>
 
-                            </div>
+                        <strong>
+                            01–{{ $cutoffDay }}
+                        </strong>
+                        = payroll bulan ini.
 
-                        </div>
+                        <strong>
+                            {{ $cutoffDay + 1 }}–{{ $endDate->format('d') }}
+                        </strong>
+                        = attendance lanjutan;
 
-                        <!-- DROPDOWN TANGGAL CLOSE -->
-                        <div class="col-md-6">
+                        A/H0.5 pada rentang ini menjadi gantungan
+                        bulan berikutnya.
 
-                            <div class="input-group input-group-sm">
-
-                                <span class="input-group-text bg-primary bg-opacity-10 border-end-0 text-primary fw-bold">
-                                    Close Tgl
-                                </span>
-
-                                <select name="cutoff_day"
-                                        form="mainPayrollForm"
-                                        class="form-select border-start-0 fw-bold text-primary"
-                                        onchange="window.location.href='{{ route('payrolls.local.create') }}?period={{ $period ?? date('Y-m') }}&cutoff_day='+this.value"
-                                        {{ (!$isFinancialRole || $lockedState) ? 'disabled' : '' }}>
-
-                                    @for($day = 20; $day <= 28; $day++)
-
-                                        <option value="{{ $day }}"
-                                            {{ (int)$cutoffDay === $day ? 'selected' : '' }}>
-                                            Tanggal {{ $day }}
-                                            {{ (int)$cutoffDay === $day ? '(Aktif)' : '' }}
-                                        </option>
-
-                                    @endfor
-
-                                </select>
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                    <div class="d-flex align-items-center gap-1 text-muted small mt-2"
-                         style="font-size: 0.76rem;">
-
-                        <i class="fa-solid fa-circle-info text-primary"></i>
-
-                        <span>
-                            Jika dikunci:
-                            <strong>01 s/d {{ $cutoffDay }}</strong> terkunci.
-                            Tanggal
-                            <strong>{{ $cutoffDay + 1 }} s/d {{ $endDate->format('d') }}</strong>
-                            tetap bisa diisi.
-                        </span>
-
-                    </div>
+                    </span>
 
                 </div>
 
@@ -408,284 +693,1264 @@
 
     </div>
 
-
-    <!-- ============================================================
-         MAIN PAYROLL FORM
-         ============================================================ -->
-    <form id="mainPayrollForm"
-          action="{{ route('payrolls.local.store') }}"
-          method="POST">
-
-        @csrf
-
-        <input type="hidden"
-               name="cutoff_day_submit"
-               value="{{ $cutoffDay }}">
+</div>
 
 
-        <!-- ========================================================
-             STICKY ACTION BAR
-             ======================================================== -->
-        <div class="payroll-action-sticky">
+{{-- ============================================================
+     MAIN FORM
+============================================================ --}}
 
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+<form id="mainPayrollForm"
+      action="{{ route('payrolls.local.store') }}"
+      method="POST">
 
-                <!-- STATUS -->
-                <div class="action-status d-flex align-items-center gap-3 text-muted">
+    @csrf
 
-                    <div class="d-flex align-items-center gap-1">
-                        <i class="fa-solid fa-users text-primary"></i>
-                        <strong>{{ $totalEmployeeCount }}</strong>
-                        Employee
-                    </div>
 
-                    <div>
-                        <span class="badge bg-secondary opacity-25 me-1">&nbsp;</span>
-                        01 - {{ $cutoffDay }}:
-                        <strong>{{ $lockedState ? 'Locked' : 'Open' }}</strong>
-                    </div>
+    <input type="hidden"
+           name="period_month"
+           value="{{ $period ?? date('Y-m') }}">
 
-                    <div class="d-none d-lg-block">
-                        <span class="badge bg-warning me-1">&nbsp;</span>
-                        {{ $cutoffDay + 1 }} - {{ $endDate->format('d') }}:
-                        <strong>Draft</strong>
-                    </div>
+
+    <input type="hidden"
+           name="cutoff_day_submit"
+           value="{{ $cutoffDay }}">
+
+
+    {{-- ========================================================
+         STICKY ACTION
+    ======================================================== --}}
+
+    <div class="payroll-action-sticky">
+
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+
+            <div class="action-status d-flex align-items-center gap-3 text-muted flex-wrap">
+
+                <div class="d-flex align-items-center gap-1">
+
+                    <i class="fa-solid fa-users text-primary"></i>
+
+                    <strong>
+                        {{ $totalEmployeeCount }}
+                    </strong>
+
+                    Employee
 
                 </div>
 
 
-                <!-- ACTION BUTTONS -->
-                <div class="action-buttons d-flex align-items-center gap-2">
+                <div>
 
-                    @if($lockedState)
+                    <span class="badge bg-secondary opacity-25 me-1">
+                        &nbsp;
+                    </span>
 
-                        @if($isFinancialRole)
+                    01–{{ $cutoffDay }}:
 
-                            <button type="submit"
-                                    form="formUnlockPayroll"
-                                    class="btn btn-outline-warning fw-bold px-3 py-2 rounded-3 shadow-sm">
+                    <strong>
+                        {{ $lockedState ? 'Locked' : 'Open' }}
+                    </strong>
 
-                                <i class="fa-solid fa-lock-open me-1"></i>
-                                Unlock Period
+                </div>
 
-                            </button>
 
-                        @endif
+                <div>
 
-                        <button type="submit"
-                                class="btn btn-primary px-3 py-2 fw-bold rounded-3 shadow-sm">
+                    <span class="badge bg-warning me-1">
+                        &nbsp;
+                    </span>
 
-                            <i class="fa-solid fa-floppy-disk me-1"></i>
-                            Simpan Perubahan
+                    {{ $cutoffDay + 1 }}–{{ $endDate->format('d') }}:
 
-                        </button>
-
-                    @else
-
-                        <button type="submit"
-                                class="btn btn-success px-3 py-2 fw-bold rounded-3 shadow-sm">
-
-                            <i class="fa-solid fa-calculator me-1"></i>
-                            Simpan Absensi
-
-                        </button>
-
-                        <button type="submit"
-                                form="formLockPayroll"
-                                class="btn btn-dark px-3 py-2 fw-bold rounded-3 shadow-sm"
-                                onclick="return confirm('Apakah Anda yakin ingin mengunci (Close) absensi s/d tanggal {{ $cutoffDay }}?');">
-
-                            <i class="fa-solid fa-lock me-1"></i>
-                            Close / Lock
-
-                        </button>
-
-                    @endif
+                    <strong>
+                        {{ $isNextPeriodLocked
+                            ? 'Locked by next period'
+                            : 'Draft'
+                        }}
+                    </strong>
 
                 </div>
 
             </div>
 
+
+            <div class="action-buttons d-flex align-items-center gap-2">
+
+                @if($lockedState && $isFinanceRole)
+
+                    <button type="submit"
+                            form="formUnlockPayroll"
+                            class="btn btn-outline-warning fw-bold px-3 py-2 rounded-3 shadow-sm">
+
+                        <i class="fa-solid fa-lock-open me-1"></i>
+
+                        Unlock Period
+
+                    </button>
+
+                @endif
+
+
+                <button type="submit"
+                        class="btn {{ $lockedState ? 'btn-primary' : 'btn-success' }} px-3 py-2 fw-bold rounded-3 shadow-sm">
+
+                    <i class="fa-solid fa-floppy-disk me-1"></i>
+
+                    {{ $lockedState
+                        ? 'Simpan Sisa Tanggal'
+                        : 'Simpan Absensi'
+                    }}
+
+                </button>
+
+
+                @if(!$lockedState && $isFinanceRole)
+
+                    <button type="submit"
+                            form="formLockPayroll"
+                            class="btn btn-dark px-3 py-2 fw-bold rounded-3 shadow-sm"
+                            onclick="return confirm('Close periode {{ $period }} sampai tanggal {{ $cutoffDay }}? Tanggal setelah cutoff tetap dapat diisi.');">
+
+                        <i class="fa-solid fa-lock me-1"></i>
+
+                        Close / Lock 01–{{ $cutoffDay }}
+
+                    </button>
+
+                @endif
+
+            </div>
+
         </div>
 
+    </div>
 
-        <!-- ========================================================
-             SPREADSHEET TABLE
-             ======================================================== -->
-        <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden mb-4">
 
-            <div class="table-responsive timesheet-container">
+    {{-- ========================================================
+         TABLE
+    ======================================================== --}}
 
-                <table class="table table-hover align-middle mb-0 text-nowrap table-bordered fs-7">
+    <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden mb-4">
 
-                    <thead>
+        <div class="table-responsive timesheet-container">
 
-                        <!-- HEADER UTAMA -->
-                        <tr class="bg-dark text-white text-center align-middle small text-uppercase tracking-wider">
+            <table class="table table-hover align-middle mb-0 text-nowrap table-bordered fs-7">
 
-                            <th rowspan="2"
-                                class="py-3 px-2 bg-dark text-white"
-                                style="width: 45px;">
-                                No
-                            </th>
+                <thead>
 
-                            <th rowspan="2"
-                                class="py-3 px-3 text-start bg-dark text-white"
-                                style="min-width: 250px;">
-                                Karyawan & Jabatan
-                            </th>
+                    <tr class="bg-dark text-white text-center align-middle small text-uppercase tracking-wider">
 
-                            <th rowspan="2"
-                                class="py-3 px-3 text-start bg-dark text-white"
-                                style="min-width: 170px;">
-                                Level, Kat & TER
-                            </th>
+                        <th rowspan="2"
+                            class="py-3 px-2 bg-dark text-white"
+                            style="width:45px;">
 
-                            <th colspan="{{ $totalDaysCount }}"
-                                class="py-2 bg-primary bg-gradient text-white fw-bold">
+                            No
 
-                                <i class="fa-solid fa-calendar-days me-1"></i>
-                                Kalender Absensi {{ $currentPeriod->format('F Y') }}
+                        </th>
 
-                            </th>
+
+                        <th rowspan="2"
+                            class="py-3 px-3 text-start bg-dark text-white"
+                            style="min-width:250px;">
+
+                            Karyawan & Jabatan
+
+                        </th>
+
+
+                        <th rowspan="2"
+                            class="py-3 px-3 text-start bg-dark text-white"
+                            style="min-width:170px;">
+
+                            Level, Kat & TER
+
+                        </th>
+
+
+                        <th colspan="{{ $totalDaysCount }}"
+                            class="py-2 bg-primary bg-gradient text-white fw-bold">
+
+                            <i class="fa-solid fa-calendar-days me-1"></i>
+
+                            Kalender Absensi
+                            {{ $currentPeriod->format('F Y') }}
+
+                        </th>
+
+
+                        <th colspan="{{ $recapColspan }}"
+                            class="py-2 bg-info bg-gradient text-dark fw-bold">
+
+                            Rekap Absensi
+
+                        </th>
+
+
+                        @if($showFinancialColumns)
 
                             <th colspan="2"
-                                class="py-2 bg-info bg-gradient text-dark fw-bold">
-                                Rekap Jam/Hari
+                                class="py-2 bg-warning bg-gradient text-dark fw-bold">
+
+                                BPJS
+
                             </th>
 
-                            @if($isFinancialRole)
 
-                                <th colspan="5"
-                                    class="py-2 bg-success bg-gradient text-white fw-bold">
+                            <th colspan="{{ $financeColspan }}"
+                                class="py-2 bg-success bg-gradient text-white fw-bold">
 
-                                    <i class="fa-solid fa-hand-holding-dollar me-1"></i>
-                                    Variabel Finansial (Manager Keuangan Only)
+                                <i class="fa-solid fa-hand-holding-dollar me-1"></i>
 
-                                </th>
+                                Variabel Finansial
 
-                            @endif
-
-                        </tr>
-
-
-                        <!-- SUB HEADER TANGGAL -->
-                        <tr class="text-center align-middle small fw-bold">
-
-                            @foreach($datePeriod as $dt)
-
-                                @php
-                                    $dayNum = (int)$dt->format('d');
-                                    $isAfterCutoff = $dayNum > $cutoffDay;
-                                @endphp
-
-                                <th class="p-1 {{ $isAfterCutoff ? 'bg-warning bg-opacity-25 text-dark' : 'bg-light text-dark' }}"
-                                    style="width: 38px; font-size: 0.72rem;">
-
-                                    <div>
-                                        {{ $dt->format('d') }}
-                                    </div>
-
-                                    <div class="{{ $isAfterCutoff ? 'text-dark fw-semibold' : 'text-muted fw-normal' }}"
-                                         style="font-size: 0.6rem;">
-                                        {{ $dt->format('M') }}
-                                    </div>
-
-                                </th>
-
-                            @endforeach
-
-                            <th class="bg-danger bg-opacity-10 text-danger"
-                                style="width: 75px;">
-                                Alpha (A)
                             </th>
 
-                            <th class="bg-primary bg-opacity-10 text-primary"
-                                style="width: 75px;">
-                                Lembur(J)
-                            </th>
+                        @endif
 
-                            @if($isFinancialRole)
-
-                                <th class="bg-success bg-opacity-10 text-success"
-                                    style="min-width: 150px;">
-                                    Cuti Melahirkan
-                                </th>
-
-                                <th class="bg-success bg-opacity-10 text-success"
-                                    style="min-width: 150px;">
-                                    Bonus / Insentif
-                                </th>
-
-                                <th class="bg-success bg-opacity-10 text-danger"
-                                    style="min-width: 170px;">
-                                    Kasbon
-                                </th>
-
-                                <th class="bg-success bg-opacity-10 text-danger"
-                                    style="min-width: 170px;">
-                                    Potongan Gantungan
-                                </th>
-
-                                <th class="bg-success bg-opacity-10 text-danger"
-                                    style="min-width: 150px;">
-                                    Potongan Lain
-                                </th>
-
-                            @endif
-
-                        </tr>
-
-                    </thead>
+                    </tr>
 
 
-                    <tbody>
+                    <tr class="text-center align-middle small fw-bold">
 
-                        @forelse($employeesByDepartment as $department => $departmentEmployees)
+                        @foreach(\Carbon\CarbonPeriod::create($startDate, $endDate) as $dt)
 
                             @php
-                                $departmentId = 'department_' . md5($department);
+
+                                $dayNum =
+                                    (int) $dt->format('d');
+
+                                $isAfterCutoff =
+                                    $dayNum > $cutoffDay;
+
+                                $headerDate =
+                                    $dt->format('Y-m-d');
+
+                                $isHolidayHeader =
+                                    isset(
+                                        $holidayData[$headerDate]
+                                    );
+
                             @endphp
 
 
-                            <!-- ====================================================
-                                 DEPARTMENT HEADER
-                                 ==================================================== -->
-                            <tr class="department-row">
+                            <th class="p-1 {{ $isAfterCutoff ? 'bg-warning bg-opacity-25 text-dark' : 'bg-light text-dark' }}"
+                                style="width:38px;font-size:.72rem;"
+                                @if($isHolidayHeader)
+                                    title="{{ $holidayData[$headerDate]['name'] }}"
+                                @endif>
 
-                                <td colspan="{{ 5 + $totalDaysCount + ($isFinancialRole ? 5 : 0) }}"
-                                    class="p-0">
+                                <div>
+                                    {{ $dt->format('d') }}
+                                </div>
 
-                                    <div class="department-toggle d-flex justify-content-between align-items-center px-3 py-2"
-                                         data-bs-toggle="collapse"
-                                         data-bs-target="#{{ $departmentId }}"
-                                         aria-expanded="true"
-                                         aria-controls="{{ $departmentId }}">
 
-                                        <div class="d-flex align-items-center gap-2">
+                                <div class="{{ $isAfterCutoff ? 'text-dark fw-semibold' : 'text-muted fw-normal' }}"
+                                     style="font-size:.6rem;">
 
-                                            <i class="fa-solid fa-chevron-down department-chevron text-primary"></i>
+                                    {{ $dt->format('M') }}
 
-                                            <i class="fa-solid fa-building text-primary"></i>
+                                </div>
 
-                                            <span class="fw-bold text-dark">
-                                                {{ $department }}
-                                            </span>
 
-                                            <span class="badge bg-primary-subtle text-primary border border-primary border-opacity-25 rounded-pill department-count">
-                                                {{ $departmentEmployees->count() }}
-                                                Employee
-                                            </span>
+                                @if($isHolidayHeader)
+
+                                    <div class="text-success fw-bold"
+                                         style="font-size:.52rem;">
+
+                                        HB
+
+                                    </div>
+
+                                @endif
+
+                            </th>
+
+                        @endforeach
+
+
+                        <th class="bg-success bg-opacity-10 text-success"
+                            style="min-width:72px;">
+
+                            Hadir
+
+                        </th>
+
+
+                        <th class="bg-danger bg-opacity-10 text-danger"
+                            style="min-width:85px;">
+
+                            Absen Tdk Dibayar
+
+                        </th>
+
+
+                        <th class="bg-success bg-opacity-10 text-success"
+                            style="min-width:80px;">
+
+                            Absen Dibayar
+
+                        </th>
+
+
+                        <th class="bg-primary bg-opacity-10 text-primary"
+                            style="min-width:70px;">
+
+                            Σ Absen
+
+                        </th>
+
+
+                        <th class="bg-secondary bg-opacity-10 text-secondary"
+                            style="min-width:65px;">
+
+                            M/HB
+
+                        </th>
+
+
+                        <th class="bg-info bg-opacity-10 text-info"
+                            style="min-width:75px;">
+
+                            Normatif
+
+                        </th>
+
+
+                        <th class="bg-warning bg-opacity-10 text-dark"
+                            style="min-width:78px;">
+
+                            Gantungan
+
+                        </th>
+
+
+                        <th class="bg-primary bg-opacity-10 text-primary"
+                            style="min-width:90px;">
+
+                            Lembur (Jam)
+
+                        </th>
+
+
+                        @if($showFinancialColumns)
+
+                            <th class="bg-warning bg-opacity-10 text-dark"
+                                style="min-width:120px;">
+
+                                BPJS TK
+
+                            </th>
+
+
+                            <th class="bg-warning bg-opacity-10 text-dark"
+                                style="min-width:120px;">
+
+                                BPJS KES
+
+                            </th>
+
+
+                            <th class="bg-success bg-opacity-10 text-success"
+                                style="min-width:150px;">
+
+                                Bonus / Insentif
+
+                            </th>
+
+
+                            <th class="bg-success bg-opacity-10 text-danger"
+                                style="min-width:150px;">
+
+                                Kasbon
+
+                            </th>
+
+
+                            <th class="bg-success bg-opacity-10 text-danger"
+                                style="min-width:160px;">
+
+                                Potongan Gantungan
+
+                            </th>
+
+
+                            <th class="bg-success bg-opacity-10 text-danger"
+                                style="min-width:150px;">
+
+                                Potongan Lain
+
+                            </th>
+
+                        @endif
+
+                    </tr>
+
+                </thead>
+
+
+                @forelse($employeesByDepartment as $department => $departmentEmployees)
+
+                    @php
+
+                        $departmentId =
+                            'department_'
+                            . md5($department);
+
+                    @endphp
+
+
+                    <tbody id="{{ $departmentId }}"
+                           class="department-section">
+
+                        {{-- DEPARTMENT HEADER --}}
+
+                        <tr class="department-row">
+
+                            <td colspan="{{ $tableColspan }}"
+                                class="p-0">
+
+                                <div class="department-toggle d-flex justify-content-between align-items-center px-3 py-2"
+                                     data-target="{{ $departmentId }}"
+                                     aria-expanded="true"
+                                     role="button">
+
+                                    <div class="d-flex align-items-center gap-2">
+
+                                        <i class="fa-solid fa-chevron-down department-chevron text-primary"></i>
+
+                                        <i class="fa-solid fa-building text-primary"></i>
+
+                                        <span class="fw-bold text-dark">
+
+                                            {{ $department }}
+
+                                        </span>
+
+
+                                        <span class="badge bg-primary-subtle text-primary border border-primary border-opacity-25 rounded-pill">
+
+                                            {{ $departmentEmployees->count() }}
+
+                                            Employee
+
+                                        </span>
+
+                                    </div>
+
+
+                                    <div class="text-muted small d-flex align-items-center gap-2">
+
+                                        <span class="d-none d-md-inline">
+
+                                            Klik untuk buka / tutup
+
+                                        </span>
+
+                                        <i class="fa-solid fa-up-down-left-right text-primary"></i>
+
+                                    </div>
+
+                                </div>
+
+                            </td>
+
+                        </tr>
+
+
+                        {{-- EMPLOYEE --}}
+
+                        @foreach($departmentEmployees as $emp)
+
+                            @php
+
+                                $contract =
+                                    $emp->activeContract;
+
+                                $existing =
+                                    $emp->payrolls->first();
+
+
+                                /*
+                                |--------------------------------------------------------------------------
+                                | ATTENDANCE RECORDS
+                                |--------------------------------------------------------------------------
+                                */
+
+                                $attendanceData = [];
+
+
+                                foreach (
+                                    $emp->attendanceRecords
+                                    as $attendanceRecord
+                                ) {
+
+                                    $recordDate =
+                                        $attendanceRecord
+                                            ->attendance_date;
+
+                                    if (!$recordDate) {
+                                        continue;
+                                    }
+
+
+                                    $recordDate =
+                                        $recordDate instanceof \Carbon\Carbon
+                                            ? $recordDate
+                                            : \Carbon\Carbon::parse(
+                                                $recordDate
+                                            );
+
+
+                                    if (
+                                        $recordDate->format('Y-m')
+                                        !== $currentPeriod->format('Y-m')
+                                    ) {
+                                        continue;
+                                    }
+
+
+                                    $attendanceData[
+                                        $recordDate->format('Y-m-d')
+                                    ] =
+                                        strtoupper(
+                                            trim(
+                                                (string)
+                                                $attendanceRecord->status
+                                            )
+                                        );
+                                }
+
+
+                                /*
+                                |--------------------------------------------------------------------------
+                                | JOB / ACCESS
+                                |--------------------------------------------------------------------------
+                                */
+
+                                $jabatan =
+                                    strtolower(
+                                        $contract?->job_title
+                                        ?? ''
+                                    );
+
+
+                                $isHighLevel =
+                                    str_contains(
+                                        $jabatan,
+                                        'manager'
+                                    )
+                                    || str_contains(
+                                        $jabatan,
+                                        'kepala'
+                                    )
+                                    || str_contains(
+                                        $jabatan,
+                                        'hrd'
+                                    )
+                                    || str_contains(
+                                        $jabatan,
+                                        'direktur'
+                                    );
+
+
+                                $canViewLevel =
+                                    $isFinanceRole
+                                    || !$isHighLevel;
+
+
+                                $level =
+                                    $contract?->level;
+
+
+                                $canViewFinancial =
+                                    $isFinanceRole
+                                    || (
+                                        $isHeadHrd
+                                        && $level !== null
+                                        && (int) $level <= 13
+                                    );
+
+
+                                /*
+                                |--------------------------------------------------------------------------
+                                | REKAP ABSENSI
+                                |--------------------------------------------------------------------------
+                                */
+
+                                $presentDays = 0.0;
+                                $unpaidDays = 0.0;
+                                $paidAbsenceDays = 0.0;
+                                $normativeDays = 0.0;
+                                $holidayDays = 0.0;
+                                $currentUnpaidDays = 0.0;
+                                $gantunganDays = 0.0;
+
+
+                                foreach (
+                                    \Carbon\CarbonPeriod::create(
+                                        $startDate,
+                                        $endDate
+                                    ) as $rowDate
+                                ) {
+
+                                    $dateKey =
+                                        $rowDate->format(
+                                            'Y-m-d'
+                                        );
+
+
+                                    /*
+                                    |--------------------------------------------------------------------------
+                                    | EFFECTIVE STATUS
+                                    |--------------------------------------------------------------------------
+                                    |
+                                    | 1. Attendance record
+                                    | 2. Holiday => HB
+                                    | 3. Empty
+                                    |
+                                    */
+
+                                    $storedStatus =
+                                        $attendanceData[
+                                            $dateKey
+                                        ] ?? '';
+
+
+                                    if (
+                                        $storedStatus !== ''
+                                    ) {
+
+                                        $status =
+                                            $storedStatus;
+
+                                    } elseif (
+                                        isset(
+                                            $holidayData[
+                                                $dateKey
+                                            ]
+                                        )
+                                    ) {
+
+                                        $status =
+                                            'HB';
+
+                                    } else {
+
+                                        $status =
+                                            '';
+                                    }
+
+
+                                    /*
+                                    |--------------------------------------------------------------------------
+                                    | MINGGU TANPA RECORD
+                                    |--------------------------------------------------------------------------
+                                    */
+
+                                    if (
+                                        $rowDate->isSunday()
+                                        && $status === ''
+                                    ) {
+
+                                        continue;
+                                    }
+
+
+                                    switch ($status) {
+
+                                        case 'H':
+
+                                            $presentDays += 1;
+
+                                            break;
+
+
+                                        case 'H0.5':
+
+                                            $presentDays += 0.5;
+                                            $unpaidDays += 0.5;
+
+
+                                            if (
+                                                (int)
+                                                $rowDate->format('d')
+                                                <= $cutoffDay
+                                            ) {
+
+                                                $currentUnpaidDays
+                                                    += 0.5;
+
+                                            } else {
+
+                                                $gantunganDays
+                                                    += 0.5;
+                                            }
+
+                                            break;
+
+
+                                        case 'A':
+                                        case 'I':
+
+                                            $unpaidDays += 1;
+
+
+                                            if (
+                                                (int)
+                                                $rowDate->format('d')
+                                                <= $cutoffDay
+                                            ) {
+
+                                                $currentUnpaidDays
+                                                    += 1;
+
+                                            } else {
+
+                                                $gantunganDays
+                                                    += 1;
+                                            }
+
+                                            break;
+
+
+                                        case 'SKD':
+                                        case 'C':
+                                        case 'CM':
+
+                                            $paidAbsenceDays += 1;
+
+
+                                            if (
+                                                $status === 'CM'
+                                            ) {
+
+                                                $normativeDays += 1;
+                                            }
+
+                                            break;
+
+
+                                        case 'HB':
+
+                                            /*
+                                            | Hari Besar / Hari Libur
+                                            | dibayar penuh.
+                                            */
+
+                                            $paidAbsenceDays += 1;
+
+                                            $holidayDays += 1;
+
+                                            break;
+                                    }
+
+                                }
+
+
+                                $totalAttendanceDays =
+                                    $presentDays
+                                    + $unpaidDays
+                                    + $paidAbsenceDays;
+
+
+                                /*
+                                |--------------------------------------------------------------------------
+                                | GANTUNGAN
+                                |--------------------------------------------------------------------------
+                                */
+
+                                $previousGantungan =
+                                    (float) (
+                                        $existing
+                                            ->previous_gantungan_deduction
+                                        ?? 0
+                                    );
+
+
+                                $nextGantungan =
+                                    (float) (
+                                        $existing
+                                            ->gantungan_deduction
+                                        ?? 0
+                                    );
+
+
+                                /*
+                                |--------------------------------------------------------------------------
+                                | BPJS PREVIEW
+                                |--------------------------------------------------------------------------
+                                */
+
+                                $isManualBpjs =
+                                    (bool) (
+                                        $contract
+                                            ?->use_manual_bpjs
+                                        ?? false
+                                    );
+
+
+                                $existingBpjsTk =
+                                    (float) (
+                                        $existing
+                                            ?->bpjs_tk_deduction
+                                        ?? 0
+                                    );
+
+
+                                $existingBpjsKs =
+                                    (float) (
+                                        $existing
+                                            ?->bpjs_ks_deduction
+                                        ?? 0
+                                    );
+
+
+                                $hasSavedPayrollBpjs =
+                                    $existingBpjsTk > 0
+                                    || $existingBpjsKs > 0;
+
+
+                                $bpjsTkPreview = 0.0;
+                                $bpjsKsPreview = 0.0;
+
+
+                                if ($isManualBpjs) {
+
+                                    $bpjsTkPreview =
+                                        (float) (
+                                            $contract
+                                                ?->manual_bpjs_tk_employee
+                                            ?? 0
+                                        );
+
+
+                                    $bpjsKsPreview =
+                                        (float) (
+                                            $contract
+                                                ?->manual_bpjs_ks_employee
+                                            ?? 0
+                                        );
+
+                                } elseif (
+                                    $hasSavedPayrollBpjs
+                                ) {
+
+                                    $bpjsTkPreview =
+                                        $existingBpjsTk;
+
+                                    $bpjsKsPreview =
+                                        $existingBpjsKs;
+
+                                } else {
+
+                                    $basicSalaryPreview =
+                                        (float) (
+                                            $contract
+                                                ?->basic_salary
+                                            ?? 0
+                                        );
+
+
+                                    $bpjsTkPreview =
+                                        (
+                                            $contract
+                                                ?->is_bpjstk_active
+                                            ?? false
+                                        )
+                                            ? (
+                                                $basicSalaryPreview
+                                                * $tkRatePreview
+                                            )
+                                            : 0;
+
+
+                                    $bpjsKsPreview =
+                                        (
+                                            $contract
+                                                ?->is_bpjs_health_active
+                                            ?? false
+                                        )
+                                            ? (
+                                                min(
+                                                    $basicSalaryPreview,
+                                                    $ksCapPreview
+                                                )
+                                                * $ksRatePreview
+                                            )
+                                            : 0;
+                                }
+
+                            @endphp
+
+
+                            <tr class="employee-row"
+                                data-department-id="{{ $departmentId }}"
+                                data-cutoff-day="{{ $cutoffDay }}">
+
+                                {{-- NO --}}
+
+                                <td class="text-center fw-bold text-muted">
+
+                                    {{ $loop->parent->iteration }}.{{ $loop->iteration }}
+
+                                </td>
+
+
+                                {{-- EMPLOYEE --}}
+
+                                <td>
+
+                                    <div class="fw-bold text-dark mb-0">
+
+                                        {{ $emp->full_name }}
+
+                                    </div>
+
+
+                                    <div class="text-primary fw-semibold"
+                                         style="font-size:.78rem;">
+
+                                        {{ $contract?->job_title ?? 'Staff' }}
+
+                                    </div>
+
+
+                                    <span class="badge bg-light text-secondary border rounded-pill px-2 py-0 mt-1"
+                                          style="font-size:.68rem;">
+
+                                        NIK:
+                                        {{ $emp->nik_ktp }}
+
+                                    </span>
+
+                                </td>
+
+
+                                {{-- LEVEL --}}
+
+                                <td>
+
+                                    @if($canViewLevel)
+
+                                        <small class="text-muted d-block"
+                                               style="font-size:.73rem;">
+
+                                            Kat:
+
+                                            <strong>
+                                                {{ $contract?->category ?? '-' }}
+                                            </strong>
+
+                                            |
+
+                                            Lvl:
+
+                                            <strong>
+                                                {{ $contract?->level ?? '-' }}
+                                            </strong>
+
+                                        </small>
+
+
+                                        <span class="badge bg-primary-subtle text-primary border border-primary border-opacity-25 rounded-pill mt-1"
+                                              style="font-size:.68rem;">
+
+                                            PTKP:
+                                            {{ $contract?->ptkp_status ?? 'TK/0' }}
+
+                                        </span>
+
+                                    @else
+
+                                        <small class="text-danger fw-bold d-block"
+                                               style="font-size:.73rem;">
+
+                                            <i class="fa-solid fa-lock"
+                                               style="font-size:10px;"></i>
+
+                                            Kat: *** | Lvl: ***
+
+                                        </small>
+
+
+                                        <span class="badge bg-danger-subtle text-danger border border-danger rounded-pill mt-1"
+                                              style="font-size:.68rem;">
+
+                                            <i class="fa-solid fa-lock"
+                                               style="font-size:9px;"></i>
+
+                                            PTKP: ***
+
+                                        </span>
+
+                                    @endif
+
+                                </td>
+
+
+                                {{-- =================================================
+                                     CALENDAR
+                                ================================================== --}}
+
+                                @foreach(
+                                    \Carbon\CarbonPeriod::create(
+                                        $startDate,
+                                        $endDate
+                                    ) as $dt
+                                )
+
+                                    @php
+
+                                        $dateFormatted =
+                                            $dt->format('Y-m-d');
+
+                                        $dayNum =
+                                            (int) $dt->format('d');
+
+                                        $isSunday =
+                                            $dt->isSunday();
+
+
+                                        $storedStatus =
+                                            $attendanceData[
+                                                $dateFormatted
+                                            ] ?? '';
+
+
+                                        $isHoliday =
+                                            isset(
+                                                $holidayData[
+                                                    $dateFormatted
+                                                ]
+                                            );
+
+
+                                        $holidayName =
+                                            $holidayData[
+                                                $dateFormatted
+                                            ]['name']
+                                            ?? null;
+
+
+                                        /*
+                                        |--------------------------------------------------------------------------
+                                        | STATUS PRIORITY
+                                        |--------------------------------------------------------------------------
+                                        |
+                                        | Attendance record > Holiday > Empty
+                                        |
+                                        */
+
+                                        if (
+                                            $storedStatus !== ''
+                                        ) {
+
+                                            $dayStatus =
+                                                $storedStatus;
+
+                                        } elseif (
+                                            $isHoliday
+                                        ) {
+
+                                            $dayStatus =
+                                                'HB';
+
+                                        } else {
+
+                                            $dayStatus =
+                                                '';
+                                        }
+
+
+                                        $normalizedStatusClass =
+                                            str_replace(
+                                                '.',
+                                                '',
+                                                $dayStatus
+                                            );
+
+
+                                        if (
+                                            $isSunday
+                                            && $dayStatus === ''
+                                        ) {
+
+                                            $bgClass =
+                                                'status-bg-SUNDAY';
+
+                                        } else {
+
+                                            $bgClass =
+                                                $dayStatus !== ''
+                                                    ? 'status-bg-'
+                                                        . $normalizedStatusClass
+                                                    : 'status-bg-empty';
+                                        }
+
+
+                                        /*
+                                        |--------------------------------------------------------------------------
+                                        | LOCK RULE
+                                        |--------------------------------------------------------------------------
+                                        */
+
+                                        if (
+                                            $dayNum <= $cutoffDay
+                                        ) {
+
+                                            $isCellLocked =
+                                                $lockedState;
+
+                                        } else {
+
+                                            $isCellLocked =
+                                                $isNextPeriodLocked;
+                                        }
+
+
+                                        $isDraftCell =
+                                            $dayNum > $cutoffDay;
+
+                                    @endphp
+
+
+                                    <td class="p-0 text-center
+                                        {{ $isDraftCell ? 'cell-editable-draft' : '' }}
+                                        {{ $isCellLocked ? 'cell-locked' : '' }}"
+                                        @if($isHoliday)
+                                            title="{{ $holidayName }}"
+                                        @endif>
+
+                                        <select
+                                            name="payrolls[{{ $emp->id_employee }}][daily_attendance][{{ $dateFormatted }}]"
+                                            class="form-select form-select-sm border-0 attendance-select {{ $bgClass }}"
+                                            style="font-size:.75rem;height:32px;"
+                                            data-date="{{ $dateFormatted }}"
+                                            onchange="updateStatusColor(this); recalculateSummary(this);"
+                                            {{ $isCellLocked ? 'disabled' : '' }}>
+
+
+                                            @if(
+                                                $isSunday
+                                                && $dayStatus === ''
+                                            )
+
+                                                <option value=""
+                                                        selected>
+                                                    -
+                                                </option>
+
+                                            @else
+
+                                                <option value=""
+                                                    {{ $dayStatus === '' ? 'selected' : '' }}>
+
+                                                    -
+
+                                                </option>
+
+
+                                                <option value="H"
+                                                    {{ $dayStatus === 'H' ? 'selected' : '' }}>
+
+                                                    H
+
+                                                </option>
+
+
+                                                <option value="H0.5"
+                                                    {{ $dayStatus === 'H0.5' ? 'selected' : '' }}>
+
+                                                    H0.5
+
+                                                </option>
+
+
+                                                @if($isHoliday)
+
+                                                    <option value="HB"
+                                                        {{ $dayStatus === 'HB' ? 'selected' : '' }}>
+
+                                                        HB
+
+                                                    </option>
+
+                                                @endif
+
+
+                                                <option value="SKD"
+                                                    {{ $dayStatus === 'SKD' ? 'selected' : '' }}>
+
+                                                    SKD
+
+                                                </option>
+
+
+                                                <option value="C"
+                                                    {{ $dayStatus === 'C' ? 'selected' : '' }}>
+
+                                                    C
+
+                                                </option>
+
+
+                                                <option value="CM"
+                                                    {{ $dayStatus === 'CM' ? 'selected' : '' }}>
+
+                                                    CM
+
+                                                </option>
+
+
+                                                <option value="I"
+                                                    {{ $dayStatus === 'I' ? 'selected' : '' }}>
+
+                                                    I
+
+                                                </option>
+
+
+                                                <option value="A"
+                                                    {{ $dayStatus === 'A' ? 'selected' : '' }}>
+
+                                                    A
+
+                                                </option>
+
+                                            @endif
+
+                                        </select>
+
+                                    </td>
+
+                                @endforeach
+
+
+                                {{-- =================================================
+                                     SUMMARY
+                                ================================================== --}}
+
+                                <td class="p-1">
+
+                                    <div class="summary-box">
+
+                                        <div class="summary-value text-success"
+                                             data-summary="present">
+
+                                            {{ number_format(
+                                                $presentDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
 
                                         </div>
 
-                                        <div class="text-muted small d-flex align-items-center gap-2">
 
-                                            <span class="d-none d-md-inline">
-                                                Klik untuk buka / tutup
-                                            </span>
+                                        <div class="summary-label">
 
-                                            <i class="fa-solid fa-up-down-left-right text-primary"></i>
+                                            Hadir
 
                                         </div>
 
@@ -693,350 +1958,474 @@
 
                                 </td>
 
-                            </tr>
 
+                                <td class="p-1">
 
-                            <!-- ====================================================
-                                 EMPLOYEE GROUP
-                                 ==================================================== -->
-                            <tbody id="{{ $departmentId }}"
-                                   class="collapse show department-body">
+                                    <div class="summary-box">
 
-                            @foreach($departmentEmployees as $emp)
+                                        <div class="summary-value text-danger"
+                                             data-summary="unpaid">
 
-                                @php
+                                            {{ number_format(
+                                                $unpaidDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
 
-                                    $contract = $emp->activeContract;
-
-                                    $existing = $emp->payrolls
-                                        ->where('period_month', $period)
-                                        ->first();
-
-                                    $dailyData = [];
-
-                                    if ($existing && $existing->daily_attendance) {
-
-                                        $dailyData = is_array($existing->daily_attendance)
-                                            ? $existing->daily_attendance
-                                            : (json_decode($existing->daily_attendance, true) ?? []);
-
-                                    }
-
-                                    $jabatan = strtolower($contract->job_title ?? '');
-
-                                    $isHighLevel =
-                                        str_contains($jabatan, 'manager') ||
-                                        str_contains($jabatan, 'kepala') ||
-                                        str_contains($jabatan, 'hrd') ||
-                                        str_contains($jabatan, 'direktur');
-
-                                    $canViewLevel =
-                                        $isFinancialRole ||
-                                        !$isHighLevel;
-
-                                @endphp
-
-
-                                <tr>
-
-                                    <!-- NOMOR -->
-                                    <td class="text-center fw-bold text-muted">
-                                        {{ $loop->parent->iteration }}.{{ $loop->iteration }}
-                                    </td>
-
-
-                                    <!-- NAMA & JABATAN -->
-                                    <td>
-
-                                        <div class="fw-bold text-dark mb-0">
-                                            {{ $emp->full_name }}
                                         </div>
 
-                                        <div class="text-primary fw-semibold"
-                                             style="font-size: 0.78rem;">
-                                            {{ $contract->job_title ?? 'Staff' }}
+
+                                        <div class="summary-label">
+
+                                            Tdk Dibayar
+
                                         </div>
 
-                                        <span class="badge bg-light text-secondary border rounded-pill px-2 py-0 mt-1"
-                                              style="font-size: 0.68rem;">
-                                            NIK: {{ $emp->nik_ktp }}
-                                        </span>
 
-                                    </td>
+                                        <div class="summary-label text-muted"
+                                             data-summary="current-unpaid">
 
+                                            Now:
 
-                                    <!-- LEVEL, KAT & TER -->
-                                    <td>
+                                            {{ number_format(
+                                                $currentUnpaidDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
 
-                                        @if($canViewLevel)
+                                        </div>
 
-                                            <small class="text-muted d-block"
-                                                   style="font-size: 0.73rem;">
+                                    </div>
 
-                                                Kat:
-                                                <strong>
-                                                    {{ $contract->category ?? '-' }}
-                                                </strong>
-
-                                                |
-
-                                                Lvl:
-                                                <strong>
-                                                    {{ $contract->level ?? '-' }}
-                                                </strong>
-
-                                            </small>
-
-                                            <span class="badge bg-primary-subtle text-primary border border-primary border-opacity-25 rounded-pill mt-1"
-                                                  style="font-size: 0.68rem;">
-
-                                                PTKP:
-                                                {{ $contract->ptkp_status ?? 'TK/0' }}
-
-                                            </span>
-
-                                        @else
-
-                                            <small class="text-danger fw-bold d-block"
-                                                   style="font-size: 0.73rem;">
-
-                                                <i class="fa-solid fa-lock"
-                                                   style="font-size: 10px;"></i>
-
-                                                Kat: *** | Lvl: ***
-
-                                            </small>
-
-                                            <span class="badge bg-danger-subtle text-danger border border-danger border-opacity-25 rounded-pill mt-1"
-                                                  style="font-size: 0.68rem;">
-
-                                                <i class="fa-solid fa-lock"
-                                                   style="font-size: 9px;"></i>
-
-                                                PTKP: ***
-
-                                            </span>
-
-                                        @endif
-
-                                    </td>
+                                </td>
 
 
-                                    <!-- LOOPING TANGGAL KALENDER -->
-                                    @foreach($datePeriod as $dt)
+                                <td class="p-1">
+
+                                    <div class="summary-box">
+
+                                        <div class="summary-value text-success"
+                                             data-summary="paid">
+
+                                            {{ number_format(
+                                                $paidAbsenceDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
+
+                                        </div>
+
+
+                                        <div class="summary-label">
+
+                                            Dibayar
+
+                                        </div>
+
+                                    </div>
+
+                                </td>
+
+
+                                <td class="p-1">
+
+                                    <div class="summary-box">
+
+                                        <div class="summary-value text-primary"
+                                             data-summary="total">
+
+                                            {{ number_format(
+                                                $totalAttendanceDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
+
+                                        </div>
+
+
+                                        <div class="summary-label">
+
+                                            Σ Absen
+
+                                        </div>
+
+                                    </div>
+
+                                </td>
+
+
+                                {{-- M/HB --}}
+
+                                <td class="p-1 text-center">
+
+                                    <div class="summary-box">
+
+                                        <div class="summary-value text-secondary"
+                                             data-summary="holiday">
+
+                                            {{ number_format(
+                                                $holidayDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
+
+                                        </div>
+
+
+                                        <div class="summary-label">
+
+                                            M/HB
+
+                                        </div>
+
+                                    </div>
+
+                                </td>
+
+
+                                {{-- NORMATIF --}}
+
+                                <td class="p-1">
+
+                                    <div class="summary-box">
+
+                                        <div class="summary-value text-info"
+                                             data-summary="normative">
+
+                                            {{ number_format(
+                                                $normativeDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
+
+                                        </div>
+
+
+                                        <div class="summary-label">
+
+                                            CM / Normatif
+
+                                        </div>
+
+                                    </div>
+
+                                </td>
+
+
+                                {{-- GANTUNGAN --}}
+
+                                <td class="p-1">
+
+                                    <div class="summary-box">
+
+                                        <div class="summary-value text-dark"
+                                             data-summary="carryover">
+
+                                            {{ number_format(
+                                                $gantunganDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
+
+                                        </div>
+
+
+                                        <div class="summary-label">
+
+                                            Ke Bulan Depan
+
+                                        </div>
+
+                                    </div>
+
+                                </td>
+
+
+                                {{-- OVERTIME --}}
+
+                                <td class="p-1">
+
+                                    <input type="number"
+                                           step="0.5"
+                                           min="0"
+                                           max="744"
+                                           name="payrolls[{{ $emp->id_employee }}][overtime_hours]"
+                                           class="form-control form-control-sm text-center fw-bold border-primary border-opacity-25"
+                                           value="{{ old(
+                                                'payrolls.'
+                                                . $emp->id_employee
+                                                . '.overtime_hours',
+                                                $existing->overtime_hours ?? 0
+                                           ) }}"
+                                           {{ $lockedState ? 'readonly' : '' }}>
+
+                                </td>
+
+
+                                {{-- =================================================
+                                     FINANCIAL
+                                ================================================== --}}
+
+                                @if($showFinancialColumns)
+
+                                    @if($canViewFinancial)
 
                                         @php
 
-                                            $dateFormatted = $dt->format('Y-m-d');
-
-                                            $dayNum = (int)$dt->format('d');
-
-                                            $dayStatus =
-                                                $dailyData[$dateFormatted]
-                                                ?? $dailyData[$dayNum]
-                                                ?? '';
-
-                                            $bgClass =
-                                                $dayStatus !== ''
-                                                ? 'status-bg-' . str_replace('.', '', $dayStatus)
-                                                : 'status-bg-empty';
-
-                                            // LOGIKA LOCKING PRESISI
-                                            if ($dayNum <= $cutoffDay) {
-
-                                                $isCellLocked = $lockedState;
-
-                                            } else {
-
-                                                $isCellLocked = $isNextPeriodLocked;
-
-                                            }
-
-                                            $isDraftCell = $dayNum > $cutoffDay;
+                                            $isManualBpjs =
+                                                (bool) (
+                                                    $contract
+                                                        ?->use_manual_bpjs
+                                                    ?? false
+                                                );
 
                                         @endphp
 
 
-                                        <td class="p-0 text-center {{ $isDraftCell ? 'cell-editable-draft' : '' }}">
+                                        {{-- BPJS TK --}}
 
-                                            <select name="payrolls[{{ $emp->id_employee }}][daily_attendance][{{ $dateFormatted }}]"
-                                                    class="form-select form-select-sm border-0 attendance-select {{ $bgClass }}"
-                                                    style="font-size: 0.75rem; height: 32px;"
-                                                    onchange="updateStatusColor(this); recalculateSummary(this);"
-                                                    {{ $isCellLocked ? 'disabled' : '' }}>
+                                        <td class="p-1 text-center">
 
-                                                <option value=""
-                                                        class="text-muted"
-                                                        {{ (string)$dayStatus === '' ? 'selected' : '' }}>
-                                                    -
-                                                </option>
+                                            <div class="small fw-bold text-dark">
 
-                                                <option value="H"
-                                                        class="text-success"
-                                                        {{ (string)$dayStatus === 'H' ? 'selected' : '' }}>
-                                                    H
-                                                </option>
+                                                Rp
 
-                                                <option value="H0.5"
-                                                        class="text-warning fw-bold"
-                                                        {{ (string)$dayStatus === 'H0.5' ? 'selected' : '' }}>
-                                                    H0.5
-                                                </option>
-
-                                                <option value="SKD"
-                                                        class="text-info"
-                                                        {{ (string)$dayStatus === 'SKD' ? 'selected' : '' }}>
-                                                    SKD
-                                                </option>
-
-                                                <option value="C"
-                                                        class="text-primary"
-                                                        {{ (string)$dayStatus === 'C' ? 'selected' : '' }}>
-                                                    C
-                                                </option>
-
-                                                <option value="CM"
-                                                        class="text-purple"
-                                                        {{ (string)$dayStatus === 'CM' ? 'selected' : '' }}>
-                                                    CM
-                                                </option>
-
-                                                <option value="A"
-                                                        class="text-danger"
-                                                        {{ (string)$dayStatus === 'A' ? 'selected' : '' }}>
-                                                    A
-                                                </option>
-
-                                            </select>
-
-                                        </td>
-
-                                    @endforeach
-
-
-                                    <!-- REKAP ALPHA / UNPAID LEAVE -->
-                                    <td class="p-1">
-
-                                        <input type="number"
-                                               step="0.5"
-                                               name="payrolls[{{ $emp->id_employee }}][unpaid_leave]"
-                                               class="form-control form-control-sm text-center fw-bold text-danger border-danger border-opacity-25"
-                                               value="{{ old('payrolls.'.$emp->id_employee.'.unpaid_leave', $existing->unpaid_leave ?? 0) }}"
-                                               {{ $lockedState ? 'readonly' : '' }}>
-
-                                    </td>
-
-
-                                    <!-- REKAP LEMBUR -->
-                                    <td class="p-1">
-
-                                        <input type="number"
-                                               step="0.5"
-                                               name="payrolls[{{ $emp->id_employee }}][overtime_hours]"
-                                               class="form-control form-control-sm text-center fw-bold border-secondary border-opacity-25"
-                                               value="{{ old('payrolls.'.$emp->id_employee.'.overtime_hours', $existing->overtime_hours ?? 0) }}"
-                                               {{ $lockedState ? 'readonly' : '' }}>
-
-                                    </td>
-
-
-                                    <!-- BAGIAN FINANSIAL -->
-                                    @if($isFinancialRole)
-
-                                        <!-- CUTI MELAHIRKAN -->
-                                        <td class="p-1">
-
-                                            <div class="input-group input-group-sm">
-
-                                                <span class="input-group-text bg-light border-end-0 text-muted">
-                                                    Rp
-                                                </span>
-
-                                                <input type="text"
-                                                       name="payrolls[{{ $emp->id_employee }}][maternity_leave_pay]"
-                                                       class="form-control border-start-0 fw-bold currency-input"
-                                                       value="{{ number_format($existing->maternity_leave_pay ?? 0, 0, ',', '.') }}"
-                                                       {{ $lockedState ? 'readonly' : '' }}>
+                                                {{ number_format(
+                                                    $bpjsTkPreview,
+                                                    0,
+                                                    ',',
+                                                    '.'
+                                                ) }}
 
                                             </div>
 
+
+                                            @if($isManualBpjs)
+
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning rounded-pill mt-1"
+                                                      style="font-size:.58rem;">
+
+                                                    <i class="fa-solid fa-sliders me-1"></i>
+
+                                                    MANUAL
+
+                                                </span>
+
+                                            @else
+
+                                                <div class="text-muted"
+                                                     style="font-size:.58rem;">
+
+                                                    {{ number_format(
+                                                        $tkRatePreview * 100,
+                                                        2,
+                                                        ',',
+                                                        '.'
+                                                    ) }}%
+
+                                                </div>
+
+                                            @endif
+
                                         </td>
 
 
-                                        <!-- BONUS / INSENTIF -->
+                                        {{-- BPJS KES --}}
+
+                                        <td class="p-1 text-center">
+
+                                            <div class="small fw-bold text-dark">
+
+                                                Rp
+
+                                                {{ number_format(
+                                                    $bpjsKsPreview,
+                                                    0,
+                                                    ',',
+                                                    '.'
+                                                ) }}
+
+                                            </div>
+
+
+                                            @if($isManualBpjs)
+
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning rounded-pill mt-1"
+                                                      style="font-size:.58rem;">
+
+                                                    <i class="fa-solid fa-sliders me-1"></i>
+
+                                                    MANUAL
+
+                                                </span>
+
+                                            @else
+
+                                                <div class="text-muted"
+                                                     style="font-size:.58rem;">
+
+                                                    {{ number_format(
+                                                        $ksRatePreview * 100,
+                                                        2,
+                                                        ',',
+                                                        '.'
+                                                    ) }}%
+
+                                                </div>
+
+                                            @endif
+
+                                        </td>
+
+
+                                        {{-- INCENTIVE --}}
+
                                         <td class="p-1">
 
                                             <div class="input-group input-group-sm">
 
                                                 <span class="input-group-text bg-success bg-opacity-10 border-end-0 text-success fw-bold">
+
                                                     Rp
+
                                                 </span>
+
 
                                                 <input type="text"
                                                        name="payrolls[{{ $emp->id_employee }}][incentive]"
                                                        class="form-control border-start-0 fw-bold text-success currency-input"
-                                                       value="{{ number_format($existing->incentive ?? 0, 0, ',', '.') }}"
-                                                       {{ $lockedState ? 'readonly' : '' }}>
+                                                       value="{{ number_format(
+                                                            (float) (
+                                                                $existing->incentive ?? 0
+                                                            ),
+                                                            0,
+                                                            ',',
+                                                            '.'
+                                                       ) }}"
+                                                       {{ (
+                                                            $lockedState
+                                                            || !$isFinanceRole
+                                                       ) ? 'readonly' : '' }}>
 
                                             </div>
 
                                         </td>
 
 
-                                        <!-- KASBON -->
+                                        {{-- CASH ADVANCE --}}
+
                                         <td class="p-1">
 
                                             <div class="input-group input-group-sm">
 
                                                 <span class="input-group-text bg-danger bg-opacity-10 border-end-0 text-danger fw-bold">
+
                                                     Rp
+
                                                 </span>
+
 
                                                 <input type="text"
                                                        name="payrolls[{{ $emp->id_employee }}][cash_advance]"
                                                        class="form-control border-start-0 fw-bold text-danger currency-input"
-                                                       value="{{ number_format($existing->cash_advance ?? 0, 0, ',', '.') }}"
-                                                       {{ $lockedState ? 'readonly' : '' }}>
+                                                       value="{{ number_format(
+                                                            (float) (
+                                                                $existing->cash_advance ?? 0
+                                                            ),
+                                                            0,
+                                                            ',',
+                                                            '.'
+                                                       ) }}"
+                                                       {{ (
+                                                            $lockedState
+                                                            || !$isFinanceRole
+                                                       ) ? 'readonly' : '' }}>
 
                                             </div>
 
                                         </td>
 
 
-                                        <!-- POTONGAN GANTUNGAN -->
+                                        {{-- GANTUNGAN --}}
+
                                         <td class="p-1">
 
-                                            <div class="input-group input-group-sm">
+                                            <div class="small fw-bold text-danger">
 
-                                                <span class="input-group-text bg-danger bg-opacity-10 border-end-0 text-danger fw-bold">
-                                                    Rp
-                                                </span>
+                                                Rp
 
-                                                <input type="text"
-                                                       name="payrolls[{{ $emp->id_employee }}][potongan_gantungan]"
-                                                       class="form-control border-start-0 fw-bold text-danger currency-input"
-                                                       value="{{ number_format($existing->potongan_gantungan ?? 0, 0, ',', '.') }}"
-                                                       {{ $lockedState ? 'readonly' : '' }}>
+                                                {{ number_format(
+                                                    $previousGantungan,
+                                                    0,
+                                                    ',',
+                                                    '.'
+                                                ) }}
+
+                                            </div>
+
+
+                                            <div class="text-muted"
+                                                 style="font-size:.62rem;">
+
+                                                potong bulan ini
+
+                                            </div>
+
+
+                                            <div class="text-muted"
+                                                 style="font-size:.62rem;">
+
+                                                next:
+
+                                                Rp
+
+                                                {{ number_format(
+                                                    $nextGantungan,
+                                                    0,
+                                                    ',',
+                                                    '.'
+                                                ) }}
 
                                             </div>
 
                                         </td>
 
 
-                                        <!-- POTONGAN LAIN -->
+                                        {{-- OTHER DEDUCTIONS --}}
+
                                         <td class="p-1">
 
                                             <div class="input-group input-group-sm">
 
                                                 <span class="input-group-text bg-danger bg-opacity-10 border-end-0 text-danger fw-bold">
+
                                                     Rp
+
                                                 </span>
+
 
                                                 <input type="text"
                                                        name="payrolls[{{ $emp->id_employee }}][other_deductions]"
                                                        class="form-control border-start-0 fw-bold text-danger currency-input"
-                                                       value="{{ number_format($existing->other_deductions ?? 0, 0, ',', '.') }}"
-                                                       {{ $lockedState ? 'readonly' : '' }}>
+                                                       value="{{ number_format(
+                                                            (float) (
+                                                                $existing->other_deductions ?? 0
+                                                            ),
+                                                            0,
+                                                            ',',
+                                                            '.'
+                                                       ) }}"
+                                                       {{ (
+                                                            $lockedState
+                                                            || !$isFinanceRole
+                                                       ) ? 'readonly' : '' }}>
 
                                             </div>
 
@@ -1044,179 +2433,162 @@
 
                                     @else
 
-                                        <input type="hidden"
-                                               name="payrolls[{{ $emp->id_employee }}][maternity_leave_pay]"
-                                               value="{{ $existing->maternity_leave_pay ?? 0 }}">
+                                        <td colspan="6"
+                                            class="text-center finance-masked">
 
-                                        <input type="hidden"
-                                               name="payrolls[{{ $emp->id_employee }}][incentive]"
-                                               value="{{ $existing->incentive ?? 0 }}">
+                                            <i class="fa-solid fa-lock me-1"></i>
 
-                                        <input type="hidden"
-                                               name="payrolls[{{ $emp->id_employee }}][cash_advance]"
-                                               value="{{ $existing->cash_advance ?? 0 }}">
+                                            Data finansial dibatasi
+                                            untuk Level > 13
 
-                                        <input type="hidden"
-                                               name="payrolls[{{ $emp->id_employee }}][potongan_gantungan]"
-                                               value="{{ $existing->potongan_gantungan ?? 0 }}">
-
-                                        <input type="hidden"
-                                               name="payrolls[{{ $emp->id_employee }}][other_deductions]"
-                                               value="{{ $existing->other_deductions ?? 0 }}">
+                                        </td>
 
                                     @endif
 
-                                </tr>
-
-                            @endforeach
-
-                            </tbody>
-
-                        @empty
-
-                            <tr>
-
-                                <td colspan="{{ 5 + $totalDaysCount + ($isFinancialRole ? 5 : 0) }}"
-                                    class="text-center py-5 text-muted">
-
-                                    <i class="fa-solid fa-users-slash fs-1 text-secondary opacity-25 d-block mb-3"></i>
-
-                                    <span>
-                                        Belum ada data karyawan aktif untuk diproses gajian.
-                                    </span>
-
-                                </td>
+                                @endif
 
                             </tr>
 
-                        @endforelse
+                        @endforeach
 
                     </tbody>
 
-                </table>
+                @empty
+
+                    <tbody>
+
+                        <tr>
+
+                            <td colspan="{{ $tableColspan }}"
+                                class="text-center py-5 text-muted">
+
+                                <i class="fa-solid fa-users-slash fs-1 text-secondary opacity-25 d-block mb-3"></i>
+
+                                Belum ada data karyawan aktif
+                                untuk diproses.
+
+                            </td>
+
+                        </tr>
+
+                    </tbody>
+
+                @endforelse
+
+            </table>
+
+        </div>
+
+
+        {{-- ========================================================
+             FOOTER
+        ======================================================== --}}
+
+        <div class="card-footer bg-light p-3 d-flex justify-content-between align-items-center flex-wrap gap-2 rounded-bottom-4 border-top">
+
+            <div class="text-muted small d-flex align-items-center gap-3 flex-wrap">
+
+                <div>
+
+                    <span class="badge bg-secondary opacity-25 me-1">
+                        &nbsp;
+                    </span>
+
+                    01–{{ $cutoffDay }}:
+
+                    <strong>
+                        {{ $lockedState ? 'Locked' : 'Open' }}
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span class="badge bg-warning me-1">
+                        &nbsp;
+                    </span>
+
+                    {{ $cutoffDay + 1 }}–Akhir:
+
+                    <strong>
+                        {{ $isNextPeriodLocked
+                            ? 'Locked by next period'
+                            : 'Editable / Gantungan'
+                        }}
+                    </strong>
+
+                </div>
 
             </div>
 
 
-            <!-- ====================================================
-                 ACTION FOOTER
-                 Tetap dipertahankan seperti sebelumnya.
-                 ==================================================== -->
-            <div class="card-footer bg-light p-3 d-flex justify-content-between align-items-center flex-wrap gap-2 rounded-bottom-4 border-top">
+            <div>
 
-                <div class="text-muted small d-flex align-items-center gap-3">
+                @if(!$lockedState && $isFinanceRole)
 
-                    <div>
-                        <span class="badge bg-secondary opacity-25 me-1">&nbsp;</span>
-                        Tanggal 01 - {{ $cutoffDay }}:
-                        <strong>
-                            {{ $lockedState ? 'Locked' : 'Open' }}
-                        </strong>
-                    </div>
+                    <button type="submit"
+                            form="formLockPayroll"
+                            class="btn btn-dark px-4 py-2 fw-bold rounded-3 shadow-sm"
+                            onclick="return confirm('Close periode {{ $period }} sampai tanggal {{ $cutoffDay }}?');">
 
-                    <div>
-                        <span class="badge bg-warning me-1">&nbsp;</span>
-                        Tanggal {{ $cutoffDay + 1 }} - Akhir Bulan:
-                        <strong>
-                            Editable (Draft Next Period)
-                        </strong>
-                    </div>
+                        <i class="fa-solid fa-lock me-1"></i>
 
-                </div>
+                        Close / Lock
 
+                    </button>
 
-                <div class="d-flex align-items-center gap-2">
-
-                    @if($lockedState)
-
-                        @if($isFinancialRole)
-
-                            <button type="submit"
-                                    form="formUnlockPayroll"
-                                    class="btn btn-outline-warning fw-bold px-4 py-2 rounded-3 shadow-sm">
-
-                                <i class="fa-solid fa-lock-open me-1"></i>
-                                Unlock Period
-
-                            </button>
-
-                        @endif
-
-                        <button type="submit"
-                                class="btn btn-primary px-4 py-2 fw-bold rounded-3 shadow-sm">
-
-                            <i class="fa-solid fa-floppy-disk me-1"></i>
-                            Simpan Perubahan Sisa Tanggal
-
-                        </button>
-
-                    @else
-
-                        <button type="submit"
-                                class="btn btn-success px-4 py-2 fw-bold rounded-3 shadow-sm">
-
-                            <i class="fa-solid fa-calculator me-1"></i>
-                            Simpan Absensi
-
-                        </button>
-
-                        <button type="submit"
-                                form="formLockPayroll"
-                                class="btn btn-dark px-4 py-2 fw-bold rounded-3 shadow-sm"
-                                onclick="return confirm('Apakah Anda yakin ingin mengunci (Close) absensi s/d tanggal {{ $cutoffDay }}?');">
-
-                            <i class="fa-solid fa-lock me-1"></i>
-                            Close / Lock (Tgl 01-{{ $cutoffDay }})
-
-                        </button>
-
-                    @endif
-
-                </div>
+                @endif
 
             </div>
 
         </div>
 
-    </form>
+    </div>
+
+</form>
 
 
-    <!-- ============================================================
-         FORM LOCK
-         ============================================================ -->
-    <form id="formLockPayroll"
-          action="{{ route('payrolls.local.lock') }}"
-          method="POST"
-          class="d-none">
+{{-- ================================================================
+     LOCK FORM
+================================================================= --}}
 
-        @csrf
+<form id="formLockPayroll"
+      action="{{ route('payrolls.local.lock') }}"
+      method="POST"
+      class="d-none">
 
-        <input type="hidden"
-               name="period"
-               value="{{ $period ?? date('Y-m') }}">
+    @csrf
 
-        <input type="hidden"
-               name="cutoff_day"
-               value="{{ $cutoffDay }}">
-
-    </form>
+    <input type="hidden"
+           name="period"
+           value="{{ $period ?? date('Y-m') }}">
 
 
-    <!-- ============================================================
-         FORM UNLOCK
-         ============================================================ -->
-    <form id="formUnlockPayroll"
-          action="{{ route('payrolls.local.unlock') }}"
-          method="POST"
-          class="d-none">
+    <input type="hidden"
+           name="cutoff_day"
+           value="{{ $cutoffDay }}">
 
-        @csrf
+</form>
 
-        <input type="hidden"
-               name="period"
-               value="{{ $period ?? date('Y-m') }}">
 
-    </form>
+{{-- ================================================================
+     UNLOCK FORM
+================================================================= --}}
+
+<form id="formUnlockPayroll"
+      action="{{ route('payrolls.local.unlock') }}"
+      method="POST"
+      class="d-none">
+
+    @csrf
+
+    <input type="hidden"
+           name="period"
+           value="{{ $period ?? date('Y-m') }}">
+
+</form>
+
 
 </div>
 
@@ -1224,6 +2596,7 @@
 
 
 @push('scripts')
+
 <script>
 
 function updateStatusColor(selectEl) {
@@ -1231,150 +2604,554 @@ function updateStatusColor(selectEl) {
     selectEl.classList.remove(
         'status-bg-H',
         'status-bg-H05',
+        'status-bg-HB',
         'status-bg-SKD',
         'status-bg-C',
         'status-bg-CM',
         'status-bg-A',
+        'status-bg-I',
+        'status-bg-SUNDAY',
         'status-bg-empty'
     );
 
-    if (selectEl.value === '') {
 
-        selectEl.classList.add('status-bg-empty');
+    const cleanVal =
+        selectEl.value
+            ? selectEl.value.replace('.', '')
+            : 'empty';
 
-    } else {
 
-        let cleanVal = selectEl.value.replace('.', '');
-
-        selectEl.classList.add('status-bg-' + cleanVal);
-
-    }
+    selectEl.classList.add(
+        'status-bg-' + cleanVal
+    );
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| RECALCULATE SUMMARY
+|--------------------------------------------------------------------------
+*/
 
 function recalculateSummary(selectEl) {
 
-    const row = selectEl.closest('tr');
+    const row =
+        selectEl.closest(
+            '.employee-row'
+        );
 
-    const selects = row.querySelectorAll('.attendance-select');
 
-    let alphaCount = 0;
+    if (!row) {
+        return;
+    }
 
-    selects.forEach(s => {
 
-        if (s.value === 'A') {
+    const cutoff =
+        parseInt(
+            row.dataset.cutoffDay || '26',
+            10
+        );
 
-            alphaCount += 1;
 
-        } else if (s.value === 'H0.5') {
+    const selects =
+        row.querySelectorAll(
+            '.attendance-select'
+        );
 
-            alphaCount += 0.5;
+
+    let present = 0;
+    let unpaid = 0;
+    let paid = 0;
+    let holiday = 0;
+    let normative = 0;
+    let currentUnpaid = 0;
+    let carryover = 0;
+
+
+    selects.forEach((select) => {
+
+        const status =
+            select.value;
+
+
+        const dateString =
+            select.dataset.date || '';
+
+
+        const day =
+            parseInt(
+                dateString.slice(-2),
+                10
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | HADIR
+        |--------------------------------------------------------------------------
+        */
+
+        if (status === 'H') {
+
+            present += 1;
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | HALF DAY
+        |--------------------------------------------------------------------------
+        */
+
+        else if (
+            status === 'H0.5'
+        ) {
+
+            present += 0.5;
+
+            unpaid += 0.5;
+
+
+            if (day <= cutoff) {
+
+                currentUnpaid += 0.5;
+
+            } else {
+
+                carryover += 0.5;
+
+            }
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | TIDAK DIBAYAR
+        |--------------------------------------------------------------------------
+        */
+
+        else if (
+            status === 'A'
+            || status === 'I'
+        ) {
+
+            unpaid += 1;
+
+
+            if (day <= cutoff) {
+
+                currentUnpaid += 1;
+
+            } else {
+
+                carryover += 1;
+
+            }
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | ABSEN DIBAYAR
+        |--------------------------------------------------------------------------
+        */
+
+        else if (
+            ['SKD', 'C', 'CM', 'HB']
+                .includes(status)
+        ) {
+
+            paid += 1;
+
+
+            if (status === 'CM') {
+
+                normative += 1;
+
+            }
+
+
+            if (status === 'HB') {
+
+                holiday += 1;
+
+            }
 
         }
 
     });
 
-    const unpaidInput =
-        row.querySelector('input[name*="[unpaid_leave]"]');
 
-    if (unpaidInput) {
+    const total =
+        present
+        + unpaid
+        + paid;
 
-        unpaidInput.value = alphaCount;
 
-    }
+    const set =
+        (
+            key,
+            value
+        ) => {
+
+            const el =
+                row.querySelector(
+                    `[data-summary="${key}"]`
+                );
+
+
+            if (!el) {
+                return;
+            }
+
+
+            el.textContent =
+                Number(value).toLocaleString(
+                    'id-ID',
+                    {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1
+                    }
+                );
+        };
+
+
+    set(
+        'present',
+        present
+    );
+
+
+    set(
+        'unpaid',
+        unpaid
+    );
+
+
+    set(
+        'paid',
+        paid
+    );
+
+
+    set(
+        'total',
+        total
+    );
+
+
+    set(
+        'holiday',
+        holiday
+    );
+
+
+    set(
+        'normative',
+        normative
+    );
+
+
+    set(
+        'current-unpaid',
+        currentUnpaid
+    );
+
+
+    set(
+        'carryover',
+        carryover
+    );
 }
 
 
-document.addEventListener('DOMContentLoaded', function () {
+/*
+|--------------------------------------------------------------------------
+| DEPARTMENT TOGGLE
+|--------------------------------------------------------------------------
+*/
 
-    const currencyInputs =
-        document.querySelectorAll('.currency-input');
+function toggleDepartment(button) {
 
-
-    const formatCurrency = (val) => {
-
-        let clean =
-            val.toString().replace(/[^0-9]/g, '');
-
-        return clean
-            ? new Intl.NumberFormat('id-ID').format(clean)
-            : '0';
-
-    };
+    const targetId =
+        button.dataset.target;
 
 
-    currencyInputs.forEach(function (input) {
-
-        if (input.value) {
-
-            input.value =
-                formatCurrency(input.value);
-
-        }
+    const target =
+        document.getElementById(
+            targetId
+        );
 
 
-        input.addEventListener('input', function () {
-
-            this.value =
-                formatCurrency(this.value);
-
-        });
-
-
-        input.addEventListener('focus', function () {
-
-            if (this.value === '0') {
-
-                this.value = '';
-
-            }
-
-        });
-
-
-        input.addEventListener('blur', function () {
-
-            if (this.value === '') {
-
-                this.value = '0';
-
-            }
-
-        });
-
-    });
-
-
-    const mainForm =
-        document.getElementById('mainPayrollForm');
-
-
-    if (mainForm) {
-
-        mainForm.addEventListener('submit', function () {
-
-            currencyInputs.forEach(function (input) {
-
-                input.value =
-                    input.value.replace(/\./g, '');
-
-            });
-
-        });
-
+    if (!target) {
+        return;
     }
 
 
-    /*
-    |--------------------------------------------------------------------------
-    | DEPARTMENT COLLAPSE
-    |--------------------------------------------------------------------------
-    | Bootstrap collapse sudah menangani buka/tutup department.
-    | Tidak ada perubahan terhadap data/input payroll.
-    |--------------------------------------------------------------------------
-    */
+    const rows =
+        target.querySelectorAll(
+            '.employee-row'
+        );
 
-});
+
+    const shouldShow =
+        target.dataset.collapsed !== '1';
+
+
+    rows.forEach(
+        row => {
+
+            row.style.display =
+                shouldShow
+                    ? 'none'
+                    : '';
+
+        }
+    );
+
+
+    target.dataset.collapsed =
+        shouldShow
+            ? '1'
+            : '0';
+
+
+    button.setAttribute(
+        'aria-expanded',
+        shouldShow
+            ? 'false'
+            : 'true'
+    );
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| DOM READY
+|--------------------------------------------------------------------------
+*/
+
+document.addEventListener(
+    'DOMContentLoaded',
+    function () {
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | DEPARTMENT TOGGLE
+        |--------------------------------------------------------------------------
+        */
+
+        document
+            .querySelectorAll(
+                '.department-toggle'
+            )
+            .forEach(
+                button => {
+
+                    button.addEventListener(
+                        'click',
+                        function () {
+
+                            toggleDepartment(
+                                this
+                            );
+
+                        }
+                    );
+
+                }
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | INITIAL SUMMARY
+        |--------------------------------------------------------------------------
+        |
+        | Penting:
+        | Saat halaman pertama kali dibuka,
+        | summary langsung dihitung ulang dari select.
+        |
+        */
+
+        document
+            .querySelectorAll(
+                '.attendance-select'
+            )
+            .forEach(
+                select => {
+
+                    updateStatusColor(
+                        select
+                    );
+
+                }
+            );
+
+
+        document
+            .querySelectorAll(
+                '.employee-row'
+            )
+            .forEach(
+                row => {
+
+                    const firstSelect =
+                        row.querySelector(
+                            '.attendance-select'
+                        );
+
+
+                    if (firstSelect) {
+
+                        recalculateSummary(
+                            firstSelect
+                        );
+
+                    }
+
+                }
+            );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | CURRENCY INPUT
+        |--------------------------------------------------------------------------
+        */
+
+        const currencyInputs =
+            document.querySelectorAll(
+                '.currency-input'
+            );
+
+
+        const formatCurrency =
+            (val) => {
+
+                const clean =
+                    val
+                        .toString()
+                        .replace(
+                            /[^0-9]/g,
+                            ''
+                        );
+
+
+                return clean
+                    ? new Intl.NumberFormat(
+                        'id-ID'
+                    ).format(clean)
+                    : '0';
+            };
+
+
+        currencyInputs.forEach(
+            input => {
+
+                input.value =
+                    formatCurrency(
+                        input.value || '0'
+                    );
+
+
+                if (!input.readOnly) {
+
+                    input.addEventListener(
+                        'input',
+                        function () {
+
+                            this.value =
+                                formatCurrency(
+                                    this.value
+                                );
+
+                        }
+                    );
+
+
+                    input.addEventListener(
+                        'focus',
+                        function () {
+
+                            if (
+                                this.value === '0'
+                            ) {
+
+                                this.value = '';
+
+                            }
+
+                        }
+                    );
+
+
+                    input.addEventListener(
+                        'blur',
+                        function () {
+
+                            if (
+                                this.value === ''
+                            ) {
+
+                                this.value = '0';
+
+                            }
+
+                        }
+                    );
+
+                }
+
+            }
+        );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BEFORE SUBMIT
+        |--------------------------------------------------------------------------
+        |
+        | "1.500.000" -> "1500000"
+        |
+        */
+
+        const mainForm =
+            document.getElementById(
+                'mainPayrollForm'
+            );
+
+
+        if (mainForm) {
+
+            mainForm.addEventListener(
+                'submit',
+                function () {
+
+                    currencyInputs.forEach(
+                        input => {
+
+                            input.value =
+                                input.value.replace(
+                                    /\./g,
+                                    ''
+                                );
+
+                        }
+                    );
+
+                }
+            );
+
+        }
+
+    }
+);
 
 </script>
+
 @endpush

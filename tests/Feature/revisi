@@ -94,7 +94,16 @@ dan shift untuk
 absensi hrd ternyata yang di hiden hanya level dan kategori aja tergantung jabatan kepala dan manager 
 tanggal merah di absensi 
 penambahan jika pkwt itu di tambahkan info pkwt ke berapa 
-absensi tambah dropdown i 
 absensi penambahan potongan gantungan 
-
 tanggal penutupan(cut off di tentukan manager keuangan )
+
+Check list
+BPJS Override belum masuk database (Done)
+Pemberian status PKTW ke Berapa (Done)
+absensi tambah dropdown i (Donne)
+Perlu di tannya kan apakah cuti melahirkan akan tetap dapat gaji bulann an atau beda 
+Sistem untuk Tanggal merah atau hari libur all karyawan itu bisa auto HB atau hari besar dannnn tetap di bayar karenna masuk libur di bayar (Done)
+Menambahkan form untuk sistem shift security 
+Slip gaji perlu di benar kan 
+Kasbon belum bisa masuk database 
+Fitur send Slip email

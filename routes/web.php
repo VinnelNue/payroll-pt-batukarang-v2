@@ -10,6 +10,7 @@ use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ContractOuterIslandController;
+use App\Http\Controllers\HolidayController;
 
 /*
 |--------------------------------------------------------------------------
@@ -113,6 +114,10 @@ Route::middleware(['auth'])->group(function () {
             Route::get('villages', [EmployeeController::class, 'getVillages'])
                 ->name('villages');
         });
+
+    Route::post('/payrolls/local/cutoff-day', [PayrollController::class, 'updateCutoffDay'])
+    ->middleware('auth')
+    ->name('payrolls.local.cutoff.update');
 
 
     /*
@@ -265,6 +270,40 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('/tax-bpjs-master/update-bpjs', [PayrollController::class, 'updateBpjsSetting'])
         ->name('tax-bpjs.update-bpjs');
+
+
+    /*                                                                         |
+    | -------------------------------------------------------------------------- |
+    | 7. MASTER HARI LIBUR                                                       |
+    | -------------------------------------------------------------------------- |
+    | */                                                                        
+
+    Route::prefix('holidays')
+    ->name('holidays.')
+    ->group(function () {
+
+        Route::get('/', [HolidayController::class, 'index'])
+            ->name('index');
+
+        Route::get('/create', [HolidayController::class, 'create'])
+            ->name('create');
+
+        Route::post('/', [HolidayController::class, 'store'])
+            ->name('store');
+
+        Route::get('/{holiday}/edit', [HolidayController::class, 'edit'])
+            ->name('edit');
+
+        Route::put('/{holiday}', [HolidayController::class, 'update'])
+            ->name('update');
+
+        Route::delete('/{holiday}', [HolidayController::class, 'destroy'])
+            ->name('destroy');
+
+        Route::patch('/{holiday}/toggle-status', [HolidayController::class, 'toggleStatus'])
+            ->name('toggleStatus');
+    });
+
 
 
     /*

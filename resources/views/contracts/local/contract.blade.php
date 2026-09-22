@@ -104,7 +104,7 @@
                             <input type="number" name="level" class="form-control" 
                                 value="{{ old('level', $contract->level ?? '') }}" 
                                 placeholder="Contoh: 12"
-                                @if(in_array($userRole, ['head_hrd', 'hrd'])) max="13" @endif>
+                                @if(in_array($userRole, ['head_hrd', 'hrd']))  @endif>
                             
                             @if(in_array($userRole, ['head_hrd', 'hrd']))
                                 <small class="text-muted fs-7">* Maksimal Level 13 untuk akses HRD.</small>
@@ -112,24 +112,71 @@
                         @endif
                     </div>
 
-                    <!-- STATUS HUBUNGAN KERJA -->
-                    <div class="col-md-12">
-                        <label class="form-label fw-semibold text-dark">Status Hubungan Kerja <span class="text-danger">*</span></label>
-                        <select name="employment_type" id="employmentTypeSelect" class="form-select" required>
-                            <optgroup label="Status Aktif">
-                                <option value="PKWT" {{ old('employment_type', $contract->employment_type ?? '') == 'PKWT' ? 'selected' : '' }}>PKWT (Kontrak)</option>
-                                <option value="PKWTT" {{ old('employment_type', $contract->employment_type ?? '') == 'PKWTT' ? 'selected' : '' }}>PKWTT (Karyawan Tetap)</option>
-                                <option value="Probation" {{ old('employment_type', $contract->employment_type ?? '') == 'Probation' ? 'selected' : '' }}>Probation (Masa Percobaan)</option>
-                                <option value="Internship" {{ old('employment_type', $contract->employment_type ?? '') == 'Internship' ? 'selected' : '' }}>Magang / Internship</option>
-                            </optgroup>
-                            <optgroup label="Status Penghentian Kerja (Non-Aktif)">
-                                <option value="PHK" {{ old('employment_type', $contract->employment_type ?? '') == 'PHK' ? 'selected' : '' }}>PHK (Pemutusan Hubungan Kerja)</option>
-                                <option value="Resign" {{ old('employment_type', $contract->employment_type ?? '') == 'Resign' ? 'selected' : '' }}>Resign (Mengundurkan Diri)</option>
-                                <option value="Pensiun" {{ old('employment_type', $contract->employment_type ?? '') == 'Pensiun' ? 'selected' : '' }}>Pensiun</option>
-                                <option value="End_Contract" {{ old('employment_type', $contract->employment_type ?? '') == 'End_Contract' ? 'selected' : '' }}>Habis Masa Kontrak</option>
-                            </optgroup>
-                        </select>
-                    </div>
+<!-- STATUS HUBUNGAN KERJA -->
+<div class="col-md-6">
+    <label class="form-label fw-semibold text-dark">Status Hubungan Kerja <span class="text-danger">*</span></label>
+    <select name="employment_type" id="employmentTypeSelect" class="form-select" required>
+        <optgroup label="Status Aktif">
+            <option value="PKWT" {{ old('employment_type', $contract->employment_type ?? '') == 'PKWT' ? 'selected' : '' }}>PKWT (Kontrak)</option>
+            <option value="PKWTT" {{ old('employment_type', $contract->employment_type ?? '') == 'PKWTT' ? 'selected' : '' }}>PKWTT (Karyawan Tetap)</option>
+            <option value="Probation" {{ old('employment_type', $contract->employment_type ?? '') == 'Probation' ? 'selected' : '' }}>Probation (Masa Percobaan)</option>
+            <option value="Internship" {{ old('employment_type', $contract->employment_type ?? '') == 'Internship' ? 'selected' : '' }}>Magang / Internship</option>
+        </optgroup>
+        <optgroup label="Status Penghentian Kerja (Non-Aktif)">
+            <option value="PHK" {{ old('employment_type', $contract->employment_type ?? '') == 'PHK' ? 'selected' : '' }}>PHK (Pemutusan Hubungan Kerja)</option>
+            <option value="Resign" {{ old('employment_type', $contract->employment_type ?? '') == 'Resign' ? 'selected' : '' }}>Resign (Mengundurkan Diri)</option>
+            <option value="Pensiun" {{ old('employment_type', $contract->employment_type ?? '') == 'Pensiun' ? 'selected' : '' }}>Pensiun</option>
+            <option value="End_Contract" {{ old('employment_type', $contract->employment_type ?? '') == 'End_Contract' ? 'selected' : '' }}>Habis Masa Kontrak</option>
+        </optgroup>
+    </select>
+</div>
+
+{{-- PKWT KE-BERAPA (Hanya muncul jika PKWT) --}}
+<div class="col-md-6 d-none" id="pkwtSequenceBox">
+
+    <label class="form-label fw-semibold text-dark">
+        Periode / Kontrak Ke-
+        <span class="text-danger">*</span>
+    </label>
+
+    <select
+        name="pkwt_sequence"
+        id="pkwtSequenceSelect"
+        class="form-select"
+    >
+        <option value="">-- Pilih Kontrak --</option>
+
+        <option
+            value="1"
+            {{ old('pkwt_sequence', $contract->pkwt_sequence ?? '') == '1' ? 'selected' : '' }}
+        >
+            PKWT 1 (Kontrak Pertama)
+        </option>
+
+        <option
+            value="2"
+            {{ old('pkwt_sequence', $contract->pkwt_sequence ?? '') == '2' ? 'selected' : '' }}
+        >
+            PKWT 2 (Perpanjangan 1)
+        </option>
+
+        <option
+            value="3"
+            {{ old('pkwt_sequence', $contract->pkwt_sequence ?? '') == '3' ? 'selected' : '' }}
+        >
+            PKWT 3 (Perpanjangan 2)
+        </option>
+
+        <option
+            value="4"
+            {{ old('pkwt_sequence', $contract->pkwt_sequence ?? '') == '4' ? 'selected' : '' }}
+        >
+            PKWT 4 (Perpanjangan 3)
+        </option>
+
+    </select>
+
+</div>
 
                     <div class="col-md-6">
                         <label class="form-label fw-semibold text-dark">Tanggal Mulai <span class="text-danger">*</span></label>
@@ -277,26 +324,38 @@
 
                 <hr class="my-3">
 
-                <!-- STATUS PTKP / PPH 21 -->
-                <div class="col-md-12">
-                    <label class="form-label fw-semibold text-dark">Status PTKP & Kategori TER (PPh 21) <span class="text-danger">*</span></label>
-                    
-                    @if($canSeeSalary)
-                        <select name="ptkp_status" class="form-select fw-semibold" required>
-                            <option value="">-- Pilih Status / Kategori Pajak --</option>
-                            <option value="TK0" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'TK0' ? 'selected' : '' }}>TK0 — Tidak Kawin / Lajang (Tanpa Tanggungan)</option>
-                            <option value="K0" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K0' ? 'selected' : '' }}>K0 — Kawin (0 Tanggungan)</option>
-                            <option value="K01" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K01' ? 'selected' : '' }}>K01 — Kawin (1 Tanggungan)</option>
-                            <option value="K02" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K02' ? 'selected' : '' }}>K02 — Kawin (2 Tanggungan)</option>
-                            <option value="K03" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K03' ? 'selected' : '' }}>K03 — Kawin (3 Tanggungan)</option>
-                        </select>
-                        <small class="text-muted">Disamakan dengan format kode status karyawan dari data Excel pabrik (misal: K01, K02, TK0, dll).</small>
-                    @else
-                        <input type="text" class="form-control bg-light fw-bold text-muted" value="********** (Terproteksi)" readonly>
-                        <input type="hidden" name="ptkp_status" value="{{ $contract?->ptkp_status ?? 'TK0' }}">
-                        <small class="text-danger fs-7">* Pengaturan PPh 21 / PTKP terproteksi (Khusus Manager Keuangan / Kepala HRD maks. Level 13).</small>
-                    @endif
-                </div>
+<!-- STATUS PTKP / PPH 21 -->
+<div class="col-md-12">
+    <label class="form-label fw-semibold text-dark">Status PTKP & Kategori TER (PPh 21) <span class="text-danger">*</span></label>
+    
+    @if($canSeeSalary)
+        <select name="ptkp_status" class="form-select fw-semibold" required>
+            <option value="">-- Pilih Status PTKP --</option>
+            
+            <optgroup label="TER Kategori A">
+                <option value="TK/0" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'TK/0' ? 'selected' : '' }}>TK/0 — Tidak Kawin (0 Tanggungan) [TER A]</option>
+                <option value="TK/1" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'TK/1' ? 'selected' : '' }}>TK/1 — Tidak Kawin (1 Tanggungan) [TER A]</option>
+                <option value="K/0"  {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K/0'  ? 'selected' : '' }}>K/0  — Kawin (0 Tanggungan) [TER A]</option>
+            </optgroup>
+
+            <optgroup label="TER Kategori B">
+                <option value="TK/2" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'TK/2' ? 'selected' : '' }}>TK/2 — Tidak Kawin (2 Tanggungan) [TER B]</option>
+                <option value="TK/3" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'TK/3' ? 'selected' : '' }}>TK/3 — Tidak Kawin (3 Tanggungan) [TER B]</option>
+                <option value="K/1"  {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K/1'  ? 'selected' : '' }}>K/1  — Kawin (1 Tanggungan) [TER B]</option>
+                <option value="K/2"  {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K/2'  ? 'selected' : '' }}>K/2  — Kawin (2 Tanggungan) [TER B]</option>
+            </optgroup>
+
+            <optgroup label="TER Kategori C">
+                <option value="K/3"  {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K/3'  ? 'selected' : '' }}>K/3  — Kawin (3 Tanggungan) [TER C]</option>
+            </optgroup>
+        </select>
+        <small class="text-muted">Kategori TER A/B/C otomatis menyesuaikan standar perhitungan PPh 21 terbaru.</small>
+    @else
+        <input type="text" class="form-control bg-light fw-bold text-muted" value="********** (Terproteksi)" readonly>
+        <input type="hidden" name="ptkp_status" value="{{ $contract?->ptkp_status ?? 'TK/0' }}">
+        <small class="text-danger fs-7">* Pengaturan PPh 21 / PTKP terproteksi.</small>
+    @endif
+</div>
             </div>
         </div>
 
@@ -309,14 +368,34 @@
     </div>
 </form>
 @endsection
-
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // 0. DEKLARASI ELEMEN UTAMA
     const contractForm = document.getElementById('contractForm');
     const currencyInputs = document.querySelectorAll('.currency-input');
+    const empTypeSelect = document.getElementById('employmentTypeSelect');
 
-    // 1. FORMATTER CURRENCY RUPIAH REAL-TIME
+    // 1. TOGGLE INPUT PKWT KE-BERAPA
+    const pkwtSequenceBox = document.getElementById('pkwtSequenceBox');
+    const pkwtSequenceSelect = document.getElementById('pkwtSequenceSelect');
+
+    function checkPkwtStatus() {
+        if (empTypeSelect && empTypeSelect.value === 'PKWT') {
+            pkwtSequenceBox.classList.remove('d-none');
+            pkwtSequenceSelect.setAttribute('required', 'required');
+        } else if (pkwtSequenceBox) {
+            pkwtSequenceBox.classList.add('d-none');
+            pkwtSequenceSelect.removeAttribute('required');
+        }
+    }
+
+    if (empTypeSelect && pkwtSequenceBox) {
+        empTypeSelect.addEventListener('change', checkPkwtStatus);
+        checkPkwtStatus();
+    }
+
+    // 2. FORMATTER CURRENCY RUPIAH REAL-TIME
     currencyInputs.forEach(function (input) {
         input.addEventListener('input', function () {
             let value = this.value.replace(/[^0-9]/g, '');
@@ -349,15 +428,14 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // 2. TOGGLE BOX PHK / RESIGN
-    const empTypeSelect = document.getElementById('employmentTypeSelect');
+    // 3. TOGGLE BOX PHK / RESIGN
     const terminationBox = document.getElementById('terminationBox');
 
     function checkTermination() {
-        const value = empTypeSelect.value;
+        const value = empTypeSelect ? empTypeSelect.value : '';
         if (['PHK', 'Resign', 'Pensiun', 'End_Contract'].includes(value)) {
             terminationBox.classList.remove('d-none');
-        } else {
+        } else if (terminationBox) {
             terminationBox.classList.add('d-none');
         }
     }
@@ -367,7 +445,7 @@ document.addEventListener('DOMContentLoaded', function () {
         checkTermination();
     }
 
-    // 3. TOGGLE INPUT MANUAL BPJS
+    // 4. TOGGLE INPUT MANUAL BPJS
     const useManualBpjsSwitch = document.getElementById('useManualBpjs');
     const manualBpjsBox = document.getElementById('manualBpjsBox');
 
