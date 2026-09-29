@@ -11,12 +11,17 @@ class EmployeeOuterIsland extends Model
     use HasFactory;
 
     protected $table = 'employees_outer_island';
+
     protected $primaryKey = 'id_employee_outer_island';
-    protected $guarded = ['id_employee_outer_island'];
+
+    protected $guarded = [
+        'id_employee_outer_island',
+    ];
 
     protected static function boot()
     {
         parent::boot();
+
         static::creating(function ($model) {
             if (empty($model->uuid)) {
                 $model->uuid = (string) Str::uuid();
@@ -24,35 +29,83 @@ class EmployeeOuterIsland extends Model
         });
     }
 
+    /**
+     * Route Model Binding menggunakan UUID.
+     */
     public function getRouteKeyName()
     {
         return 'uuid';
     }
 
-    // RELASI
-    public function contracts()
+    // ==========================================
+    // CONTRACT MASTER
+    // ==========================================
+
+    /**
+     * Satu Employee hanya memiliki SATU Contract Master.
+     *
+     * Struktur:
+     *
+     * Employee
+     *     ↓
+     * Contract Master
+     *     ↓
+     * Contract Histories
+     */
+    public function contractMaster()
     {
-        return $this->hasMany(ContractOuterIsland::class, 'employee_outer_island_id', 'id_employee_outer_island');
+        return $this->hasOne(
+            ContractOuterIsland::class,
+            'employee_outer_island_id',
+            'id_employee_outer_island'
+        );
     }
 
-    public function activeContract()
+    // ==========================================
+    // ATTENDANCE OUTER ISLAND
+    // ==========================================
+
+    public function attendanceRecords()
     {
-        return $this->hasOne(ContractOuterIsland::class, 'employee_outer_island_id', 'id_employee_outer_island')->where('is_active', true);
+        return $this->hasMany(
+            AttendanceRecordOuterIsland::class,
+            'employee_outer_island_id',
+            'id_employee_outer_island'
+        );
     }
 
-    public function latestContract()
-    {
-        return $this->hasOne(ContractOuterIsland::class, 'employee_outer_island_id', 'id_employee_outer_island')
-            ->latestOfMany('id_contract_outer_island');
-    }
+    // ==========================================
+    // PAYROLL OUTER ISLAND
+    // ==========================================
 
     public function payrolls()
     {
-        return $this->hasMany(PayrollOuterIsland::class, 'employee_outer_island_id', 'id_employee_outer_island');
+        return $this->hasMany(
+            PayrollOuterIsland::class,
+            'employee_outer_island_id',
+            'id_employee_outer_island'
+        );
     }
+
+    public function latestPayroll()
+    {
+        return $this->hasOne(
+            PayrollOuterIsland::class,
+            'employee_outer_island_id',
+            'id_employee_outer_island'
+        )->latestOfMany('period_month');
+    }
+
+    // ==========================================
+    // USER
+    // ==========================================
 
     public function user()
     {
-        return $this->hasOne(User::class, 'employee_outer_island_id', 'id_employee_outer_island');
+        return $this->hasOne(
+            User::class,
+            'employee_outer_island_id',
+            'id_employee_outer_island'
+        );
     }
 }

@@ -106,10 +106,10 @@
                     <input type="email" name="email" class="form-control" value="{{ old('email', $employee->email ?? '') }}" placeholder="karyawan@batukarang.com">
                 </div>
 
-                <div class="col-md-12">
-                    <label class="form-label fw-semibold text-dark">Alamat KTP <span class="text-danger">*</span></label>
-                    <textarea name="address_ktp" class="form-control" rows="2" required placeholder="Alamat lengkap sesuai KTP">{{ old('address_ktp', $employee->address_ktp ?? '') }}</textarea>
-                </div>
+<div class="col-md-12">
+    <label class="form-label fw-semibold text-dark">Alamat KTP <span class="text-danger">*</span></label>
+    <textarea name="address_ktp" class="form-control" rows="2" required placeholder="Alamat lengkap sesuai KTP">{{ old('address_ktp', $employee->address_ktp ?? '') }}</textarea>
+</div>
 
                 <div class="col-md-12">
                     <label class="form-label fw-semibold text-dark">Alamat Domisili (opsional)</label>

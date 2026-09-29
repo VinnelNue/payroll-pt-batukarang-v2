@@ -4,119 +4,443 @@
 @section('page_title', 'Manajemen Penempatan & Kontrak Kerja')
 
 @section('content')
+
+@php
+    $userRole = Auth::user()->role ?? '';
+
+    /*
+    |--------------------------------------------------------------------------
+    | Role Access
+    |--------------------------------------------------------------------------
+    */
+
+    // Bisa melihat seluruh nominal tanpa batas level
+    $isManagerKeuangan = $userRole === 'manager_keuangan';
+
+    // Keuangan biasa dibatasi level <= 13
+    $isKeuangan = $userRole === 'keuangan';
+
+    // Head HRD dibatasi level <= 13
+    $isHeadHrd = in_array($userRole, [
+        'head_hrd',
+        'kepala_hrd',
+    ], true);
+
+    // HRD biasa tidak boleh melihat kolom finansial sama sekali
+    $isHrd = $userRole === 'hrd';
+
+    /*
+    |--------------------------------------------------------------------------
+    | Kolom GAPOK & Tunjangan
+    |--------------------------------------------------------------------------
+    */
+
+    $showFinancialColumns =
+        $isManagerKeuangan
+        || $isKeuangan
+        || $isHeadHrd;
+
+@endphp
+
 <div class="card-custom p-4 mb-4">
+
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h5 class="fw-bold text-dark m-0">
-                <i class="fa-solid fa-file-signature text-primary me-2"></i> Daftar Penempatan & Gaji Acuan
+                <i class="fa-solid fa-file-signature text-primary me-2"></i>
+                Daftar Penempatan & Gaji Acuan
             </h5>
-            <small class="text-muted">Kelola status hubungan kerja, divisi, area, jabatan, acuan Gapok, Tunjangan, BPJS & PPh 21</small>
+
+            <small class="text-muted">
+                Kelola status hubungan kerja, divisi, area, jabatan,
+                acuan Gapok, Tunjangan, BPJS & PPh 21
+            </small>
         </div>
     </div>
 
     <div class="table-responsive">
-        <table class="table table-hover align-middle border-top">
-            <thead class="table-light">
-                <tr>
-                    <th class="py-3 text-center" style="width: 50px;">No</th>
-                    <th class="py-3">Karyawan</th>
-                    <th class="py-3">Jabatan & Divisi</th>
-                    <th class="py-3 text-center">Status Kerja</th>
-                    <th class="py-3 text-end">Gaji Pokok (GAPOK)</th>
-                    <th class="py-3 text-end">Tunjangan (TJ)</th>
-                    <th class="py-3 text-center">PTKP / TER</th>
-                    <th class="py-3 text-center">Status BPJS</th>
-                    <th class="py-3 text-center">Aksi</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($employees as $index => $emp)
-                @php 
-                    $contract = $emp->activeContract; 
-                    
-                    $ptkp = $contract->ptkp_status ?? 'TK/0';
-                    $terCategory = match($ptkp) {
-                        'TK/0', 'TK/1', 'K/0' => 'TER A',
-                        'TK/2', 'TK/3', 'K/1', 'K/2' => 'TER B',
-                        'K/3' => 'TER C',
-                        default => 'TER A'
-                    };
-                @endphp
-                <tr>
-                    <td class="text-center fw-semibold text-muted">
-                        {{ $employees->firstItem() ? $employees->firstItem() + $index : $index + 1 }}
-                    </td>
-                    <td>
-                        <div class="fw-bold text-dark">{{ $emp->full_name }}</div>
-                        <small class="text-muted">NIK: {{ $emp->nik_ktp }}</small>
-                    </td>
-                    <td>
-                        <div class="fw-semibold text-dark">{{ $contract?->job_title ?? '-' }}</div>
-                        <small class="text-muted">
-                            Div: {{ $contract?->department ?? '-' }} 
-                            @if(!empty($contract?->placement_area)) 
-                                | Area: {{ $contract->placement_area }} 
-                            @endif
-                        </small>
-                    </td>
-                    <td class="text-center">
-                        @if($contract)
-                            @if(in_array($contract->employment_type, ['PHK', 'Resign', 'Pensiun', 'End_Contract']))
-                                <span class="badge bg-danger px-2 py-1" title="Alasan: {{ $contract->exit_reason ?? '-' }}">
-                                    <i class="fa-solid fa-user-slash me-1"></i> {{ $contract->employment_type }}
-                                </span>
-                            @else
-                                <span class="badge bg-primary px-2 py-1">{{ $contract->employment_type }}</span>
-                            @endif
-                        @else
-                            <span class="badge bg-secondary px-2 py-1">Belum Set</span>
-                        @endif
-                    </td>
-                    <td class="text-end fw-bold text-dark">
-                        Rp {{ number_format($contract->basic_salary ?? 0, 0, ',', '.') }}
-                    </td>
-                    <td class="text-end fw-bold text-dark">
-                        Rp {{ number_format($contract->allowance ?? 0, 0, ',', '.') }}
-                    </td>
-                    
-                    <td class="text-center">
-                        @if($contract && $contract->ptkp_status)
-                            <div class="fw-bold text-dark small">{{ $ptkp }}</div>
-                            <span class="badge bg-dark px-2 py-0" style="font-size: 0.7rem;">
-                                {{ $terCategory }}
-                            </span>
-                        @else
-                            <span class="badge bg-light text-muted border px-2 py-1">Belum Set</span>
-                        @endif
-                    </td>
 
-                    <td class="text-center">
-                        @if($contract && $contract->use_manual_bpjs)
-                            <span class="badge bg-warning text-dark border border-warning" title="Menggunakan Nominal BPJS Manual Input">BPJS Manual</span>
-                        @else
-                            <span class="badge {{ ($contract->is_bpjstk_active ?? false) ? 'bg-success' : 'bg-light text-muted border' }}" title="BPJS Ketenagakerjaan">BPJS TK</span>
-                            <span class="badge {{ ($contract->is_bpjs_health_active ?? false) ? 'bg-info text-dark' : 'bg-light text-muted border' }}" title="BPJS Kesehatan">BPJS KS</span>
-                        @endif
-                    </td>
-                    <td class="text-center">
-                        <a href="{{ route('contracts.local.edit', $emp->uuid) }}" class="btn btn-sm btn-outline-primary rounded-2" title="Kelola Kontrak & Gaji">
-                            <i class="fa-solid fa-pen-to-square me-1"></i> Edit Kontrak
-                        </a>
-                    </td>
-                </tr>
-                @empty
+        <table class="table table-hover align-middle border-top">
+
+            <thead class="table-light">
+
                 <tr>
-                    <td colspan="9" class="text-center py-5 text-muted">
-                        Belum ada data karyawan.
-                    </td>
+
+                    <th class="py-3 text-center" style="width: 50px;">
+                        No
+                    </th>
+
+                    <th class="py-3">
+                        Karyawan
+                    </th>
+
+                    <th class="py-3">
+                        Jabatan & Divisi
+                    </th>
+
+                    <th class="py-3 text-center">
+                        Status Kerja
+                    </th>
+
+                    {{-- GAPOK --}}
+                    @if($showFinancialColumns)
+                        <th class="py-3 text-end">
+                            Gaji Pokok (GAPOK)
+                        </th>
+
+                        <th class="py-3 text-end">
+                            Tunjangan (TJ)
+                        </th>
+                    @endif
+
+                    <th class="py-3 text-center">
+                        PTKP / TER
+                    </th>
+
+                    <th class="py-3 text-center">
+                        Status BPJS
+                    </th>
+
+                    <th class="py-3 text-center">
+                        Aksi
+                    </th>
+
                 </tr>
+
+            </thead>
+
+            <tbody>
+
+                @forelse($employees as $index => $emp)
+
+                    @php
+
+                        $contract = $emp->activeContract;
+
+                        $ptkp = $contract->ptkp_status ?? 'TK/0';
+
+                        $terCategory = match($ptkp) {
+                            'TK/0', 'TK/1', 'K/0' => 'TER A',
+                            'TK/2', 'TK/3', 'K/1', 'K/2' => 'TER B',
+                            'K/3' => 'TER C',
+                            default => 'TER A'
+                        };
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Level
+                        |--------------------------------------------------------------------------
+                        */
+
+                        $level = $contract?->level !== null
+                            ? (int) $contract->level
+                            : null;
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Financial Visibility
+                        |--------------------------------------------------------------------------
+                        */
+
+                        // Manager keuangan bebas melihat semua level
+                        $canSeeFinancial = $isManagerKeuangan;
+
+                        // Keuangan biasa hanya level <= 13
+                        if ($isKeuangan) {
+                            $canSeeFinancial =
+                                $level !== null
+                                && $level <= 13;
+                        }
+
+                        // Head HRD hanya level <= 13
+                        if ($isHeadHrd) {
+                            $canSeeFinancial =
+                                $level !== null
+                                && $level <= 13;
+                        }
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Masking
+                        |--------------------------------------------------------------------------
+                        */
+
+                        $maskFinancial =
+                            $showFinancialColumns
+                            && !$isManagerKeuangan
+                            && $level !== null
+                            && $level >= 14;
+
+                    @endphp
+
+                    <tr>
+
+                        {{-- NO --}}
+                        <td class="text-center fw-semibold text-muted">
+                            {{ $employees->firstItem()
+                                ? $employees->firstItem() + $index
+                                : $index + 1
+                            }}
+                        </td>
+
+                        {{-- KARYAWAN --}}
+                        <td>
+
+                            <div class="fw-bold text-dark">
+                                {{ $emp->full_name }}
+                            </div>
+
+                            <small class="text-muted">
+                                NIK: {{ $emp->nik_ktp }}
+                            </small>
+
+                            @if($level !== null)
+                                <div>
+                                    <small class="text-muted">
+                                        Level: {{ $level }}
+                                    </small>
+                                </div>
+                            @endif
+
+                        </td>
+
+                        {{-- JABATAN --}}
+                        <td>
+
+                            <div class="fw-semibold text-dark">
+                                {{ $contract?->job_title ?? '-' }}
+                            </div>
+
+                            <small class="text-muted">
+
+                                Div:
+                                {{ $contract?->department ?? '-' }}
+
+                                @if(!empty($contract?->placement_area))
+                                    | Area:
+                                    {{ $contract->placement_area }}
+                                @endif
+
+                            </small>
+
+                        </td>
+
+                        {{-- STATUS KERJA --}}
+                        <td class="text-center">
+
+                            @if($contract)
+
+                                @if(in_array(
+                                    $contract->employment_type,
+                                    [
+                                        'PHK',
+                                        'Resign',
+                                        'Pensiun',
+                                        'End_Contract'
+                                    ],
+                                    true
+                                ))
+
+                                    <span
+                                        class="badge bg-danger px-2 py-1"
+                                        title="Alasan: {{ $contract->exit_reason ?? '-' }}"
+                                    >
+                                        <i class="fa-solid fa-user-slash me-1"></i>
+                                        {{ $contract->employment_type }}
+                                    </span>
+
+                                @else
+
+                                    <span class="badge bg-primary px-2 py-1">
+                                        {{ $contract->employment_type }}
+                                    </span>
+
+                                @endif
+
+                            @else
+
+                                <span class="badge bg-secondary px-2 py-1">
+                                    Belum Set
+                                </span>
+
+                            @endif
+
+                        </td>
+
+                        {{-- ========================================================= --}}
+                        {{-- GAPOK & TUNJANGAN --}}
+                        {{-- ========================================================= --}}
+
+                        @if($showFinancialColumns)
+
+                            {{-- GAPOK --}}
+                            <td class="text-end fw-bold text-dark">
+
+                                @if($maskFinancial)
+
+                                    <span
+                                        class="text-muted"
+                                        title="Nominal hanya dapat dilihat untuk level 13 ke bawah"
+                                    >
+                                        *****
+                                    </span>
+
+                                @else
+
+                                    Rp
+                                    {{ number_format(
+                                        $contract?->basic_salary ?? 0,
+                                        0,
+                                        ',',
+                                        '.'
+                                    ) }}
+
+                                @endif
+
+                            </td>
+
+                            {{-- TUNJANGAN --}}
+                            <td class="text-end fw-bold text-dark">
+
+                                @if($maskFinancial)
+
+                                    <span
+                                        class="text-muted"
+                                        title="Nominal hanya dapat dilihat untuk level 13 ke bawah"
+                                    >
+                                        *****
+                                    </span>
+
+                                @else
+
+                                    Rp
+                                    {{ number_format(
+                                        $contract?->allowance ?? 0,
+                                        0,
+                                        ',',
+                                        '.'
+                                    ) }}
+
+                                @endif
+
+                            </td>
+
+                        @endif
+
+                        {{-- PTKP / TER --}}
+                        <td class="text-center">
+
+                            @if($contract && $contract->ptkp_status)
+
+                                <div class="fw-bold text-dark small">
+                                    {{ $ptkp }}
+                                </div>
+
+                                <span
+                                    class="badge bg-dark px-2 py-0"
+                                    style="font-size: 0.7rem;"
+                                >
+                                    {{ $terCategory }}
+                                </span>
+
+                            @else
+
+                                <span
+                                    class="badge bg-light text-muted border px-2 py-1"
+                                >
+                                    Belum Set
+                                </span>
+
+                            @endif
+
+                        </td>
+
+                        {{-- BPJS --}}
+                        <td class="text-center">
+
+                            @if($contract && $contract->use_manual_bpjs)
+
+                                <span
+                                    class="badge bg-warning text-dark border border-warning"
+                                    title="Menggunakan Nominal BPJS Manual Input"
+                                >
+                                    BPJS Manual
+                                </span>
+
+                            @else
+
+                                <span
+                                    class="badge
+                                    {{
+                                        ($contract?->is_bpjstk_active ?? false)
+                                            ? 'bg-success'
+                                            : 'bg-light text-muted border'
+                                    }}"
+                                    title="BPJS Ketenagakerjaan"
+                                >
+                                    BPJS TK
+                                </span>
+
+                                <span
+                                    class="badge
+                                    {{
+                                        ($contract?->is_bpjs_health_active ?? false)
+                                            ? 'bg-info text-dark'
+                                            : 'bg-light text-muted border'
+                                    }}"
+                                    title="BPJS Kesehatan"
+                                >
+                                    BPJS KS
+                                </span>
+
+                            @endif
+
+                        </td>
+
+                        {{-- AKSI --}}
+                        <td class="text-center">
+
+                            <a
+                                href="{{ route(
+                                    'contracts.local.edit',
+                                    $emp->uuid
+                                ) }}"
+                                class="btn btn-sm btn-outline-primary rounded-2"
+                                title="Kelola Kontrak & Gaji"
+                            >
+                                <i class="fa-solid fa-pen-to-square me-1"></i>
+                                Edit Kontrak
+                            </a>
+
+                        </td>
+
+                    </tr>
+
+                @empty
+
+                    <tr>
+
+                        <td
+                            colspan="{{ $showFinancialColumns ? 9 : 7 }}"
+                            class="text-center py-5 text-muted"
+                        >
+                            Belum ada data karyawan.
+                        </td>
+
+                    </tr>
+
                 @endforelse
+
             </tbody>
+
         </table>
+
     </div>
 
     <div class="mt-3">
         {{ $employees->links() }}
     </div>
+
 </div>
+
 @endsection

@@ -6,23 +6,115 @@
 @section('content')
 @php
     $userRole = Auth::user()->role ?? '';
+
     $contractLevel = $contract->level ?? null;
-    $isHighLevel = !is_null($contractLevel) && $contractLevel !== '' && (int)$contractLevel > 13;
 
-    // Logika Hak Akses:
-    // 1. Super Admin & Manager Keuangan: Akses penuh ke seluruh level & data keuangan.
-    // 2. Kepala HRD & HRD Staff: Terkunci untuk Level > 13.
-    $canEditHighLevel = in_array($userRole, ['super_admin', 'manager_keuangan']);
+    $levelNumber = is_numeric($contractLevel)
+        ? (int) $contractLevel
+        : null;
 
-    // Hak akses data finansial (Gaji, Tunjangan, BPJS, PPh 21):
-    $canSeeSalary = false;
-    if ($canEditHighLevel) {
+    $isHighLevel = $levelNumber !== null && $levelNumber >= 14;
+
+    /*
+    |--------------------------------------------------------------------------
+    | ROLE
+    |--------------------------------------------------------------------------
+    */
+
+    $isManagerKeuangan = in_array($userRole, [
+        'super_admin',
+        'manager_keuangan',
+    ], true);
+
+    $isHeadHrd = in_array($userRole, [
+        'head_hrd',
+        'kepala_hrd',
+    ], true);
+
+    $isKeuangan = $userRole === 'keuangan';
+
+    $isHrd = $userRole === 'hrd';
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | FINANCIAL ACCESS
+    |--------------------------------------------------------------------------
+    |
+    | Manager/Super Admin:
+    |   Semua level
+    |
+    | Head HRD:
+    |   Level <= 13
+    |
+    | Keuangan:
+    |   Level <= 13
+    |
+    | HRD:
+    |   Tidak boleh lihat finansial
+    |
+    */
+
+    if ($isManagerKeuangan) {
+
         $canSeeSalary = true;
-    } elseif ($userRole === 'head_hrd') {
-        $canSeeSalary = !$isHighLevel; // Hanya bisa lihat jika level <= 13
-    } elseif ($userRole === 'hrd') {
-        $canSeeSalary = false; // HRD Staff tidak bisa melihat data finansial
+
+    } elseif ($isHeadHrd || $isKeuangan) {
+
+        $canSeeSalary =
+            $levelNumber !== null
+            && $levelNumber <= 13;
+
+    } else {
+
+        $canSeeSalary = false;
+
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | LEVEL & CATEGORY ACCESS
+    |--------------------------------------------------------------------------
+    |
+    | Manager/Super Admin:
+    |   Bisa lihat semua
+    |
+    | Head HRD / Keuangan / HRD:
+    |   Level <= 13 bisa lihat
+    |   Level >= 14 disamarkan
+    |
+    */
+
+    $canSeeLevelCategory =
+        $isManagerKeuangan
+        || (
+            in_array($userRole, [
+                'head_hrd',
+                'kepala_hrd',
+                'keuangan',
+                'hrd',
+            ], true)
+            && $levelNumber !== null
+            && $levelNumber <= 13
+        );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | MASK LEVEL & CATEGORY
+    |--------------------------------------------------------------------------
+    */
+
+    $maskLevelCategory =
+        !$isManagerKeuangan
+        && in_array($userRole, [
+            'head_hrd',
+            'kepala_hrd',
+            'keuangan',
+            'hrd',
+        ], true)
+        && $isHighLevel;
 @endphp
 
 <div class="mb-4 d-flex justify-content-between align-items-center">
@@ -82,33 +174,88 @@
                     <!-- KATEGORI -->
                     <div class="col-md-6">
                         <label class="form-label fw-semibold text-dark">Kategori</label>
-                        @if(!$canEditHighLevel && $isHighLevel)
-                            {{-- Proteksi Kategori untuk Level > 13 --}}
-                            <input type="text" class="form-control bg-light text-muted" value="{{ $contract->category ?? '-' }}" readonly>
-                            <input type="hidden" name="category" value="{{ $contract->category ?? '' }}">
-                            <small class="text-danger fs-7">* Kategori terkunci (Level > 13).</small>
+
+                        @if($maskLevelCategory)
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly
+                            >
+
+                            {{-- Tetap kirim nilai lama supaya tidak terhapus saat update --}}
+                            <input
+                                type="hidden"
+                                name="category"
+                                value="{{ $contract->category ?? '' }}"
+                            >
+
+                            <small class="text-danger fs-7">
+                                * Kategori terproteksi untuk Level 14 ke atas.
+                            </small>
+
                         @else
-                            <input type="text" name="category" class="form-control" value="{{ old('category', $contract->category ?? '') }}" placeholder="Contoh: A / B / C">
+
+                            <input
+                                type="text"
+                                name="category"
+                                class="form-control"
+                                value="{{ old('category', $contract->category ?? '') }}"
+                                placeholder="Contoh: A / B / C"
+                            >
+
                         @endif
                     </div>
+
 
                     <!-- LEVEL -->
                     <div class="col-md-6">
                         <label class="form-label fw-semibold text-dark">Level</label>
-                        @if(!$canEditHighLevel && $isHighLevel)
-                            {{-- Jika Level > 13 dan user bukan Manager Keuangan / Super Admin --}}
-                            <input type="number" class="form-control bg-light text-muted" value="{{ $contractLevel }}" readonly>
-                            <input type="hidden" name="level" value="{{ $contractLevel }}">
-                            <small class="text-danger fs-7">* Level > 13 terkunci (Khusus Manager Keuangan / Super Admin).</small>
+
+                        @if($maskLevelCategory)
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly
+                            >
+
+                            {{-- Pertahankan nilai level asli ketika submit --}}
+                            <input
+                                type="hidden"
+                                name="level"
+                                value="{{ $contractLevel }}"
+                            >
+
+                            <small class="text-danger fs-7">
+                                * Level 14 ke atas terproteksi.
+                            </small>
+
                         @else
-                            <input type="number" name="level" class="form-control" 
-                                value="{{ old('level', $contract->level ?? '') }}" 
+
+                            <input
+                                type="number"
+                                name="level"
+                                class="form-control"
+                                value="{{ old('level', $contract->level ?? '') }}"
                                 placeholder="Contoh: 12"
-                                @if(in_array($userRole, ['head_hrd', 'hrd']))  @endif>
-                            
-                            @if(in_array($userRole, ['head_hrd', 'hrd']))
-                                <small class="text-muted fs-7">* Maksimal Level 13 untuk akses HRD.</small>
+                            >
+
+                            @if(in_array($userRole, [
+                                'head_hrd',
+                                'kepala_hrd',
+                                'hrd',
+                                'keuangan'
+                            ], true))
+
+                                <small class="text-muted fs-7">
+                                    * Maksimal Level 13 untuk akses role ini.
+                                </small>
+
                             @endif
+
                         @endif
                     </div>
 

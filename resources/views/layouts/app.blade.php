@@ -131,8 +131,8 @@
 
                 <!-- ABSENSI OUTER ISLAND -->
                 <!-- Route akan dibuat nanti ketika modul Outer Island sudah dibuat -->
-                <a href="#"
-                class="nav-link-custom py-2 my-1">
+                <a href="{{ route('payrolls.outer_island.create') }}"
+                class="nav-link-custom py-2 my-1 {{ request()->routeIs('payrolls.outer_island.create') ? 'active' : '' }}">
 
                     <i class="fa-solid fa-plane-departure me-2"></i>
                     <span>Absensi Luar Pulau</span>
@@ -156,7 +156,7 @@
                 <a href="{{ route('payrolls.local.index', ['region' => 'malang']) }}" class="nav-link-custom py-2 my-1">
                     <i class="fa-solid fa-location-dot me-2"></i><span>Payroll Malang</span>
                 </a>
-                <a href="#" class="nav-link-custom py-2 my-1">
+                <a href="{{ route('payrolls.outer_island.index', ['region' => 'Luar Pulau']) }}" class="nav-link-custom py-2 my-1">
                     <i class="fa-solid fa-plane-departure me-2"></i><span>Payroll Luar Pulau</span>
                 </a>
             </div>

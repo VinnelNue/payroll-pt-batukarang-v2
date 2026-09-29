@@ -1,387 +1,3385 @@
 @extends('layouts.app')
 
-@section('title', 'Setup Kontrak & Gaji (Outer Island)')
-@section('page_title', 'Setup Jabatan, Kontrak & Gaji Acuan - Outer Island')
+@section('title', 'Setup Kontrak & Gaji - Outer Island')
 
 @section('content')
+
 @php
-    $userRole = Auth::user()->role ?? '';
-    $contractLevel = $contract->level ?? null;
-    $isHighLevel = !is_null($contractLevel) && $contractLevel !== '' && (int)$contractLevel > 13;
 
-    // Logika Hak Akses:
-    // 1. Super Admin & Manager Keuangan: Akses penuh ke seluruh level & data keuangan.
-    // 2. Kepala HRD & HRD Staff: Terkunci untuk Level > 13.
-    $canEditHighLevel = in_array($userRole, ['super_admin', 'manager_keuangan']);
+/*
+|--------------------------------------------------------------------------
+| ROLE
+|--------------------------------------------------------------------------
+*/
 
-    // Hak akses data finansial (Gaji, Tunjangan, BPJS, PPh 21):
-    $canSeeSalary = false;
-    if ($canEditHighLevel) {
-        $canSeeSalary = true;
-    } elseif ($userRole === 'head_hrd') {
-        $canSeeSalary = !$isHighLevel; // Hanya bisa lihat jika level <= 13
-    } elseif ($userRole === 'hrd') {
-        $canSeeSalary = false; // HRD Staff tidak bisa melihat data finansial
+$userRole = auth()->user()->role ?? null;
+
+$financeRoles = [
+    'super_admin',
+    'manager_keuangan',
+];
+
+$headHrdRoles = [
+    'head_hrd',
+    'kepala_hrd',
+];
+
+$isManagerKeuangan = in_array(
+    $userRole,
+    $financeRoles,
+    true
+);
+
+$isHeadHrd = in_array(
+    $userRole,
+    $headHrdRoles,
+    true
+);
+
+$isHrd = $userRole === 'hrd';
+
+
+/*
+|--------------------------------------------------------------------------
+| CURRENT CONTRACT / HISTORY
+|--------------------------------------------------------------------------
+*/
+
+$currentContract = $contract ?? null;
+$currentHistory  = $history ?? null;
+
+$histories = $histories ?? collect();
+
+
+/*
+|--------------------------------------------------------------------------
+| CURRENT LEVEL
+|--------------------------------------------------------------------------
+*/
+
+$contractLevel =
+    $currentHistory?->level
+    ?? $currentContract?->level
+    ?? null;
+
+$levelNumber = is_numeric($contractLevel)
+    ? (int) $contractLevel
+    : null;
+
+$isHighLevel =
+    $levelNumber !== null &&
+    $levelNumber >= 14;
+
+
+/*
+|--------------------------------------------------------------------------
+| ACCESS
+|--------------------------------------------------------------------------
+|
+| FINANCE
+|   super_admin
+|   manager_keuangan
+|
+| HEAD HRD
+|   Level/category + financial jika level <= 13
+|
+| HRD
+|   Level/category jika level <= 13
+|   Financial tidak boleh dilihat
+|
+*/
+
+$canSeeSalary =
+    $isManagerKeuangan ||
+    (
+        ($isHeadHrd || $userRole === 'keuangan') &&
+        ($levelNumber === null || $levelNumber <= 13)
+    );
+
+$canSeeLevelCategory =
+    $isManagerKeuangan ||
+    (
+        ($isHeadHrd || $isHrd || $userRole === 'keuangan') &&
+        ($levelNumber === null || $levelNumber <= 13)
+    );
+
+$maskLevelCategory = !$canSeeLevelCategory;
+$maskFinancial     = !$canSeeSalary;
+
+
+/*
+|--------------------------------------------------------------------------
+| CURRENT HISTORY ID
+|--------------------------------------------------------------------------
+*/
+
+$currentHistoryId =
+    $currentContract?->current_contract_history_id
+    ?? $currentHistory?->id_contract_history_outer_island
+    ?? null;
+
+
+/*
+|--------------------------------------------------------------------------
+| FORMAT RUPIAH
+|--------------------------------------------------------------------------
+*/
+
+$formatRupiah = function ($value) {
+
+    if ($value === null || $value === '') {
+        return '';
     }
+
+    return number_format(
+        (float) $value,
+        0,
+        ',',
+        '.'
+    );
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| DATE FORMAT
+|--------------------------------------------------------------------------
+*/
+
+$formatDate = function ($value) {
+
+    if (!$value) {
+        return '';
+    }
+
+    try {
+
+        return \Carbon\Carbon::parse($value)
+            ->format('Y-m-d');
+
+    } catch (\Throwable $e) {
+
+        return '';
+
+    }
+
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| CURRENT VALUES
+|--------------------------------------------------------------------------
+*/
+
+$basicSalary =
+    $currentHistory?->basic_salary
+    ?? $currentContract?->basic_salary
+    ?? 0;
+
+$allowance =
+    $currentHistory?->allowance
+    ?? $currentContract?->allowance
+    ?? 0;
+
+$category =
+    $currentHistory?->category
+    ?? $currentContract?->category
+    ?? '';
+
+$level =
+    $currentHistory?->level
+    ?? $currentContract?->level
+    ?? '';
+
+$employmentType =
+    $currentHistory?->employment_type
+    ?? $currentContract?->employment_type
+    ?? 'PKWT';
+
+$pkwtSequence =
+    $currentHistory?->pkwt_sequence
+    ?? $currentContract?->pkwt_sequence
+    ?? '';
+
+$jobTitle =
+    $currentHistory?->job_title
+    ?? $currentContract?->job_title
+    ?? '';
+
+$department =
+    $currentHistory?->department
+    ?? $currentContract?->department
+    ?? '';
+
+$placementArea =
+    $currentHistory?->placement_area
+    ?? $currentContract?->placement_area
+    ?? '';
+
+$fingerprintPin =
+    $currentHistory?->fingerprint_pin
+    ?? $currentContract?->fingerprint_pin
+    ?? '';
+
+$nikFingerprint =
+    $currentHistory?->nik_fingerprint
+    ?? $currentContract?->nik_fingerprint
+    ?? '';
+
+
+/*
+|--------------------------------------------------------------------------
+| DATE VALUES
+|--------------------------------------------------------------------------
+*/
+
+$startDate = $formatDate(
+    $currentHistory?->start_date
+    ?? $currentContract?->start_date
+);
+
+$endDate = $formatDate(
+    $currentHistory?->end_date
+    ?? $currentContract?->end_date
+);
+
+$exitDate = $formatDate(
+    $currentHistory?->exit_date
+    ?? $currentContract?->exit_date
+);
+
+$exitReason =
+    $currentHistory?->exit_reason
+    ?? $currentContract?->exit_reason
+    ?? '';
+
+
+/*
+|--------------------------------------------------------------------------
+| BPJS
+|--------------------------------------------------------------------------
+|
+| PENTING:
+| Nilai dibaca dari history aktif terlebih dahulu.
+|
+*/
+
+$isBpjstkActive = (bool) (
+    $currentHistory?->is_bpjstk_active
+    ?? $currentContract?->is_bpjstk_active
+    ?? false
+);
+
+$isBpjsHealthActive = (bool) (
+    $currentHistory?->is_bpjs_health_active
+    ?? $currentContract?->is_bpjs_health_active
+    ?? false
+);
+
+$useManualBpjs = (bool) (
+    $currentHistory?->use_manual_bpjs
+    ?? $currentContract?->use_manual_bpjs
+    ?? false
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| MANUAL BPJS
+|--------------------------------------------------------------------------
+*/
+
+$manualBpjstkEmployee =
+    $currentHistory?->manual_bpjs_tk_employee
+    ?? $currentHistory?->manual_bpjstk_employee
+    ?? $currentContract?->manual_bpjs_tk_employee
+    ?? $currentContract?->manual_bpjstk_employee
+    ?? 0;
+
+$manualBpjsHealthEmployee =
+    $currentHistory?->manual_bpjs_ks_employee
+    ?? $currentHistory?->manual_bpjs_health_employee
+    ?? $currentContract?->manual_bpjs_ks_employee
+    ?? $currentContract?->manual_bpjs_health_employee
+    ?? 0;
+
+$manualBpjsCompany =
+    $currentHistory?->manual_bpjs_company
+    ?? $currentContract?->manual_bpjs_company
+    ?? 0;
+
+
+/*
+|--------------------------------------------------------------------------
+| PTKP
+|--------------------------------------------------------------------------
+*/
+
+$ptkp =
+    $currentHistory?->ptkp_status
+    ?? $currentHistory?->ptkp
+    ?? $currentContract?->ptkp_status
+    ?? $currentContract?->ptkp
+    ?? 'TK/0';
+
+$ptkpOptions = [
+    'TK/0',
+    'TK/1',
+    'TK/2',
+    'TK/3',
+    'K/0',
+    'K/1',
+    'K/2',
+    'K/3',
+    'K01',
+    'K02',
+    'K03',
+];
+
+if (
+    $ptkp !== null &&
+    $ptkp !== '' &&
+    !in_array($ptkp, $ptkpOptions, true)
+) {
+
+    array_unshift(
+        $ptkpOptions,
+        $ptkp
+    );
+
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| TERMINATION
+|--------------------------------------------------------------------------
+*/
+
+$terminationTypes = [
+    'PHK'          => 'PHK',
+    'Resign'       => 'Resign',
+    'Pensiun'      => 'Pensiun',
+    'End_Contract' => 'End Contract',
+];
+
+$isTermination = in_array(
+    $employmentType,
+    array_keys($terminationTypes),
+    true
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| URL
+|--------------------------------------------------------------------------
+*/
+
+$backUrl = route(
+    'contracts.outer_island.index'
+);
+
+$updateUrl = route(
+    'contracts.outer_island.update',
+    $employee->uuid
+);
+
+$addPeriodUrl = route(
+    'contracts.outer_island.period.store',
+    $employee->uuid
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| NEXT PKWT
+|--------------------------------------------------------------------------
+*/
+
+$nextPkwtSequence =
+    ((int) ($currentHistory?->pkwt_sequence ?? 0)) + 1;
+
+if ($nextPkwtSequence > 4) {
+    $nextPkwtSequence = 4;
+}
+
+if ($nextPkwtSequence < 1) {
+    $nextPkwtSequence = 1;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| NEW PERIOD START DATE
+|--------------------------------------------------------------------------
+*/
+
+$newPeriodStartDate = '';
+
+if ($endDate) {
+
+    try {
+
+        $newPeriodStartDate =
+            \Carbon\Carbon::parse($endDate)
+                ->addDay()
+                ->format('Y-m-d');
+
+    } catch (\Throwable $e) {
+
+        $newPeriodStartDate =
+            now()->format('Y-m-d');
+
+    }
+
+} else {
+
+    $newPeriodStartDate =
+        now()->format('Y-m-d');
+
+}
+
 @endphp
 
-<div class="mb-4 d-flex justify-content-between align-items-center">
-    <div>
-        <h5 class="fw-bold text-dark m-0">Setup Jabatan & Gaji Outer Island: {{ $employeeOuterIsland->full_name_outer }}</h5>
-        <small class="text-muted">NIK: {{ $employeeOuterIsland->nik_ktp_outer }} | Kelola acuan Gapok, Tunjangan, BPJS & PPh 21</small>
+
+<style>
+
+/*
+|--------------------------------------------------------------------------
+| TOGGLE BUTTON
+|--------------------------------------------------------------------------
+*/
+
+.rhuekamp-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 130px;
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-weight: 700;
+    transition: all .2s ease;
+    cursor: pointer;
+}
+
+.rhuekamp-toggle.toggle-on {
+    background: #198754;
+    color: #fff;
+}
+
+.rhuekamp-toggle.toggle-off {
+    background: #6c757d;
+    color: #fff;
+}
+
+.rhuekamp-toggle:hover {
+    transform: translateY(-1px);
+    opacity: .92;
+}
+
+.rhuekamp-toggle .toggle-icon {
+    width: 22px;
+    text-align: center;
+}
+
+.rhuekamp-toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.rhuekamp-toggle-description {
+    font-size: 13px;
+    color: #6c757d;
+}
+
+</style>
+
+
+<div class="container-fluid py-4">
+
+
+{{-- ==============================================================
+     FLASH
+============================================================== --}}
+
+@if(session('success'))
+
+    <div class="alert alert-success alert-dismissible fade show shadow-sm">
+
+        <i class="fas fa-check-circle me-2"></i>
+
+        {{ session('success') }}
+
+        <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="alert">
+        </button>
+
     </div>
-    <a href="{{ route('contracts.outer_island.index') }}" class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3">
-        <i class="fa-solid fa-arrow-left me-1"></i> Kembali
-    </a>
+
+@endif
+
+
+@if(session('error'))
+
+    <div class="alert alert-danger alert-dismissible fade show shadow-sm">
+
+        <i class="fas fa-exclamation-circle me-2"></i>
+
+        {{ session('error') }}
+
+        <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="alert">
+        </button>
+
+    </div>
+
+@endif
+
+
+@if($errors->any())
+
+    <div class="alert alert-danger shadow-sm">
+
+        <div class="fw-bold mb-2">
+
+            <i class="fas fa-exclamation-triangle me-1"></i>
+
+            Terdapat kesalahan:
+
+        </div>
+
+        <ul class="mb-0">
+
+            @foreach($errors->all() as $error)
+
+                <li>{{ $error }}</li>
+
+            @endforeach
+
+        </ul>
+
+    </div>
+
+@endif
+
+
+{{-- ==============================================================
+     HEADER
+============================================================== --}}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+
+    <div>
+
+        <h3 class="fw-bold mb-1">
+            Setup Jabatan, Kontrak & Gaji Acuan
+        </h3>
+
+        <div class="text-muted">
+            Outer Island
+        </div>
+
+        <div class="mt-2">
+
+            <span class="fw-semibold">
+                {{ $employee->full_name_outer ?? $employee->name ?? '-' }}
+            </span>
+
+            <span class="text-muted ms-2">
+
+                NIK:
+                {{ $employee->nik_ktp_outer ?? $employee->nik_ktp ?? '-' }}
+
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <div class="mt-3 mt-md-0">
+
+        <a
+            href="{{ $backUrl }}"
+            class="btn btn-outline-secondary">
+
+            <i class="fas fa-arrow-left me-1"></i>
+
+            Kembali
+
+        </a>
+
+    </div>
+
 </div>
 
-{{-- FORM UTAMA UPDATE KONTRAK --}}
-<form action="{{ route('contracts.outer_island.update', $employeeOuterIsland->uuid) }}" method="POST" id="contractForm">
+
+{{-- ==============================================================
+     ACCESS INFORMATION
+============================================================== --}}
+
+@if(!$isManagerKeuangan)
+
+    <div class="alert alert-info shadow-sm">
+
+        <i class="fas fa-info-circle me-2"></i>
+
+        @if($isHeadHrd)
+
+            Anda login sebagai <strong>Head HRD</strong>.
+            Data financial hanya dapat dilihat untuk
+            contract dengan level maksimal <strong>13</strong>.
+
+        @elseif($isHrd)
+
+            Anda login sebagai <strong>HRD</strong>.
+            Data Level/Kategori dapat dilihat untuk
+            contract dengan level maksimal <strong>13</strong>.
+            Data financial tidak ditampilkan.
+
+        @else
+
+            Akses financial dibatasi berdasarkan role.
+
+        @endif
+
+    </div>
+
+@endif
+
+
+{{-- ==============================================================
+     CURRENT CONTRACT
+============================================================== --}}
+
+@if($currentContract || $currentHistory)
+
+<form
+    id="currentContractForm"
+    action="{{ $updateUrl }}"
+    method="POST">
+
+    {{--
+        Salary menggunakan display field + hidden raw value.
+        Dengan demikian nilai yang dikirim ke Laravel selalu numerik
+        dan tidak bergantung pada formatter browser saat submit.
+    --}}
+
     @csrf
+
     @method('PUT')
 
+
     <div class="row g-4">
-        <!-- PENEMPATAN & STATUS KERJA -->
+
+
+        {{-- ======================================================
+             LEFT
+        ======================================================= --}}
+
         <div class="col-lg-6">
-            <div class="card-custom p-4 h-100">
-                <h6 class="fw-bold text-primary mb-3 pb-2 border-bottom">
-                    <i class="fa-solid fa-briefcase me-2"></i> Penempatan & Status Kerja
-                </h6>
+
+            <div class="card card-custom border-0 shadow-sm h-100">
+
+                <div class="card-body p-4">
+
+                    <h5 class="fw-bold mb-1">
+                        Penempatan & Status Kerja
+                    </h5>
+
+                    <small class="text-muted d-block mb-4">
+                        Informasi jabatan dan periode contract aktif
+                    </small>
+
+
+                    {{-- JOB TITLE --}}
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+                            Jabatan
+                        </label>
+
+                        <input
+                            type="text"
+                            name="job_title"
+                            class="form-control"
+                            value="{{ old('job_title', $jobTitle) }}"
+                            required>
+
+                    </div>
+
+
+                    {{-- DEPARTMENT --}}
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+                            Department
+                        </label>
+
+                        <input
+                            type="text"
+                            name="department"
+                            class="form-control"
+                            value="{{ old('department', $department) }}">
+
+                    </div>
+
+
+                    {{-- PLACEMENT --}}
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+                            Penempatan
+                        </label>
+
+                        <input
+                            type="text"
+                            name="placement_area"
+                            class="form-control"
+                            value="{{ old('placement_area', $placementArea) }}"
+                            placeholder="Contoh: Site Kalimantan">
+
+                    </div>
+
+
+                    {{-- FINGERPRINT --}}
+
+                    <div class="row g-3">
+
+                        <div class="col-md-6">
+
+                            <label class="form-label fw-semibold">
+                                Fingerprint PIN
+                            </label>
+
+                            <input
+                                type="text"
+                                name="fingerprint_pin"
+                                class="form-control"
+                                value="{{ old('fingerprint_pin', $fingerprintPin) }}">
+
+                        </div>
+
+
+                        <div class="col-md-6">
+
+                            <label class="form-label fw-semibold">
+                                NIK Fingerprint
+                            </label>
+
+                            <input
+                                type="text"
+                                name="nik_fingerprint"
+                                class="form-control"
+                                value="{{ old('nik_fingerprint', $nikFingerprint) }}">
+
+                        </div>
+
+                    </div>
+
+
+                    <hr class="my-4">
+
+
+                    {{-- CATEGORY --}}
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+                            Kategori
+                        </label>
+
+                        @if($canSeeLevelCategory)
+
+                            <input
+                                type="text"
+                                name="category"
+                                id="category"
+                                class="form-control"
+                                value="{{ old('category', $category) }}">
+
+                        @else
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly>
+
+                            <input
+                                type="hidden"
+                                name="category"
+                                value="{{ $category }}">
+
+                        @endif
+
+                    </div>
+
+
+                    {{-- LEVEL --}}
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+                            Level
+                        </label>
+
+                        @if($canSeeLevelCategory)
+
+                            <input
+                                type="number"
+                                name="level"
+                                id="level"
+                                class="form-control"
+                                min="1"
+                                value="{{ old('level', $level) }}">
+
+                        @else
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly>
+
+                            <input
+                                type="hidden"
+                                name="level"
+                                id="level"
+                                value="{{ $level }}">
+
+                        @endif
+
+                    </div>
+
+
+                    @if($isHighLevel && !$isManagerKeuangan)
+
+                        <div class="alert alert-warning small">
+
+                            <i class="fas fa-lock me-1"></i>
+
+                            Contract level
+                            <strong>{{ $levelNumber }}</strong>
+                            berada pada level 14 atau lebih.
+
+                            Data kategori, level dan financial
+                            dibatasi berdasarkan role Anda.
+
+                        </div>
+
+                    @endif
+
+
+                    <hr class="my-4">
+
+
+                    {{-- EMPLOYMENT TYPE --}}
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+                            Status Kerja
+                        </label>
+
+                        <select
+                            name="employment_type"
+                            id="employment_type"
+                            class="form-select">
+
+                            <optgroup label="Status Aktif">
+
+                                @foreach([
+                                    'PKWT'       => 'PKWT',
+                                    'PKWTT'      => 'PKWTT',
+                                    'Probation'  => 'Probation',
+                                    'Internship' => 'Internship',
+                                ] as $value => $label)
+
+                                    <option
+                                        value="{{ $value }}"
+                                        @selected(
+                                            old(
+                                                'employment_type',
+                                                $employmentType
+                                            ) === $value
+                                        )>
+
+                                        {{ $label }}
+
+                                    </option>
+
+                                @endforeach
+
+                            </optgroup>
+
+
+                            <optgroup label="Status Penghentian Kerja">
+
+                                @foreach($terminationTypes as $value => $label)
+
+                                    <option
+                                        value="{{ $value }}"
+                                        @selected(
+                                            old(
+                                                'employment_type',
+                                                $employmentType
+                                            ) === $value
+                                        )>
+
+                                        {{ $label }}
+
+                                    </option>
+
+                                @endforeach
+
+                            </optgroup>
+
+                        </select>
+
+                    </div>
+
+
+                    {{-- PKWT --}}
+
+                    <div
+                        class="mb-3"
+                        id="pkwtSequenceBox"
+                        style="{{ $employmentType === 'PKWT' ? '' : 'display:none;' }}">
+
+                        <label class="form-label fw-semibold">
+                            PKWT Ke
+                        </label>
+
+                        <select
+                            name="pkwt_sequence"
+                            class="form-select">
+
+                            <option value="">
+                                Pilih PKWT
+                            </option>
+
+                            @for($i = 1; $i <= 4; $i++)
+
+                                <option
+                                    value="{{ $i }}"
+                                    @selected(
+                                        (string) old(
+                                            'pkwt_sequence',
+                                            $pkwtSequence
+                                        ) === (string) $i
+                                    )>
+
+                                    PKWT {{ $i }}
+
+                                </option>
+
+                            @endfor
+
+                        </select>
+
+                    </div>
+
+
+                    {{-- DATE --}}
+
+                    <div class="row g-3">
+
+                        <div class="col-md-6">
+
+                            <label class="form-label fw-semibold">
+                                Tanggal Mulai
+                            </label>
+
+                            <input
+                                type="date"
+                                name="start_date"
+                                id="start_date"
+                                class="form-control"
+                                value="{{ old('start_date', $startDate) }}"
+                                required>
+
+                        </div>
+
+
+                        <div class="col-md-6">
+
+                            <label class="form-label fw-semibold">
+                                Tanggal Berakhir
+                            </label>
+
+                            <input
+                                type="date"
+                                name="end_date"
+                                id="end_date"
+                                class="form-control"
+                                value="{{ old('end_date', $endDate) }}">
+
+                        </div>
+
+                    </div>
+
+
+                    {{-- TERMINATION --}}
+
+                    <div
+                        id="terminationBox"
+                        class="mt-3"
+                        style="{{ $isTermination ? '' : 'display:none;' }}">
+
+                        <div class="alert alert-danger">
+
+                            <div class="fw-bold mb-3">
+
+                                <i class="fas fa-user-slash me-1"></i>
+
+                                Informasi Penghentian Kerja
+
+                            </div>
+
+
+                            <div class="mb-3">
+
+                                <label class="form-label fw-semibold">
+                                    Tanggal Keluar
+                                </label>
+
+                                <input
+                                    type="date"
+                                    name="exit_date"
+                                    class="form-control"
+                                    value="{{ old('exit_date', $exitDate) }}">
+
+                            </div>
+
+
+                            <div>
+
+                                <label class="form-label fw-semibold">
+                                    Alasan
+                                </label>
+
+                                <textarea
+                                    name="exit_reason"
+                                    class="form-control"
+                                    rows="3">{{ old('exit_reason', $exitReason) }}</textarea>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        {{-- ======================================================
+             RIGHT
+        ======================================================= --}}
+
+        <div class="col-lg-6">
+
+            <div class="card card-custom border-0 shadow-sm h-100">
+
+                <div class="card-body p-4">
+
+                    <h5 class="fw-bold mb-1">
+                        Acuan Financial, BPJS & Pajak
+                    </h5>
+
+                    <small class="text-muted d-block mb-4">
+                        Data yang digunakan sebagai dasar payroll
+                    </small>
+
+
+                    {{-- =================================================
+                         BASIC SALARY
+                    ================================================== --}}
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+                            Gaji Pokok
+                        </label>
+
+                        @if($canSeeSalary)
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    Rp
+                                </span>
+
+                                {{--
+                                    PENTING:
+                                    Gunakan SATU input bernama basic_salary.
+                                    Tidak memakai display + hidden input karena
+                                    raw value bisa tertinggal satu submit.
+                                    Controller membersihkan format Rupiah di server.
+                                --}}
+                                <input
+                                    type="text"
+                                    name="basic_salary"
+                                    id="basic_salary"
+                                    class="form-control currency-input"
+                                    value="{{ old('basic_salary', $basicSalary) }}"
+                                    autocomplete="off"
+                                    inputmode="numeric">
+
+                            </div>
+
+                        @else
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly>
+
+                            <input
+                                type="hidden"
+                                name="basic_salary"
+                                value="{{ $basicSalary }}">
+
+                        @endif
+
+                    </div>
+
+
+                    {{-- ALLOWANCE --}}
+
+                    <div class="mb-4">
+
+                        <label class="form-label fw-semibold">
+                            Tunjangan Level
+                        </label>
+
+                        @if($canSeeSalary)
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    Rp
+                                </span>
+
+                                {{--
+                                    Allowance tetap menjadi field bernama allowance.
+                                    Nilainya dibentuk server berdasarkan:
+                                    basic_salary x level x 2%.
+                                    JS hanya membantu preview, bukan sumber utama.
+                                --}}
+                                <input
+                                    type="text"
+                                    name="allowance"
+                                    id="allowance"
+                                    class="form-control"
+                                    value="{{ old('allowance', $formatRupiah($allowance)) }}"
+                                    readonly>
+
+                            </div>
+
+                            <small class="text-muted">
+                                Tunjangan = Gaji Pokok × Level × 2%.
+                            </small>
+
+                        @else
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly>
+
+                            <input
+                                type="hidden"
+                                name="allowance"
+                                value="{{ $allowance }}">
+
+                        @endif
+
+                    </div>
+
+                    <hr class="my-4">
+
+
+                    {{-- =================================================
+                         BPJS
+                    ================================================== --}}
+
+                    <h6 class="fw-bold mb-3">
+                        BPJS
+                    </h6>
+
+
+                    @if($canSeeSalary)
+
+                        {{-- BPJS TK --}}
+
+                        <div class="mb-4">
+
+                            <label class="form-label fw-semibold d-block">
+                                BPJS Ketenagakerjaan
+                            </label>
+
+                            <div class="rhuekamp-toggle-wrapper">
+
+                                <button
+                                    type="button"
+                                    class="rhuekamp-toggle {{ $isBpjstkActive ? 'toggle-on' : 'toggle-off' }}"
+                                    data-toggle-field="is_bpjstk_active"
+                                    data-toggle-state="{{ $isBpjstkActive ? '1' : '0' }}">
+
+                                    <span class="toggle-icon">
+
+                                        <i class="fas {{ $isBpjstkActive ? 'fa-toggle-on' : 'fa-toggle-off' }}"></i>
+
+                                    </span>
+
+                                    <span class="toggle-label">
+
+                                        {{ $isBpjstkActive ? 'ON' : 'OFF' }}
+
+                                    </span>
+
+                                </button>
+
+                                <span class="rhuekamp-toggle-description">
+
+                                    {{ $isBpjstkActive
+                                        ? 'BPJS TK akan dihitung dalam payroll.'
+                                        : 'BPJS TK tidak dihitung dalam payroll.'
+                                    }}
+
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        {{-- BPJS HEALTH --}}
+
+                        <div class="mb-4">
+
+                            <label class="form-label fw-semibold d-block">
+                                BPJS Kesehatan
+                            </label>
+
+                            <div class="rhuekamp-toggle-wrapper">
+
+                                <button
+                                    type="button"
+                                    class="rhuekamp-toggle {{ $isBpjsHealthActive ? 'toggle-on' : 'toggle-off' }}"
+                                    data-toggle-field="is_bpjs_health_active"
+                                    data-toggle-state="{{ $isBpjsHealthActive ? '1' : '0' }}">
+
+                                    <span class="toggle-icon">
+
+                                        <i class="fas {{ $isBpjsHealthActive ? 'fa-toggle-on' : 'fa-toggle-off' }}"></i>
+
+                                    </span>
+
+                                    <span class="toggle-label">
+
+                                        {{ $isBpjsHealthActive ? 'ON' : 'OFF' }}
+
+                                    </span>
+
+                                </button>
+
+                                <span class="rhuekamp-toggle-description">
+
+                                    {{ $isBpjsHealthActive
+                                        ? 'BPJS Kesehatan akan dihitung dalam payroll.'
+                                        : 'BPJS Kesehatan tidak dihitung dalam payroll.'
+                                    }}
+
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        {{-- MANUAL BPJS --}}
+
+                        <div class="border rounded p-3 mb-4">
+
+                            <div class="mb-3">
+
+                                <label class="form-label fw-semibold d-block">
+                                    Override BPJS Manual
+                                </label>
+
+                                <div class="rhuekamp-toggle-wrapper">
+
+                                    <button
+                                        type="button"
+                                        class="rhuekamp-toggle {{ $useManualBpjs ? 'toggle-on' : 'toggle-off' }}"
+                                        data-toggle-field="use_manual_bpjs"
+                                        data-toggle-state="{{ $useManualBpjs ? '1' : '0' }}">
+
+                                        <span class="toggle-icon">
+
+                                            <i class="fas {{ $useManualBpjs ? 'fa-toggle-on' : 'fa-toggle-off' }}"></i>
+
+                                        </span>
+
+                                        <span class="toggle-label">
+
+                                            {{ $useManualBpjs ? 'ON' : 'OFF' }}
+
+                                        </span>
+
+                                    </button>
+
+                                    <span class="rhuekamp-toggle-description">
+
+                                        {{ $useManualBpjs
+                                            ? 'Menggunakan nominal BPJS manual.'
+                                            : 'Menggunakan perhitungan otomatis.'
+                                        }}
+
+                                    </span>
+
+                                </div>
+
+                            </div>
+
+
+                            <div
+                                id="manualBpjsBox"
+                                style="{{ $useManualBpjs ? '' : 'display:none;' }}">
+
+                                {{-- TK --}}
+
+                                <div class="mb-3">
+
+                                    <label class="form-label fw-semibold">
+                                        BPJS TK - Karyawan
+                                    </label>
+
+                                    <div class="input-group">
+
+                                        <span class="input-group-text">
+                                            Rp
+                                        </span>
+
+                                        <input
+                                            type="text"
+                                            name="manual_bpjs_tk_employee"
+                                            class="form-control currency-input"
+                                            value="{{ old(
+                                                'manual_bpjs_tk_employee',
+                                                $formatRupiah($manualBpjstkEmployee)
+                                            ) }}">
+
+                                    </div>
+
+                                </div>
+
+
+                                {{-- KS --}}
+
+                                <div class="mb-3">
+
+                                    <label class="form-label fw-semibold">
+                                        BPJS Kesehatan - Karyawan
+                                    </label>
+
+                                    <div class="input-group">
+
+                                        <span class="input-group-text">
+                                            Rp
+                                        </span>
+
+                                        <input
+                                            type="text"
+                                            name="manual_bpjs_ks_employee"
+                                            class="form-control currency-input"
+                                            value="{{ old(
+                                                'manual_bpjs_ks_employee',
+                                                $formatRupiah($manualBpjsHealthEmployee)
+                                            ) }}">
+
+                                    </div>
+
+                                </div>
+
+
+                                {{-- COMPANY --}}
+
+                                <div>
+
+                                    <label class="form-label fw-semibold">
+                                        BPJS - Perusahaan
+                                    </label>
+
+                                    <div class="input-group">
+
+                                        <span class="input-group-text">
+                                            Rp
+                                        </span>
+
+                                        <input
+                                            type="text"
+                                            name="manual_bpjs_company"
+                                            class="form-control currency-input"
+                                            value="{{ old(
+                                                'manual_bpjs_company',
+                                                $formatRupiah($manualBpjsCompany)
+                                            ) }}">
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    @else
+
+                        <div class="border rounded p-3 mb-4 bg-light">
+
+                            <div class="fw-bold text-muted">
+
+                                <i class="fas fa-lock me-2"></i>
+
+                                Data BPJS Financial
+
+                            </div>
+
+                            <small class="text-muted">
+
+                                Data BPJS tidak tersedia untuk role Anda.
+
+                            </small>
+
+                        </div>
+
+                    @endif
+
+
+                    {{-- =================================================
+                         PTKP
+                    ================================================== --}}
+
+                    <div class="mb-4">
+
+                        <label class="form-label fw-semibold">
+                            PTKP / PPh21
+                        </label>
+
+                        @if($canSeeSalary)
+
+                            <select
+                                name="ptkp_status"
+                                class="form-select">
+
+                                @foreach($ptkpOptions as $item)
+
+                                    <option
+                                        value="{{ $item }}"
+                                        @selected(
+                                            old(
+                                                'ptkp_status',
+                                                $ptkp
+                                            ) === $item
+                                        )>
+
+                                        {{ $item }}
+
+                                    </option>
+
+                                @endforeach
+
+                            </select>
+
+                        @else
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly>
+
+                            <input
+                                type="hidden"
+                                name="ptkp_status"
+                                value="{{ $ptkp }}">
+
+                        @endif
+
+                    </div>
+
+
+                    {{-- SAVE --}}
+
+                    <div class="d-flex justify-content-end">
+
+                        <button
+                            type="submit"
+                            class="btn btn-primary px-4">
+
+                            <i class="fas fa-save me-1"></i>
+
+                            Simpan Perubahan
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</form>
+
+@else
+
+    <div class="alert alert-info">
+
+        <i class="fas fa-info-circle me-2"></i>
+
+        Employee ini belum memiliki contract aktif.
+
+        Gunakan tombol
+        <strong>Tambah Contract Period</strong>
+        di bawah untuk membuat contract pertama.
+
+    </div>
+
+@endif
+
+
+{{-- ==============================================================
+     CONTRACT HISTORY
+============================================================== --}}
+
+<div class="card card-custom border-0 shadow-sm mt-4">
+
+    <div class="card-body p-4">
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+
+            <div>
+
+                <h5 class="fw-bold mb-1">
+                    Contract History
+                </h5>
+
+                <small class="text-muted">
+
+                    Riwayat kontrak tersimpan.
+                    Contract lama otomatis menjadi HISTORY
+                    dan tidak dapat diedit.
+
+                </small>
+
+            </div>
+
+
+            <button
+                type="button"
+                id="btnAddContractPeriod"
+                class="btn btn-success">
+
+                <i class="fas fa-plus me-1"></i>
+
+                Tambah Contract Period
+
+            </button>
+
+        </div>
+
+
+        {{-- =========================================================
+             NEW PERIOD
+        ========================================================== --}}
+
+        <div
+            id="newPeriodWrapper"
+            class="border rounded p-4 mb-4"
+            style="display:none;">
+
+            <div class="d-flex justify-content-between align-items-center mb-4">
+
+                <div>
+
+                    <h6 class="fw-bold mb-1">
+                        Contract Period Baru
+                    </h6>
+
+                    <small class="text-muted">
+
+                        Data contract aktif digunakan sebagai template.
+
+                    </small>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary js-cancel-new-period">
+
+                    <i class="fas fa-times"></i>
+
+                </button>
+
+            </div>
+
+
+            <form
+                action="{{ $addPeriodUrl }}"
+                method="POST"
+                id="newPeriodForm">
+
+                @csrf
+
+
+                {{-- BASIC INFORMATION --}}
 
                 <div class="row g-3">
-                    <!-- NAMA JABATAN -->
-                    <div class="col-md-12">
-                        <label class="form-label fw-semibold text-dark">Nama Jabatan <span class="text-danger">*</span></label>
-                        <input type="text" name="job_title" class="form-control" value="{{ old('job_title', $contract->job_title ?? '') }}" required placeholder="Contoh: Manager Regional Area">
-                    </div>
 
-                    <!-- DIVISI / DEPARTMENT -->
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">Divisi / Department</label>
-                        <input type="text" name="department" class="form-control" value="{{ old('department', $contract->department ?? '') }}" placeholder="Contoh: Finance & Payroll">
-                    </div>
 
-                    <!-- AREA PENEMPATAN -->
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">Area Penempatan</label>
-                        <input type="text" name="placement_area" class="form-control" value="{{ old('placement_area', $contract->placement_area ?? '') }}" placeholder="Contoh: Site Outer Island A / HQ">
-                    </div>
+                    {{-- PKWT --}}
 
-                    <!-- PIN MESIN & NIK FINGERPRINT -->
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">PIN Mesin Absen</label>
-                        <input type="text" name="fingerprint_pin" class="form-control" value="{{ old('fingerprint_pin', $contract->fingerprint_pin ?? '') }}" placeholder="Contoh: 12008">
-                        <small class="text-muted">Nomor PIN internal dari mesin fingerprint.</small>
-                    </div>
+                    <div class="col-md-4">
 
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">NIK Mesin Fingerprint</label>
-                        <input type="text" name="nik_fingerprint" class="form-control" value="{{ old('nik_fingerprint', $contract->nik_fingerprint ?? '') }}" placeholder="Contoh: 11CK03">
-                        <small class="text-muted">Kode NIK pada mesin absensi.</small>
-                    </div>
+                        <label class="form-label fw-semibold">
+                            PKWT Ke
+                        </label>
 
-                    <!-- KATEGORI -->
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">Kategori</label>
-                        @if(!$canEditHighLevel && $isHighLevel)
-                            <input type="text" class="form-control bg-light text-muted" value="{{ $contract->category ?? '-' }}" readonly>
-                            <input type="hidden" name="category" value="{{ $contract->category ?? '' }}">
-                            <small class="text-danger fs-7">* Kategori terkunci (Level > 13).</small>
-                        @else
-                            <input type="text" name="category" class="form-control" value="{{ old('category', $contract->category ?? '') }}" placeholder="Contoh: A / B / C">
-                        @endif
-                    </div>
+                        <select
+                            name="pkwt_sequence"
+                            id="new_pkwt_sequence"
+                            class="form-select">
 
-                    <!-- LEVEL -->
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">Level</label>
-                        @if(!$canEditHighLevel && $isHighLevel)
-                            <input type="number" class="form-control bg-light text-muted" value="{{ $contractLevel }}" readonly>
-                            <input type="hidden" name="level" value="{{ $contractLevel }}">
-                            <small class="text-danger fs-7">* Level > 13 terkunci (Khusus Manager Keuangan / Super Admin).</small>
-                        @else
-                            <input type="number" name="level" class="form-control" 
-                                value="{{ old('level', $contract->level ?? '') }}" 
-                                placeholder="Contoh: 12"
-                                @if(in_array($userRole, ['head_hrd', 'hrd'])) max="13" @endif>
-                            
-                            @if(in_array($userRole, ['head_hrd', 'hrd']))
-                                <small class="text-muted fs-7">* Maksimal Level 13 untuk akses HRD.</small>
-                            @endif
-                        @endif
-                    </div>
+                            @for($i = 1; $i <= 4; $i++)
 
-                    <!-- STATUS HUBUNGAN KERJA -->
-                    <div class="col-md-12">
-                        <label class="form-label fw-semibold text-dark">Status Hubungan Kerja <span class="text-danger">*</span></label>
-                        <select name="employment_type" id="employmentTypeSelect" class="form-select" required>
-                            <optgroup label="Status Aktif">
-                                <option value="PKWT" {{ old('employment_type', $contract->employment_type ?? '') == 'PKWT' ? 'selected' : '' }}>PKWT (Kontrak)</option>
-                                <option value="PKWTT" {{ old('employment_type', $contract->employment_type ?? '') == 'PKWTT' ? 'selected' : '' }}>PKWTT (Karyawan Tetap)</option>
-                                <option value="Probation" {{ old('employment_type', $contract->employment_type ?? '') == 'Probation' ? 'selected' : '' }}>Probation (Masa Percobaan)</option>
-                                <option value="Internship" {{ old('employment_type', $contract->employment_type ?? '') == 'Internship' ? 'selected' : '' }}>Magang / Internship</option>
-                            </optgroup>
-                            <optgroup label="Status Penghentian Kerja (Non-Aktif)">
-                                <option value="PHK" {{ old('employment_type', $contract->employment_type ?? '') == 'PHK' ? 'selected' : '' }}>PHK (Pemutusan Hubungan Kerja)</option>
-                                <option value="Resign" {{ old('employment_type', $contract->employment_type ?? '') == 'Resign' ? 'selected' : '' }}>Resign (Mengundurkan Diri)</option>
-                                <option value="Pensiun" {{ old('employment_type', $contract->employment_type ?? '') == 'Pensiun' ? 'selected' : '' }}>Pensiun</option>
-                                <option value="End_Contract" {{ old('employment_type', $contract->employment_type ?? '') == 'End_Contract' ? 'selected' : '' }}>Habis Masa Kontrak</option>
-                            </optgroup>
+                                <option
+                                    value="{{ $i }}"
+                                    @selected($i === $nextPkwtSequence)>
+
+                                    PKWT {{ $i }}
+
+                                </option>
+
+                            @endfor
+
                         </select>
+
                     </div>
 
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">Tanggal Mulai <span class="text-danger">*</span></label>
-                        <input type="date" name="start_date" class="form-control" value="{{ old('start_date', $contract->start_date ?? date('Y-m-d')) }}" required>
+
+                    {{-- STATUS --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Status Kerja
+                        </label>
+
+                        <select
+                            name="employment_type"
+                            id="new_employment_type"
+                            class="form-select">
+
+                            @foreach([
+                                'PKWT',
+                                'PKWTT',
+                                'Probation',
+                                'Internship',
+                            ] as $item)
+
+                                <option
+                                    value="{{ $item }}"
+                                    @selected($employmentType === $item)>
+
+                                    {{ $item }}
+
+                                </option>
+
+                            @endforeach
+
+                        </select>
+
                     </div>
 
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold text-dark">Tanggal Berakhir</label>
-                        <input type="date" name="end_date" class="form-control" value="{{ old('end_date', $contract->end_date ?? '') }}">
-                        <small class="text-muted d-block">Kosongkan jika PKWTT</small>
+
+                    {{-- JOB --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Jabatan
+                        </label>
+
+                        <input
+                            type="text"
+                            name="job_title"
+                            class="form-control"
+                            value="{{ $jobTitle }}"
+                            required>
+
                     </div>
 
-                    <!-- BOX DYNAMIC PHK / RESIGN -->
-                    <div class="col-md-12 d-none" id="terminationBox">
-                        <div class="p-3 bg-danger bg-opacity-10 border border-danger rounded-3 mt-2">
-                            <h6 class="fw-bold text-danger mb-2">
-                                <i class="fa-solid fa-user-slash me-1"></i> Informasi Penghentian Kerja
-                            </h6>
-                            <div class="row g-2">
-                                <div class="col-md-12">
-                                    <label class="form-label fw-semibold text-dark small">Tanggal Efektif Keluar / PHK</label>
-                                    <input type="date" name="exit_date" class="form-control form-control-sm" value="{{ old('exit_date', $contract->exit_date ?? '') }}">
-                                </div>
-                                <div class="col-md-12">
-                                    <label class="form-label fw-semibold text-dark small">Alasan Penghentian / Catatan</label>
-                                    <textarea name="exit_reason" class="form-control form-control-sm" rows="2" placeholder="Catatan alasan PHK / Resign / Pensiun...">{{ old('exit_reason', $contract->exit_reason ?? '') }}</textarea>
-                                </div>
-                            </div>
-                        </div>
+
+                    {{-- DEPARTMENT --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Department
+                        </label>
+
+                        <input
+                            type="text"
+                            name="department"
+                            class="form-control"
+                            value="{{ $department }}">
+
                     </div>
+
+
+                    {{-- PLACEMENT --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Penempatan
+                        </label>
+
+                        <input
+                            type="text"
+                            name="placement_area"
+                            class="form-control"
+                            value="{{ $placementArea }}">
+
+                    </div>
+
+
+                    {{-- FINGERPRINT PIN --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Fingerprint PIN
+                        </label>
+
+                        <input
+                            type="text"
+                            name="fingerprint_pin"
+                            class="form-control"
+                            value="{{ $fingerprintPin }}">
+
+                    </div>
+
+
+                    {{-- NIK FINGERPRINT --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            NIK Fingerprint
+                        </label>
+
+                        <input
+                            type="text"
+                            name="nik_fingerprint"
+                            class="form-control"
+                            value="{{ $nikFingerprint }}">
+
+                    </div>
+
+
+                    {{-- CATEGORY --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Kategori
+                        </label>
+
+                        @if($canSeeLevelCategory)
+
+                            <input
+                                type="text"
+                                name="category"
+                                class="form-control"
+                                value="{{ $category }}">
+
+                        @else
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly>
+
+                            <input
+                                type="hidden"
+                                name="category"
+                                value="{{ $category }}">
+
+                        @endif
+
+                    </div>
+
+
+                    {{-- LEVEL --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Level
+                        </label>
+
+                        @if($canSeeLevelCategory)
+
+                            <input
+                                type="number"
+                                name="level"
+                                id="new_level"
+                                class="form-control"
+                                min="1"
+                                value="{{ $level }}">
+
+                        @else
+
+                            <input
+                                type="text"
+                                class="form-control bg-light text-muted fw-bold"
+                                value="*****"
+                                readonly>
+
+                            <input
+                                type="hidden"
+                                name="level"
+                                value="{{ $level }}">
+
+                        @endif
+
+                    </div>
+
+
+                    {{-- START DATE --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Tanggal Mulai
+                        </label>
+
+                        <input
+                            type="date"
+                            name="start_date"
+                            class="form-control"
+                            value="{{ $newPeriodStartDate }}"
+                            required>
+
+                    </div>
+
+
+                    {{-- END DATE --}}
+
+                    <div class="col-md-4">
+
+                        <label class="form-label fw-semibold">
+                            Tanggal Berakhir
+                        </label>
+
+                        <input
+                            type="date"
+                            name="end_date"
+                            class="form-control"
+                            value="">
+
+                    </div>
+
                 </div>
-            </div>
-        </div>
 
-        <!-- GAJI POKOK, TUNJANGAN, BPJS & PPH21 -->
-        <div class="col-lg-6">
-            <div class="card-custom p-4 h-100">
-                <h6 class="fw-bold text-primary mb-3 pb-2 border-bottom">
-                    <i class="fa-solid fa-money-bill-wave me-2"></i> Acuan Financial, BPJS & Pajak
+
+                <hr class="my-4">
+
+
+                {{-- FINANCIAL --}}
+
+                <h6 class="fw-bold mb-3">
+                    Financial, BPJS & Pajak
                 </h6>
 
-                <!-- GAJI POKOK (GAPOK) -->
-                <div class="col-md-12">
-                    <label class="form-label fw-semibold text-dark">Gaji Pokok (GAPOK) <span class="text-danger">*</span></label>
-                    <div class="input-group">
-                        <span class="input-group-text fw-bold">Rp</span>
-                        @if($canSeeSalary)
-                            <input type="text" name="basic_salary" class="form-control fw-bold text-dark currency-input" 
-                                value="{{ number_format(old('basic_salary', $contract->basic_salary ?? 0), 0, ',', '.') }}" required>
-                        @else
-                            <input type="text" class="form-control bg-light fw-bold text-muted" value="**********" readonly>
-                            <input type="hidden" name="basic_salary" value="{{ $contract->basic_salary ?? 0 }}">
-                        @endif
-                    </div>
-                    @if(!$canSeeSalary)
-                        <small class="text-danger fs-7">* Nominal finansial terproteksi (Khusus Manager Keuangan / Kepala HRD maks. Level 13).</small>
-                    @endif
-                </div>
 
-                <!-- TUNJANGAN TETAP (TJ) -->
-                <div class="col-md-12 mt-3">
-                    <label class="form-label fw-semibold text-dark">Tunjangan Tetap (TJ) <span class="text-danger">*</span></label>
-                    <div class="input-group">
-                        <span class="input-group-text fw-bold">Rp</span>
-                        @if($canSeeSalary)
-                            <input type="text" name="allowance" class="form-control fw-bold text-dark currency-input" 
-                                value="{{ number_format(old('allowance', $contract->allowance ?? 0), 0, ',', '.') }}" required>
-                        @else
-                            <input type="text" class="form-control bg-light fw-bold text-muted" value="**********" readonly>
-                            <input type="hidden" name="allowance" value="{{ $contract->allowance ?? 0 }}">
-                        @endif
-                    </div>
-                    @if(!$canSeeSalary)
-                        <small class="text-danger fs-7">* Nominal finansial terproteksi (Khusus Manager Keuangan / Kepala HRD maks. Level 13).</small>
-                    @endif
-                </div>
+                @if($canSeeSalary)
 
-                <hr class="my-3">
+                    <div class="row g-3">
 
-                <!-- KEPESERTAAN BPJS & MANUAL INPUT SWITCH -->
-                <div class="col-md-12">
-                    <label class="form-label fw-semibold text-dark d-block mb-1">Kepesertaan & Calculation BPJS</label>
-                    
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" name="is_bpjstk_active" id="bpjstk" value="1" {{ old('is_bpjstk_active', $contract->is_bpjstk_active ?? true) ? 'checked' : '' }}>
-                        <label class="form-check-label fw-medium" for="bpjstk">Aktifkan BPJS Ketenagakerjaan</label>
-                    </div>
 
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_bpjs_health_active" id="bpjsks" value="1" {{ old('is_bpjs_health_active', $contract->is_bpjs_health_active ?? true) ? 'checked' : '' }}>
-                        <label class="form-check-label fw-medium" for="bpjsks">Aktifkan BPJS Kesehatan</label>
-                    </div>
+                        {{-- SALARY --}}
 
-                    <!-- SWITCH INPUT MANUAL BPJS -->
-                    <div class="p-3 bg-light rounded-3 border">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" name="use_manual_bpjs" id="useManualBpjs" value="1" {{ old('use_manual_bpjs', $contract->use_manual_bpjs ?? false) ? 'checked' : '' }}>
-                            <label class="form-check-label fw-bold text-dark" for="useManualBpjs">
-                                Input Nominal BPJS Manual (Override Otomatis)
+                        <div class="col-md-4">
+
+                            <label class="form-label fw-semibold">
+                                Gaji Pokok
                             </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    Rp
+                                </span>
+
+                                <input
+                                    type="text"
+                                    name="basic_salary"
+                                    id="new_basic_salary"
+                                    class="form-control new-currency"
+                                    value="{{ $formatRupiah($basicSalary) }}">
+
+                            </div>
+
                         </div>
 
-                        <!-- INPUT BOX BPJS MANUAL -->
-                        <div class="row g-2 mt-2 d-none" id="manualBpjsBox">
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold text-dark small">Potongan BPJS TK Karyawan</label>
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text">Rp</span>
-                                    @if($canSeeSalary)
-                                        <input type="text" name="manual_bpjs_tk_employee" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_tk_employee', $contract->manual_bpjs_tk_employee ?? 0), 0, ',', '.') }}">
-                                    @else
-                                        <input type="text" class="form-control bg-light text-muted" value="**********" readonly>
-                                        <input type="hidden" name="manual_bpjs_tk_employee" value="{{ $contract->manual_bpjs_tk_employee ?? 0 }}">
-                                    @endif
-                                </div>
+
+                        {{-- ALLOWANCE --}}
+
+                        <div class="col-md-4">
+
+                            <label class="form-label fw-semibold">
+                                Tunjangan Level
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    Rp
+                                </span>
+
+                                <input
+                                    type="text"
+                                    name="allowance"
+                                    id="new_allowance"
+                                    class="form-control new-currency"
+                                    value="{{ $formatRupiah($allowance) }}"
+                                    readonly>
+
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold text-dark small">Potongan BPJS KS Karyawan</label>
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text">Rp</span>
-                                    @if($canSeeSalary)
-                                        <input type="text" name="manual_bpjs_ks_employee" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_ks_employee', $contract->manual_bpjs_ks_employee ?? 0), 0, ',', '.') }}">
-                                    @else
-                                        <input type="text" class="form-control bg-light text-muted" value="**********" readonly>
-                                        <input type="hidden" name="manual_bpjs_ks_employee" value="{{ $contract->manual_bpjs_ks_employee ?? 0 }}">
-                                    @endif
-                                </div>
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label fw-semibold text-dark small">Tunjangan BPJS Perusahaan (Beban PT)</label>
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text">Rp</span>
-                                    @if($canSeeSalary)
-                                        <input type="text" name="manual_bpjs_company" class="form-control currency-input" value="{{ number_format(old('manual_bpjs_company', $contract->manual_bpjs_company ?? 0), 0, ',', '.') }}">
-                                    @else
-                                        <input type="text" class="form-control bg-light text-muted" value="**********" readonly>
-                                        <input type="hidden" name="manual_bpjs_company" value="{{ $contract->manual_bpjs_company ?? 0 }}">
-                                    @endif
-                                </div>
-                                <small class="text-muted" style="font-size: 0.75rem;">Iuran BPJS yang dibayarkan oleh perusahaan (bukan potongan karyawan).</small>
-                            </div>
+
+                            <small class="text-muted">
+
+                                Gaji Pokok × Level × 2%.
+
+                            </small>
+
                         </div>
+
+
+                        {{-- PTKP --}}
+
+                        <div class="col-md-4">
+
+                            <label class="form-label fw-semibold">
+                                PTKP / PPh21
+                            </label>
+
+                            <select
+                                name="ptkp_status"
+                                class="form-select">
+
+                                @foreach($ptkpOptions as $item)
+
+                                    <option
+                                        value="{{ $item }}"
+                                        @selected($ptkp === $item)>
+
+                                        {{ $item }}
+
+                                    </option>
+
+                                @endforeach
+
+                            </select>
+
+                        </div>
+
                     </div>
+
+
+                    {{-- =================================================
+                         NEW PERIOD BPJS
+                    ================================================== --}}
+
+                    <div class="mt-4">
+
+
+                        {{-- BPJS TK --}}
+
+                        <div class="mb-4">
+
+                            <label class="form-label fw-semibold d-block">
+                                BPJS Ketenagakerjaan
+                            </label>
+
+                            <div class="rhuekamp-toggle-wrapper">
+
+                                <button
+                                    type="button"
+                                    class="rhuekamp-toggle {{ $isBpjstkActive ? 'toggle-on' : 'toggle-off' }}"
+                                    data-toggle-field="is_bpjstk_active"
+                                    data-toggle-state="{{ $isBpjstkActive ? '1' : '0' }}">
+
+                                    <span class="toggle-icon">
+
+                                        <i class="fas {{ $isBpjstkActive ? 'fa-toggle-on' : 'fa-toggle-off' }}"></i>
+
+                                    </span>
+
+                                    <span class="toggle-label">
+
+                                        {{ $isBpjstkActive ? 'ON' : 'OFF' }}
+
+                                    </span>
+
+                                </button>
+
+                                <span class="rhuekamp-toggle-description">
+
+                                    {{ $isBpjstkActive
+                                        ? 'BPJS TK akan dihitung.'
+                                        : 'BPJS TK tidak dihitung.'
+                                    }}
+
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        {{-- BPJS HEALTH --}}
+
+                        <div class="mb-4">
+
+                            <label class="form-label fw-semibold d-block">
+                                BPJS Kesehatan
+                            </label>
+
+                            <div class="rhuekamp-toggle-wrapper">
+
+                                <button
+                                    type="button"
+                                    class="rhuekamp-toggle {{ $isBpjsHealthActive ? 'toggle-on' : 'toggle-off' }}"
+                                    data-toggle-field="is_bpjs_health_active"
+                                    data-toggle-state="{{ $isBpjsHealthActive ? '1' : '0' }}">
+
+                                    <span class="toggle-icon">
+
+                                        <i class="fas {{ $isBpjsHealthActive ? 'fa-toggle-on' : 'fa-toggle-off' }}"></i>
+
+                                    </span>
+
+                                    <span class="toggle-label">
+
+                                        {{ $isBpjsHealthActive ? 'ON' : 'OFF' }}
+
+                                    </span>
+
+                                </button>
+
+                                <span class="rhuekamp-toggle-description">
+
+                                    {{ $isBpjsHealthActive
+                                        ? 'BPJS Kesehatan akan dihitung.'
+                                        : 'BPJS Kesehatan tidak dihitung.'
+                                    }}
+
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        {{-- MANUAL BPJS --}}
+
+                        <div class="border rounded p-3 mt-3">
+
+                            <label class="form-label fw-semibold d-block">
+                                Override BPJS Manual
+                            </label>
+
+                            <div class="rhuekamp-toggle-wrapper mb-3">
+
+                                <button
+                                    type="button"
+                                    class="rhuekamp-toggle {{ $useManualBpjs ? 'toggle-on' : 'toggle-off' }}"
+                                    data-toggle-field="use_manual_bpjs"
+                                    data-toggle-state="{{ $useManualBpjs ? '1' : '0' }}">
+
+                                    <span class="toggle-icon">
+
+                                        <i class="fas {{ $useManualBpjs ? 'fa-toggle-on' : 'fa-toggle-off' }}"></i>
+
+                                    </span>
+
+                                    <span class="toggle-label">
+
+                                        {{ $useManualBpjs ? 'ON' : 'OFF' }}
+
+                                    </span>
+
+                                </button>
+
+                                <span class="rhuekamp-toggle-description">
+
+                                    {{ $useManualBpjs
+                                        ? 'Menggunakan nominal manual.'
+                                        : 'Menggunakan perhitungan otomatis.'
+                                    }}
+
+                                </span>
+
+                            </div>
+
+
+                            <div
+                                id="newManualBpjsBox"
+                                style="{{ $useManualBpjs ? '' : 'display:none;' }}">
+
+                                <div class="row g-3">
+
+
+                                    {{-- TK --}}
+
+                                    <div class="col-md-4">
+
+                                        <label class="form-label fw-semibold">
+                                            TK Karyawan
+                                        </label>
+
+                                        <div class="input-group">
+
+                                            <span class="input-group-text">
+                                                Rp
+                                            </span>
+
+                                            <input
+                                                type="text"
+                                                name="manual_bpjs_tk_employee"
+                                                class="form-control new-currency"
+                                                value="{{ $formatRupiah($manualBpjstkEmployee) }}">
+
+                                        </div>
+
+                                    </div>
+
+
+                                    {{-- KS --}}
+
+                                    <div class="col-md-4">
+
+                                        <label class="form-label fw-semibold">
+                                            KS Karyawan
+                                        </label>
+
+                                        <div class="input-group">
+
+                                            <span class="input-group-text">
+                                                Rp
+                                            </span>
+
+                                            <input
+                                                type="text"
+                                                name="manual_bpjs_ks_employee"
+                                                class="form-control new-currency"
+                                                value="{{ $formatRupiah($manualBpjsHealthEmployee) }}">
+
+                                        </div>
+
+                                    </div>
+
+
+                                    {{-- COMPANY --}}
+
+                                    <div class="col-md-4">
+
+                                        <label class="form-label fw-semibold">
+                                            Perusahaan
+                                        </label>
+
+                                        <div class="input-group">
+
+                                            <span class="input-group-text">
+                                                Rp
+                                            </span>
+
+                                            <input
+                                                type="text"
+                                                name="manual_bpjs_company"
+                                                class="form-control new-currency"
+                                                value="{{ $formatRupiah($manualBpjsCompany) }}">
+
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                @else
+
+                    <div class="alert alert-secondary">
+
+                        <i class="fas fa-lock me-2"></i>
+
+                        Data Financial, BPJS dan PPh21
+                        mengikuti data contract sebelumnya
+                        dan tidak dapat diubah oleh role Anda.
+
+                    </div>
+
+                @endif
+
+
+                {{-- BUTTON --}}
+
+                <div class="d-flex justify-content-end gap-2 mt-4">
+
+                    <button
+                        type="button"
+                        class="btn btn-outline-secondary js-cancel-new-period">
+
+                        Batal
+
+                    </button>
+
+
+                    <button
+                        type="submit"
+                        class="btn btn-success">
+
+                        <i class="fas fa-plus me-1"></i>
+
+                        Simpan Contract Period
+
+                    </button>
+
                 </div>
 
-                <hr class="my-3">
+            </form>
 
-                <!-- STATUS PTKP / PPH 21 -->
-                <div class="col-md-12">
-                    <label class="form-label fw-semibold text-dark">Status PTKP & Kategori TER (PPh 21) <span class="text-danger">*</span></label>
-                    
-                    @if($canSeeSalary)
-                        <select name="ptkp_status" class="form-select fw-semibold" required>
-                            <option value="">-- Pilih Status / Kategori Pajak --</option>
-                            <option value="TK0" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'TK0' ? 'selected' : '' }}>TK0 — Tidak Kawin / Lajang (Tanpa Tanggungan)</option>
-                            <option value="K0" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K0' ? 'selected' : '' }}>K0 — Kawin (0 Tanggungan)</option>
-                            <option value="K01" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K01' ? 'selected' : '' }}>K01 — Kawin (1 Tanggungan)</option>
-                            <option value="K02" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K02' ? 'selected' : '' }}>K02 — Kawin (2 Tanggungan)</option>
-                            <option value="K03" {{ old('ptkp_status', $contract?->ptkp_status ?? '') == 'K03' ? 'selected' : '' }}>K03 — Kawin (3 Tanggungan)</option>
-                        </select>
-                        <small class="text-muted">Disamakan dengan format kode status karyawan dari data Excel pabrik (misal: K01, K02, TK0, dll).</small>
-                    @else
-                        <input type="text" class="form-control bg-light fw-bold text-muted" value="********** (Terproteksi)" readonly>
-                        <input type="hidden" name="ptkp_status" value="{{ $contract?->ptkp_status ?? 'TK0' }}">
-                        <small class="text-danger fs-7">* Pengaturan PPh 21 / PTKP terproteksi (Khusus Manager Keuangan / Kepala HRD maks. Level 13).</small>
-                    @endif
-                </div>
-            </div>
         </div>
 
-        <div class="col-12 text-end">
-            <a href="{{ route('contracts.outer_island.index') }}" class="btn btn-light border px-4 me-2">Batal</a>
-            <button type="submit" class="btn btn-primary px-5 fw-bold">
-                <i class="fa-solid fa-floppy-disk me-1"></i> Simpan Kontrak & Gaji
-            </button>
+
+        {{-- =========================================================
+             HISTORY TABLE
+        ========================================================== --}}
+
+        <div class="table-responsive">
+
+            <table class="table table-hover align-middle mb-0">
+
+                <thead class="table-light">
+
+                    <tr>
+
+                        <th>
+                            Contract
+                        </th>
+
+                        <th>
+                            Periode
+                        </th>
+
+                        <th>
+                            Jabatan
+                        </th>
+
+                        <th>
+                            Status
+                        </th>
+
+                        <th class="text-end">
+                            Aksi
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                    @forelse($histories as $item)
+
+                        @php
+
+                            $isCurrent =
+                                (string) $currentHistoryId ===
+                                (string) $item->id_contract_history_outer_island;
+
+                            $itemLevel =
+                                is_numeric($item->level)
+                                    ? (int) $item->level
+                                    : null;
+
+                            $itemCanSeeLevel =
+                                $isManagerKeuangan ||
+                                (
+                                    ($isHeadHrd || $isHrd) &&
+                                    (
+                                        $itemLevel === null ||
+                                        $itemLevel <= 13
+                                    )
+                                );
+
+                        @endphp
+
+
+                        <tr>
+
+
+                            {{-- CONTRACT --}}
+
+                            <td>
+
+                                <div class="fw-bold">
+
+                                    @if($item->employment_type === 'PKWT')
+
+                                        PKWT
+                                        {{ $item->pkwt_sequence ?? '-' }}
+
+                                    @else
+
+                                        {{ $item->employment_type ?? '-' }}
+
+                                    @endif
+
+                                </div>
+
+
+                                <small class="text-muted">
+
+                                    Level:
+
+                                    @if($itemCanSeeLevel)
+
+                                        {{ $item->level ?? '-' }}
+
+                                    @else
+
+                                        *****
+
+                                    @endif
+
+                                </small>
+
+                            </td>
+
+
+                            {{-- PERIOD --}}
+
+                            <td>
+
+                                <div>
+
+                                    {{ $item->start_date
+                                        ? \Carbon\Carbon::parse($item->start_date)->format('d M Y')
+                                        : '-'
+                                    }}
+
+                                </div>
+
+                                <div class="text-muted small">
+
+                                    s/d
+
+                                    {{ $item->end_date
+                                        ? \Carbon\Carbon::parse($item->end_date)->format('d M Y')
+                                        : 'Sekarang'
+                                    }}
+
+                                </div>
+
+                            </td>
+
+
+                            {{-- JOB --}}
+
+                            <td>
+
+                                <div class="fw-semibold">
+                                    {{ $item->job_title ?? '-' }}
+                                </div>
+
+                                <small class="text-muted">
+                                    {{ $item->department ?? '-' }}
+                                </small>
+
+                            </td>
+
+
+                            {{-- STATUS --}}
+
+                            <td>
+
+                                @if($isCurrent)
+
+                                    <span class="badge bg-success">
+
+                                        <i class="fas fa-check-circle me-1"></i>
+
+                                        CURRENT
+
+                                    </span>
+
+                                @else
+
+                                    <span class="badge bg-secondary">
+
+                                        <i class="fas fa-lock me-1"></i>
+
+                                        HISTORY
+
+                                    </span>
+
+                                @endif
+
+                            </td>
+
+
+                            {{-- ACTION --}}
+
+                            <td class="text-end">
+
+                                @if($isCurrent)
+
+                                    <span class="badge bg-primary me-2">
+                                        Aktif
+                                    </span>
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-primary"
+                                        onclick="window.scrollTo({top:0,behavior:'smooth'})">
+
+                                        <i class="fas fa-edit me-1"></i>
+
+                                        Edit
+
+                                    </button>
+
+                                @else
+
+                                    <a
+                                        href="{{ route(
+                                            'contracts.outer_island.period.show',
+                                            [
+                                                'employee' => $employee->uuid,
+                                                'history'  => $item->uuid
+                                                    ?? $item->id_contract_history_outer_island,
+                                            ]
+                                        ) }}"
+                                        class="btn btn-sm btn-outline-secondary">
+
+                                        <i class="fas fa-eye me-1"></i>
+
+                                        Detail
+
+                                    </a>
+
+                                    <span class="badge bg-light text-muted ms-1">
+
+                                        <i class="fas fa-lock"></i>
+
+                                    </span>
+
+                                @endif
+
+                            </td>
+
+                        </tr>
+
+                    @empty
+
+                        <tr>
+
+                            <td
+                                colspan="5"
+                                class="text-center py-5 text-muted">
+
+                                <i class="fas fa-folder-open fa-2x mb-3"></i>
+
+                                <div>
+                                    Belum ada contract history.
+                                </div>
+
+                            </td>
+
+                        </tr>
+
+                    @endforelse
+
+                </tbody>
+
+            </table>
+
         </div>
+
     </div>
-</form>
-@endsection
+
+</div>
+
+</div>
+
+
+{{-- =================================================================
+JAVASCRIPT
+================================================================== --}}
 
 @push('scripts')
+
 <script>
+
 document.addEventListener('DOMContentLoaded', function () {
-    const contractForm = document.getElementById('contractForm');
-    const currencyInputs = document.querySelectorAll('.currency-input');
 
-    // 1. FORMATTER CURRENCY RUPIAH REAL-TIME
-    currencyInputs.forEach(function (input) {
+
+    /*
+    |--------------------------------------------------------------------------
+    | CLEAN NUMBER
+    |--------------------------------------------------------------------------
+    */
+
+    function cleanNumber(value) {
+
+        return String(value ?? '')
+            .replace(/[^\d]/g, '');
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | FORMAT RUPIAH
+    |--------------------------------------------------------------------------
+    */
+
+    function formatRupiah(value) {
+
+        const number = cleanNumber(value);
+
+        if (!number) {
+            return '';
+        }
+
+        return new Intl.NumberFormat('id-ID')
+            .format(Number(number));
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | CURRENCY INPUT
+    |--------------------------------------------------------------------------
+    */
+
+    document.querySelectorAll(
+        '.currency-input, .new-currency, .currency-display'
+    ).forEach(function (input) {
+
         input.addEventListener('input', function () {
-            let value = this.value.replace(/[^0-9]/g, '');
-            if (value) {
-                this.value = new Intl.NumberFormat('id-ID').format(value);
-            } else {
-                this.value = '0';
+
+            if (this.readOnly && this.id !== 'basic_salary_display') {
+                return;
             }
+
+            this.value =
+                formatRupiah(this.value);
+
         });
 
-        input.addEventListener('focus', function () {
-            if (this.value === '0') {
-                this.value = '';
-            }
-        });
 
         input.addEventListener('blur', function () {
-            if (this.value === '') {
-                this.value = '0';
+
+            if (this.value) {
+
+                this.value =
+                    formatRupiah(this.value);
+
             }
+
         });
+
     });
 
-    // UNFORMAT NILAI CURRENCY SEBELUM FORM SUBMIT
-    if (contractForm) {
-        contractForm.addEventListener('submit', function () {
-            currencyInputs.forEach(function (input) {
-                input.value = input.value.replace(/[^0-9]/g, '');
-            });
+
+    /*
+    |--------------------------------------------------------------------------
+    | TOGGLE BUTTON SYSTEM
+    |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | ON:
+    |   <input name="field" value="1">
+    |
+    | OFF:
+    |   field DIHAPUS dari form
+    |
+    | Dengan cara ini:
+    |
+    | $request->has('field')
+    |
+    | tetap bekerja.
+    |
+    */
+
+    function createToggleInput(
+        button,
+        state
+    ) {
+
+        const field =
+            button.dataset.toggleField;
+
+        if (!field) {
+            return;
+        }
+
+
+        const form =
+            button.closest('form');
+
+        if (!form) {
+            return;
+        }
+
+
+        let input =
+            form.querySelector(
+                'input[data-toggle-hidden="' +
+                field +
+                '"]'
+            );
+
+
+        if (state) {
+
+            if (!input) {
+
+                input =
+                    document.createElement('input');
+
+                input.type = 'hidden';
+
+                input.name = field;
+
+                input.value = '1';
+
+                input.dataset.toggleHidden =
+                    field;
+
+                form.appendChild(input);
+
+            } else {
+
+                input.value = '1';
+
+            }
+
+        } else {
+
+            if (input) {
+
+                input.remove();
+
+            }
+
+        }
+
+    }
+
+
+    function updateToggleVisual(
+        button,
+        state
+    ) {
+
+        const icon =
+            button.querySelector('.toggle-icon i');
+
+        const label =
+            button.querySelector('.toggle-label');
+
+
+        button.dataset.toggleState =
+            state ? '1' : '0';
+
+
+        button.classList.toggle(
+            'toggle-on',
+            state
+        );
+
+        button.classList.toggle(
+            'toggle-off',
+            !state
+        );
+
+
+        if (icon) {
+
+            icon.className =
+                state
+                    ? 'fas fa-toggle-on'
+                    : 'fas fa-toggle-off';
+
+        }
+
+
+        if (label) {
+
+            label.textContent =
+                state
+                    ? 'ON'
+                    : 'OFF';
+
+        }
+
+
+        const description =
+            button
+                .closest('.rhuekamp-toggle-wrapper')
+                ?.querySelector(
+                    '.rhuekamp-toggle-description'
+                );
+
+
+        if (description) {
+
+            if (
+                button.dataset.toggleField ===
+                'is_bpjstk_active'
+            ) {
+
+                description.textContent =
+                    state
+                        ? 'BPJS TK akan dihitung dalam payroll.'
+                        : 'BPJS TK tidak dihitung dalam payroll.';
+
+            }
+
+
+            if (
+                button.dataset.toggleField ===
+                'is_bpjs_health_active'
+            ) {
+
+                description.textContent =
+                    state
+                        ? 'BPJS Kesehatan akan dihitung dalam payroll.'
+                        : 'BPJS Kesehatan tidak dihitung dalam payroll.';
+
+            }
+
+
+            if (
+                button.dataset.toggleField ===
+                'use_manual_bpjs'
+            ) {
+
+                description.textContent =
+                    state
+                        ? 'Menggunakan nominal BPJS manual.'
+                        : 'Menggunakan perhitungan otomatis.';
+
+            }
+
+        }
+
+    }
+
+
+    function initializeToggle(button) {
+
+        const state =
+            button.dataset.toggleState === '1';
+
+
+        /*
+        |--------------------------------------------------------------
+        | Pastikan input sesuai state awal.
+        |--------------------------------------------------------------
+        */
+
+        createToggleInput(
+            button,
+            state
+        );
+
+
+        updateToggleVisual(
+            button,
+            state
+        );
+
+
+        button.addEventListener(
+            'click',
+            function () {
+
+                const currentState =
+                    this.dataset.toggleState === '1';
+
+                const newState =
+                    !currentState;
+
+
+                createToggleInput(
+                    this,
+                    newState
+                );
+
+
+                updateToggleVisual(
+                    this,
+                    newState
+                );
+
+
+                /*
+                |----------------------------------------------------------
+                | Manual BPJS
+                |----------------------------------------------------------
+                */
+
+                if (
+                    this.dataset.toggleField ===
+                    'use_manual_bpjs'
+                ) {
+
+                    const form =
+                        this.closest('form');
+
+                    if (!form) {
+                        return;
+                    }
+
+
+                    const isNewPeriod =
+                        form.id === 'newPeriodForm';
+
+
+                    const box =
+                        form.querySelector(
+                            isNewPeriod
+                                ? '#newManualBpjsBox'
+                                : '#manualBpjsBox'
+                        );
+
+
+                    if (box) {
+
+                        box.style.display =
+                            newState
+                                ? ''
+                                : 'none';
+
+                    }
+
+                }
+
+            }
+        );
+
+    }
+
+
+    document
+        .querySelectorAll(
+            '.rhuekamp-toggle'
+        )
+        .forEach(function (button) {
+
+            initializeToggle(button);
+
         });
-    }
 
-    // 2. TOGGLE BOX PHK / RESIGN
-    const empTypeSelect = document.getElementById('employmentTypeSelect');
-    const terminationBox = document.getElementById('terminationBox');
 
-    function checkTermination() {
-        const value = empTypeSelect.value;
-        if (['PHK', 'Resign', 'Pensiun', 'End_Contract'].includes(value)) {
-            terminationBox.classList.remove('d-none');
-        } else {
-            terminationBox.classList.add('d-none');
+    /*
+    |--------------------------------------------------------------------------
+    | CURRENT EMPLOYMENT
+    |--------------------------------------------------------------------------
+    */
+
+    const employmentType =
+        document.getElementById(
+            'employment_type'
+        );
+
+    const pkwtSequenceBox =
+        document.getElementById(
+            'pkwtSequenceBox'
+        );
+
+    const terminationBox =
+        document.getElementById(
+            'terminationBox'
+        );
+
+
+    function toggleCurrentEmployment() {
+
+        if (!employmentType) {
+            return;
         }
-    }
 
-    if (empTypeSelect && terminationBox) {
-        empTypeSelect.addEventListener('change', checkTermination);
-        checkTermination();
-    }
 
-    // 3. TOGGLE INPUT MANUAL BPJS
-    const useManualBpjsSwitch = document.getElementById('useManualBpjs');
-    const manualBpjsBox = document.getElementById('manualBpjsBox');
+        if (pkwtSequenceBox) {
 
-    function toggleManualBpjs() {
-        if (useManualBpjsSwitch.checked) {
-            manualBpjsBox.classList.remove('d-none');
-        } else {
-            manualBpjsBox.classList.add('d-none');
+            pkwtSequenceBox.style.display =
+                employmentType.value === 'PKWT'
+                    ? ''
+                    : 'none';
+
         }
+
+
+        if (terminationBox) {
+
+            const terminationTypes = [
+                'PHK',
+                'Resign',
+                'Pensiun',
+                'End_Contract'
+            ];
+
+            terminationBox.style.display =
+                terminationTypes.includes(
+                    employmentType.value
+                )
+                    ? ''
+                    : 'none';
+
+        }
+
     }
 
-    if (useManualBpjsSwitch && manualBpjsBox) {
-        useManualBpjsSwitch.addEventListener('change', toggleManualBpjs);
-        toggleManualBpjs();
+
+    employmentType?.addEventListener(
+        'change',
+        toggleCurrentEmployment
+    );
+
+    toggleCurrentEmployment();
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | CURRENT FINANCIAL
+    |--------------------------------------------------------------------------
+    |
+    | Tidak ada hidden basic_salary kedua.
+    | Input name=basic_salary adalah input yang langsung dikirim tanpa
+    | formatter JavaScript. Controller membersihkan nominal di server.
+    | Server tetap menjadi sumber kebenaran untuk allowance.
+    */
+
+    const basicSalary =
+        document.getElementById(
+            'basic_salary'
+        );
+
+    const allowance =
+        document.getElementById(
+            'allowance'
+        );
+
+    const level =
+        document.getElementById(
+            'level'
+        );
+
+
+    function syncCurrentAllowance() {
+
+        if (
+            !basicSalary ||
+            !allowance ||
+            !level
+        ) {
+            return;
+        }
+
+        const salary =
+            Number(
+                cleanNumber(
+                    basicSalary.value
+                )
+            ) || 0;
+
+        const levelValue =
+            Number(
+                level.value
+            ) || 0;
+
+        const result =
+            salary *
+            (levelValue * 0.02);
+
+        allowance.value =
+            result > 0
+                ? formatRupiah(
+                    Math.round(result)
+                )
+                : '';
+
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | BASIC SALARY INPUT
+    |--------------------------------------------------------------------------
+    */
+
+    basicSalary?.addEventListener(
+        'input',
+        syncCurrentAllowance
+    );
+
+
+    basicSalary?.addEventListener(
+        'blur',
+        syncCurrentAllowance
+    );
+
+
+    level?.addEventListener(
+        'input',
+        syncCurrentAllowance
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | PENTING
+    |--------------------------------------------------------------------------
+    |
+    | Jangan menjalankan syncCurrentAllowance() saat page load.
+    | Data allowance existing harus tetap ditampilkan apa adanya.
+    | Perhitungan baru dilakukan ketika salary / level berubah.
+    */
+
+    /*
+    |--------------------------------------------------------------------------
+    | NEW PERIOD
+    |--------------------------------------------------------------------------
+    */
+
+    const btnAddContractPeriod =
+        document.getElementById(
+            'btnAddContractPeriod'
+        );
+
+    const newPeriodWrapper =
+        document.getElementById(
+            'newPeriodWrapper'
+        );
+
+
+    function showNewPeriod() {
+
+        if (!newPeriodWrapper) {
+            return;
+        }
+
+
+        newPeriodWrapper.style.display = '';
+
+
+        newPeriodWrapper.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+        });
+
+    }
+
+
+    function hideNewPeriod() {
+
+        if (!newPeriodWrapper) {
+            return;
+        }
+
+
+        newPeriodWrapper.style.display =
+            'none';
+
+    }
+
+
+    btnAddContractPeriod?.addEventListener(
+        'click',
+        showNewPeriod
+    );
+
+
+    document.querySelectorAll(
+        '.js-cancel-new-period'
+    ).forEach(function (button) {
+
+        button.addEventListener(
+            'click',
+            hideNewPeriod
+        );
+
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | NEW PERIOD ALLOWANCE
+    |--------------------------------------------------------------------------
+    */
+
+    const newSalary =
+        document.getElementById(
+            'new_basic_salary'
+        );
+
+    const newAllowance =
+        document.getElementById(
+            'new_allowance'
+        );
+
+    const newLevel =
+        document.getElementById(
+            'new_level'
+        );
+
+
+    function calculateNewAllowance() {
+
+        if (
+            !newSalary ||
+            !newAllowance ||
+            !newLevel
+        ) {
+            return;
+        }
+
+
+        const salary =
+            Number(
+                cleanNumber(
+                    newSalary.value
+                )
+            ) || 0;
+
+
+        const levelValue =
+            Number(
+                newLevel.value
+            ) || 0;
+
+
+        const result =
+            salary *
+            (levelValue * 0.02);
+
+
+        newAllowance.value =
+            result > 0
+                ? formatRupiah(result)
+                : '';
+
+    }
+
+
+    newSalary?.addEventListener(
+        'input',
+        calculateNewAllowance
+    );
+
+
+    newLevel?.addEventListener(
+        'input',
+        calculateNewAllowance
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | AUTO OPEN NEW PERIOD
+    |--------------------------------------------------------------------------
+    */
+
+    const urlParams =
+        new URLSearchParams(
+            window.location.search
+        );
+
+
+    if (
+        urlParams.get('open_new_period') === 'true' ||
+        urlParams.get('open_new_period') === '1'
+    ) {
+
+        showNewPeriod();
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | SUBMIT CURRENT CONTRACT
+    |--------------------------------------------------------------------------
+    |
+    | Field nominal BPJS pada form tetap dibersihkan sebelum request.
+    | basic_salary sengaja tidak disentuh JavaScript dan dibersihkan server-side
+    | oleh controller, sehingga submit pertama mengirim nilai input terakhir.
+    */
+
+    const currentForm =
+        document.getElementById(
+            'currentContractForm'
+        );
+
+
+    currentForm?.addEventListener(
+        'submit',
+        function () {
+
+            this.querySelectorAll(
+                '.currency-input'
+            ).forEach(function (input) {
+
+                input.value =
+                    cleanNumber(
+                        input.value
+                    );
+
+            });
+
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | SUBMIT NEW PERIOD
+    |--------------------------------------------------------------------------
+    */
+
+    const newPeriodForm =
+        document.getElementById(
+            'newPeriodForm'
+        );
+
+
+    newPeriodForm?.addEventListener(
+        'submit',
+        function () {
+
+            this.querySelectorAll(
+                '.new-currency'
+            ).forEach(function (input) {
+
+                input.value =
+                    cleanNumber(input.value);
+
+            });
+
+        }
+    );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | DOUBLE SUBMIT PROTECTION
+    |--------------------------------------------------------------------------
+    */
+
+    document.querySelectorAll(
+        '#currentContractForm, #newPeriodForm'
+    ).forEach(function (form) {
+
+        form.addEventListener(
+            'submit',
+            function () {
+
+                const submitButton =
+                    this.querySelector(
+                        'button[type="submit"]'
+                    );
+
+
+                if (!submitButton) {
+                    return;
+                }
+
+
+                if (
+                    submitButton.dataset.submitting === '1'
+                ) {
+
+                    return;
+
+                }
+
+
+                submitButton.dataset.submitting =
+                    '1';
+
+
+                setTimeout(function () {
+
+                    submitButton.disabled = true;
+
+                    submitButton.innerHTML =
+                        '<i class="fas fa-spinner fa-spin me-1"></i>' +
+                        ' Menyimpan...';
+
+                }, 50);
+
+            }
+        );
+
+    });
+
 });
+
 </script>
+
 @endpush
+
+@endsection

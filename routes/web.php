@@ -8,6 +8,7 @@ use App\Http\Controllers\EmployeeOuterIslandController;
 use App\Http\Controllers\EmployeeContractController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PayrollOuterIslandController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ContractOuterIslandController;
 use App\Http\Controllers\HolidayController;
@@ -141,19 +142,125 @@ Route::middleware(['auth'])->group(function () {
         });
 
 
-    Route::prefix('contracts/outer_island')
-        ->name('contracts.outer_island.')
-        ->group(function () {
+/*
+|--------------------------------------------------------------------------
+| 4B. MODUL KONTRAK KERJA OUTER ISLAND
+|--------------------------------------------------------------------------
+|
+| Struktur:
+|
+| Employee
+|    ↓
+| Contract Master
+|    ↓
+| Contract History / Period
+|
+| Satu employee hanya mempunyai SATU Contract Master.
+| Perpanjangan kontrak membuat History baru.
+|
+*/
 
-            Route::get('/', [ContractOuterIslandController::class, 'index'])
-                ->name('index');
+Route::prefix('contracts/outer_island')
+    ->name('contracts.outer_island.')
+    ->group(function () {
 
-            Route::get('{employeeOuterIsland}/edit', [ContractOuterIslandController::class, 'edit'])
-                ->name('edit');
+        /*
+        |--------------------------------------------------------------------------
+        | CONTRACT INDEX
+        |--------------------------------------------------------------------------
+        */
 
-            Route::put('{employeeOuterIsland}', [ContractOuterIslandController::class, 'update'])
-                ->name('update');
-        });
+        Route::get('/', [
+            ContractOuterIslandController::class,
+            'index'
+        ])->name('index');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | EDIT / CURRENT CONTRACT
+        |--------------------------------------------------------------------------
+        |
+        | Menampilkan Contract Master + Current History.
+        |
+        */
+
+        Route::get('{employee}/edit', [
+            ContractOuterIslandController::class,
+            'edit'
+        ])->name('edit');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE CURRENT CONTRACT HISTORY
+        |--------------------------------------------------------------------------
+        |
+        | Hanya mengubah history yang sedang current.
+        |
+        */
+
+        Route::put('{employee}', [
+            ContractOuterIslandController::class,
+            'update'
+        ])->name('update');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | TAMBAH CONTRACT PERIOD
+        |--------------------------------------------------------------------------
+        |
+        | Tidak membuat Contract Master baru.
+        |
+        | Hanya menyiapkan form untuk membuat:
+        |
+        | ContractHistoryOuterIsland
+        |
+        */
+
+        Route::get('{employee}/period/create', [
+            ContractOuterIslandController::class,
+            'createPeriod'
+        ])->name('period.create');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | SIMPAN CONTRACT PERIOD
+        |--------------------------------------------------------------------------
+        |
+        | Membuat satu History baru.
+        |
+        | Contoh:
+        |
+        | History 1 → History 2 → History 3
+        |
+        */
+
+        Route::post('{employee}/period', [
+            ContractOuterIslandController::class,
+            'storePeriod'
+        ])->name('period.store');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | LIHAT CONTRACT HISTORY
+        |--------------------------------------------------------------------------
+        |
+        | History lama tetap dapat dilihat.
+        |
+        | Controller akan memastikan history tersebut
+        | benar-benar milik employee yang bersangkutan.
+        |
+        */
+
+        Route::get('{employee}/period/{history}', [
+            ContractOuterIslandController::class,
+            'showHistory'
+        ])->name('period.show');
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -251,11 +358,110 @@ Route::middleware(['auth'])->group(function () {
             |--------------------------------------------------------------------------
             */
 
-            Route::get('{uuid}/print-pdf', [PayrollController::class, 'printPdf'])
-                ->name('print-pdf');
+Route::get('{employee}/print-pdf', [
+    PayrollOuterIslandController::class,
+    'printPdf'
+])->name('print-pdf');
 
-            Route::get('{uuid}/send-email', [PayrollController::class, 'sendEmail'])
-                ->name('send-email');
+Route::get('{employee}/send-email', [
+    PayrollOuterIslandController::class,
+    'sendEmail'
+])->name('send-email');
+        });
+    
+    /*
+|--------------------------------------------------------------------------
+| 5B. MODUL PAYROLL & TAX - OUTER ISLAND
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('payrolls/outer_island')
+    ->name('payrolls.outer_island.')
+    ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | Payroll Index / Rekap
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('/', [PayrollOuterIslandController::class, 'index'])
+            ->name('index');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Input Absensi & Variabel Payroll
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('create', [PayrollOuterIslandController::class, 'create'])
+            ->name('create');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Simpan Payroll
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('store', [PayrollOuterIslandController::class, 'store'])
+            ->name('store');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Export BCA
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('export-bca', [PayrollOuterIslandController::class, 'exportBca'])
+            ->name('export-bca');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | LOCK & UNLOCK
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('lock', [PayrollOuterIslandController::class, 'lockCalculation'])
+            ->name('lock');
+
+        Route::post('request-unlock', [PayrollOuterIslandController::class, 'requestUnlock'])
+            ->name('requestUnlock');
+
+        Route::post('unlock', [PayrollOuterIslandController::class, 'unlockCalculation'])
+            ->name('unlock');
+
+        Route::post('reject-unlock', [PayrollOuterIslandController::class, 'rejectUnlock'])
+            ->name('rejectUnlock');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | DOCUMENT OUTPUT
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('{uuid}/print-pdf', [PayrollOuterIslandController::class, 'printPdf'])
+            ->name('print-pdf');
+
+        Route::get('{uuid}/send-email', [PayrollOuterIslandController::class, 'sendEmail'])
+            ->name('send-email');
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | CUTOFF DAY
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('cutoff-day', [PayrollOuterIslandController::class, 'updateCutoffDay'])
+            ->name('cutoff.update');
+        Route::post(
+            'generate-attendance',[PayrollOuterIslandController::class, 'generateAttendance']
+        )->name('generate_attendance');
         });
 
 
@@ -331,4 +537,6 @@ Route::middleware(['auth'])->group(function () {
             'store',
             'destroy'
         ]);
+
+    
 });

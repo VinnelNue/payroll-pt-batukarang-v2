@@ -11,12 +11,17 @@ class ContractOuterIsland extends Model
     use HasFactory;
 
     protected $table = 'employee_contracts_outer_island';
+
     protected $primaryKey = 'id_contract_outer_island';
-    protected $guarded = ['id_contract_outer_island'];
+
+    protected $guarded = [
+        'id_contract_outer_island',
+    ];
 
     protected static function boot()
     {
         parent::boot();
+
         static::creating(function ($model) {
             if (empty($model->uuid)) {
                 $model->uuid = (string) Str::uuid();
@@ -25,23 +30,63 @@ class ContractOuterIsland extends Model
     }
 
     protected $casts = [
-        'start_date'              => 'date',
-        'end_date'                => 'date',
-        'exit_date'               => 'date',
-        'basic_salary'            => 'decimal:2',
-        'allowance'               => 'decimal:2',
-        'manual_bpjs_tk_employee' => 'decimal:2',
-        'manual_bpjs_ks_employee' => 'decimal:2',
-        'manual_bpjs_company'     => 'decimal:2',
-        'is_bpjstk_active'        => 'boolean',
-        'is_bpjs_health_active'   => 'boolean',
-        'use_manual_bpjs'         => 'boolean',
-        'is_active'               => 'boolean',
+        'is_active' => 'boolean',
     ];
 
+    // ==========================================
+    // EMPLOYEE
+    // ==========================================
+
+    /**
+     * Contract Master → Employee
+     */
     public function employee()
     {
-        return $this->belongsTo(EmployeeOuterIsland::class, 'employee_outer_island_id', 'id_employee_outer_island');
+        return $this->belongsTo(
+            EmployeeOuterIsland::class,
+            'employee_outer_island_id',
+            'id_employee_outer_island'
+        );
+    }
+
+    // ==========================================
+    // CONTRACT HISTORY
+    // ==========================================
+
+    /**
+     * Contract Master → seluruh riwayat kontrak.
+     *
+     * Contoh:
+     *
+     * Master #2
+     * ├── History #1 PKWT 1
+     * ├── History #2 PKWT 2
+     * └── History #3 PKWT 3 ← current
+     */
+    public function histories()
+    {
+        return $this->hasMany(
+            ContractHistoryOuterIsland::class,
+            'contract_outer_island_id',
+            'id_contract_outer_island'
+        )->orderBy('start_date');
+    }
+
+    /**
+     * Contract Master → History yang sedang
+     * ditunjuk sebagai current.
+     *
+     * Current ditentukan oleh:
+     * current_contract_history_id
+     *
+     * BUKAN berdasarkan latest ID atau latest date.
+     */
+    public function currentHistory()
+    {
+        return $this->belongsTo(
+            ContractHistoryOuterIsland::class,
+            'current_contract_history_id',
+            'id_contract_history_outer_island'
+        );
     }
 }
-
