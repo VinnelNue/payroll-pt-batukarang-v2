@@ -38,6 +38,19 @@ class PayrollController extends Controller
     private const DEFAULT_STANDARD_WORK_DAYS = 26;
     private const DEFAULT_OVERTIME_RATE = 20000;
 
+    private const ATTENDANCE_STATUSES = [
+        'H',
+        'H0.5',
+        'A',
+        'I',
+        'SKD',
+        'S',
+        'C',
+        'CM',
+        'M/HB',
+        'HB',
+    ];
+
     // ============================================================
     // ROLE HELPERS
     // ============================================================
@@ -76,7 +89,7 @@ class PayrollController extends Controller
             return false;
         }
 
-        $level = $employee->activeContract?->level;
+        $level = $employee->contract?->currentHistory?->level;
 
         return $level !== null
             && (int) $level <= 13;
@@ -113,25 +126,105 @@ class PayrollController extends Controller
         );
     }
 
+    private function calculateAllowance($contract): float
+    {
+        if (!$contract) {
+            return 0.0;
+        }
+
+        $basicSalary =
+            (float) ($contract->basic_salary ?? 0);
+
+        $level =
+            (int) ($contract->level ?? 0);
+
+        if ($basicSalary <= 0 || $level <= 0) {
+            return 0.0;
+        }
+
+        return round(
+            $basicSalary * ($level * 0.02),
+            2
+        );
+    }
+
+    private function normalizeCutoffDay(mixed $value): int
+    {
+        $cutoffDay = (int) $value;
+
+        if (
+            $cutoffDay < self::MIN_CUTOFF_DAY
+            ||
+            $cutoffDay > self::MAX_CUTOFF_DAY
+        ) {
+            return self::DEFAULT_CUTOFF_DAY;
+        }
+
+        return $cutoffDay;
+    }
+
     private function defaultCutoffDay(): int
     {
-        return (int) CompanySetting::get(
-            'attendance_cutoff_day',
-            self::DEFAULT_CUTOFF_DAY
+        return $this->normalizeCutoffDay(
+            CompanySetting::get(
+                'attendance_cutoff_day',
+                self::DEFAULT_CUTOFF_DAY
+            )
         );
     }
 
     private function getPeriodCutoffDay(string $period): int
     {
-        $periodCutoff = Payroll::where(
-            'period_month',
-            $period
-        )
-            ->whereNotNull('cutoff_day')
-            ->value('cutoff_day');
+        /*
+         * PRIORITAS CUT-OFF:
+         *
+         * 1. cutoff_day yang sudah tersimpan pada payroll periode
+         * 2. CompanySetting khusus periode: attendance_cutoff_day:{period}
+         * 3. CompanySetting global attendance_cutoff_day sebagai default
+         *
+         * Dengan pola ini setiap periode benar-benar independen:
+         *
+         * Juli     = 26
+         * Agustus  = 24
+         * September = 27
+         *
+         * Selama nilainya berada pada 20-28.
+         */
+        $periodCutoff =
+            Payroll::query()
+                ->where(
+                    'period_month',
+                    $period
+                )
+                ->whereBetween(
+                    'cutoff_day',
+                    [
+                        self::MIN_CUTOFF_DAY,
+                        self::MAX_CUTOFF_DAY,
+                    ]
+                )
+                ->orderByDesc('id_payroll')
+                ->value('cutoff_day');
 
         if ($periodCutoff !== null) {
-            return (int) $periodCutoff;
+            return $this->normalizeCutoffDay(
+                $periodCutoff
+            );
+        }
+
+        $periodSettingKey =
+            'attendance_cutoff_day:' . $period;
+
+        $periodSetting =
+            CompanySetting::get(
+                $periodSettingKey,
+                null
+            );
+
+        if ($periodSetting !== null) {
+            return $this->normalizeCutoffDay(
+                $periodSetting
+            );
         }
 
         return $this->defaultCutoffDay();
@@ -155,12 +248,12 @@ class PayrollController extends Controller
             ],
         ]);
 
-        $employees = Employee::with('activeContract')
+        $employees = Employee::with('contract.currentHistory')
             ->where('is_active', true)
             ->get();
 
         $payrollCollection = Payroll::with([
-            'employee.activeContract',
+            'employee.contract.currentHistory',
         ])
             ->where(
                 'period_month',
@@ -186,7 +279,7 @@ class PayrollController extends Controller
 
         $payrollsByDepartment =
             $payrolls->groupBy(function ($payroll) {
-                return $payroll->employee?->activeContract?->department
+                return $payroll->employee?->contract?->currentHistory?->department
                     ?? 'Tanpa Department';
             });
 
@@ -245,6 +338,13 @@ class PayrollController extends Controller
                 ->where('is_locked', true)
                 ->exists();
 
+        $previousPeriod = Carbon::createFromFormat(
+            'Y-m-d',
+            $period . '-01'
+        )
+            ->subMonth()
+            ->format('Y-m');
+
         // ========================================================
         // HOLIDAY
         // ========================================================
@@ -272,7 +372,7 @@ class PayrollController extends Controller
 
         $employees = Employee::with([
 
-            'activeContract',
+            'contract.currentHistory',
 
             'payrolls' => function ($q) use ($period) {
 
@@ -340,6 +440,69 @@ class PayrollController extends Controller
             ->where('is_active', true)
             ->get();
 
+
+        // ========================================================
+        // PREVIOUS PAYROLL / GANTUNGAN PREVIEW
+        // ========================================================
+
+        $previousPayrolls = Payroll::query()
+            ->where(
+                'period_month',
+                $previousPeriod
+            )
+            ->whereIn(
+                'employee_id',
+                $employees->pluck('id_employee')
+            )
+            ->get([
+                'id_payroll',
+                'employee_id',
+                'period_month',
+                'cutoff_day',
+                'basic_salary',
+                'allowance',
+                'gantungan_days',
+                'gantungan_deduction',
+                'is_locked',
+            ])
+            ->keyBy(
+                'employee_id'
+            );
+
+        // ========================================================
+        // PREVIOUS GANTUNGAN PREVIEW
+        // ========================================================
+        //
+        // Preview harus selalu mewakili gantungan bulan sebelumnya.
+        // Payroll snapshot dipakai terlebih dahulu. Bila snapshot
+        // masih 0/null tetapi attendance bulan sebelumnya memiliki
+        // A/I/H0.5 setelah cutoff, helper akan menghitung fallback
+        // dari attendance agar data lama tetap dapat dipakai.
+        // ========================================================
+
+        $previousGantunganPreview = collect();
+
+        $previewStandardWorkDays =
+            $this->standardWorkDays();
+
+        foreach ($employees as $employee) {
+
+            $previousPayroll =
+                $previousPayrolls->get(
+                    $employee->id_employee
+                );
+
+            $previousGantunganPreview->put(
+                $employee->id_employee,
+                $this->calculatePreviousGantungan(
+                    $employee,
+                    $previousPeriod,
+                    $previewStandardWorkDays,
+                    $previousPayroll
+                )
+            );
+        }
+
         return view(
             'payrolls.local.create',
             compact(
@@ -349,7 +512,10 @@ class PayrollController extends Controller
                 'isNextPeriodLocked',
                 'cutoffDay',
                 'savedCutoffDay',
-                'holidays'
+                'holidays',
+                'previousPayrolls',
+                'previousGantunganPreview',
+                'previousPeriod'
             )
         );
     }
@@ -407,18 +573,39 @@ class PayrollController extends Controller
                 );
         }
 
-        CompanySetting::updateOrCreate(
-            ['key' => 'attendance_cutoff_day'],
-            ['value' => $cutoffDay]
-        );
+        DB::transaction(function () use (
+            $period,
+            $cutoffDay
+        ) {
+            /*
+             * Simpan cutoff sebagai cutoff PERIODE pada payroll
+             * yang sudah ada.
+             */
+            Payroll::where(
+                'period_month',
+                $period
+            )
+                ->update([
+                    'cutoff_day' => $cutoffDay,
+                ]);
 
-        Payroll::where(
-            'period_month',
-            $period
-        )
-            ->update([
-                'cutoff_day' => $cutoffDay,
-            ]);
+            /*
+             * Simpan juga konfigurasi cutoff khusus periode.
+             *
+             * Ini membuat perubahan cutoff Agustus tidak mengubah
+             * cutoff Juli maupun default periode lain.
+             */
+            CompanySetting::updateOrCreate(
+                [
+                    'key' =>
+                        'attendance_cutoff_day:' . $period,
+                ],
+                [
+                    'value' =>
+                        $cutoffDay,
+                ]
+            );
+        });
 
         return redirect()
             ->route(
@@ -777,6 +964,17 @@ class PayrollController extends Controller
                 ->where('is_locked', true)
                 ->exists();
 
+        /*
+         * Cut-off selalu FLEXIBLE per periode: 20-28.
+         *
+         * Urutan sumber:
+         * 1. Payroll period yang sudah tersimpan
+         * 2. Setting khusus period
+         * 3. Setting global sebagai default
+         *
+         * Finance tetap dapat menggantinya saat periode belum lock
+         * melalui cutoff_day_submit.
+         */
         $cutoffDay =
             $this->getPeriodCutoffDay(
                 $period
@@ -787,14 +985,17 @@ class PayrollController extends Controller
             &&
             $this->canManageCutoff()
             &&
-            !empty(
-                $validated['cutoff_day_submit']
+            array_key_exists(
+                'cutoff_day_submit',
+                $validated
             )
+            &&
+            $validated['cutoff_day_submit'] !== null
         ) {
             $cutoffDay =
-                (int) $validated[
-                    'cutoff_day_submit'
-                ];
+                $this->normalizeCutoffDay(
+                    $validated['cutoff_day_submit']
+                );
         }
 
         // ========================================================
@@ -811,7 +1012,7 @@ class PayrollController extends Controller
 
         $employees =
             Employee::with(
-                'activeContract'
+                'contract.currentHistory'
             )
                 ->whereIn(
                     'id_employee',
@@ -825,6 +1026,260 @@ class PayrollController extends Controller
                 ->keyBy(
                     'id_employee'
                 );
+
+        // ========================================================
+        // LOCKED PERIOD = ATTENDANCE AFTER CUTOFF ONLY
+        // ========================================================
+        //
+        // Payroll yang sudah lock tidak dihitung ulang.
+        // Yang masih boleh diubah hanya attendance > cutoff.
+        // Attendance <= cutoff tetap permanen.
+        // Jika periode berikutnya sudah lock, gantungan juga ikut lock.
+        //
+        // ========================================================
+
+        if ($existingPeriodLocked) {
+
+            $nextPeriod =
+                Carbon::createFromFormat(
+                    'Y-m',
+                    $period
+                )
+                    ->addMonth()
+                    ->format('Y-m');
+
+            $isNextPeriodLocked =
+                Payroll::query()
+                    ->where(
+                        'period_month',
+                        $nextPeriod
+                    )
+                    ->where(
+                        'is_locked',
+                        true
+                    )
+                    ->exists();
+
+            if ($isNextPeriodLocked) {
+                return redirect()
+                    ->route(
+                        'payrolls.local.create',
+                        ['period' => $period]
+                    )
+                    ->with(
+                        'error',
+                        "Periode {$period} dan periode {$nextPeriod} sudah di-lock. "
+                        . "Attendance setelah cutoff tidak dapat diubah lagi."
+                    );
+            }
+
+            DB::transaction(function () use (
+                $validated,
+                $employees,
+                $period,
+                $cutoffDay
+            ) {
+
+                foreach (
+                    $validated['payrolls'] as $empId => $data
+                ) {
+
+                    $empId = (int) $empId;
+
+                    $employee =
+                        $employees->get($empId);
+
+                    if (
+                        !$employee
+                        ||
+                        !$employee->contract?->currentHistory
+                        ||
+                        !$employee->contract?->currentHistory?->is_active
+                    ) {
+                        continue;
+                    }
+
+                    $submittedDaily =
+                        $data['daily_attendance']
+                        ?? [];
+
+                    if (!is_array($submittedDaily)) {
+                        continue;
+                    }
+
+                    foreach (
+                        $submittedDaily as $dateKey => $status
+                    ) {
+
+                        $date =
+                            $this->normalizeAttendanceDate(
+                                $period,
+                                $dateKey
+                            );
+
+                        if (!$date) {
+                            continue;
+                        }
+
+                        $day =
+                            (int) $date->format('d');
+
+                        if ($day <= $cutoffDay) {
+                            continue;
+                        }
+
+                        $normalizedStatus =
+                            $this->normalizeAttendanceStatus(
+                                $status
+                            );
+
+                        $dateString =
+                            $date->format('Y-m-d');
+
+                        if ($normalizedStatus === 'HB') {
+
+                            AttendanceRecord::where(
+                                'employee_id',
+                                $empId
+                            )
+                                ->where(
+                                    'attendance_date',
+                                    $dateString
+                                )
+                                ->delete();
+
+                            continue;
+                        }
+
+                        if ($normalizedStatus === '') {
+
+                            AttendanceRecord::where(
+                                'employee_id',
+                                $empId
+                            )
+                                ->where(
+                                    'attendance_date',
+                                    $dateString
+                                )
+                                ->delete();
+
+                            continue;
+                        }
+
+                        AttendanceRecord::updateOrCreate(
+                            [
+                                'employee_id' =>
+                                    $empId,
+
+                                'attendance_date' =>
+                                    $dateString,
+                            ],
+                            [
+                                'status' =>
+                                    $normalizedStatus,
+
+                                'source' =>
+                                    'manual',
+                            ]
+                        );
+                    }
+                }
+
+                // ====================================================
+                // UPDATE SNAPSHOT GANTUNGAN SETELAH ATTENDANCE DISIMPAN
+                // ====================================================
+                //
+                // Periode yang sudah lock tetap boleh menerima attendance
+                // setelah cutoff. Attendance tersebut harus menjadi
+                // gantungan untuk bulan berikutnya. Yang tidak boleh
+                // berubah adalah perhitungan gaji periode yang sudah lock.
+                //
+                // Contoh:
+                // Juli lock 01-26
+                // 27 Juli = A
+                // 28 Juli = I
+                //
+                // Payroll Juli:
+                //   gantungan_days = 2
+                //   gantungan_deduction = nominal 2 hari Juli
+                //
+                // Agustus kemudian membaca dua field tersebut sebagai
+                // previous gantungan.
+                // ====================================================
+
+                $standardWorkDays =
+                    $this->standardWorkDays();
+
+                foreach (
+                    $validated['payrolls'] as $empId => $data
+                ) {
+
+                    $empId = (int) $empId;
+
+                    $payroll =
+                        Payroll::query()
+                            ->where('employee_id', $empId)
+                            ->where('period_month', $period)
+                            ->first();
+
+                    if (!$payroll) {
+                        continue;
+                    }
+
+                    $attendanceRecords =
+                        $this->loadAttendanceRecords(
+                            $empId,
+                            $period
+                        );
+
+                    $gantunganDays =
+                        $this->calculateCurrentGantungan(
+                            $attendanceRecords,
+                            $cutoffDay
+                        );
+
+                    $basicSalary =
+                        (float) ($payroll->basic_salary ?? 0);
+
+                    $allowance =
+                        (float) ($payroll->allowance ?? 0);
+
+                    $gantunganDeduction =
+                        $standardWorkDays > 0
+                            ? (
+                                (
+                                    $basicSalary
+                                    +
+                                    $allowance
+                                )
+                                /
+                                $standardWorkDays
+                            )
+                            *
+                            $gantunganDays
+                            : 0;
+
+                    $payroll->update([
+                        'gantungan_days' =>
+                            round($gantunganDays, 1),
+
+                        'gantungan_deduction' =>
+                            round($gantunganDeduction, 2),
+                    ]);
+                }
+            });
+
+            return redirect()
+                ->route(
+                    'payrolls.local.create',
+                    ['period' => $period]
+                )
+                ->with(
+                    'success',
+                    "Attendance setelah cutoff periode {$period} berhasil disimpan. "
+                    . "Payroll periode {$period} tetap terkunci dan tidak dihitung ulang."
+                );
+        }
 
         // ========================================================
         // EXISTING PAYROLL
@@ -927,6 +1382,10 @@ class PayrollController extends Controller
                     'employee_id',
                     'basic_salary',
                     'allowance',
+                    'gantungan_days',
+                    'gantungan_deduction',
+                    'cutoff_day',
+                    'is_locked',
                 ])
                 ->keyBy(
                     'employee_id'
@@ -942,6 +1401,7 @@ class PayrollController extends Controller
             $existingPayrolls,
             $previousPayrolls,
             $period,
+            $periodDate,
             $previousPeriod,
             $cutoffDay,
             $existingPeriodLocked,
@@ -972,18 +1432,78 @@ class PayrollController extends Controller
                 if (
                     !$employee
                     ||
-                    !$employee->activeContract
+                    !$employee->contract?->currentHistory
                 ) {
                     continue;
                 }
 
                 $contract =
-                    $employee->activeContract;
+                    $employee->contract?->currentHistory;
 
                 $existing =
                     $existingPayrolls->get(
                         $empId
                     );
+
+                $contractStart =
+                    $contract->start_date
+                        ? Carbon::parse(
+                            $contract->start_date
+                        )->startOfDay()
+                        : null;
+
+                $contractEnd =
+                    $contract->end_date
+                        ? Carbon::parse(
+                            $contract->end_date
+                        )->startOfDay()
+                        : null;
+
+                $periodContractInvalid =
+                    !$contract->is_active
+                    ||
+                    ($contractStart && $periodDate->copy()->endOfMonth()->lt($contractStart))
+                    ||
+                    ($contractEnd && $periodDate->copy()->startOfMonth()->gte($contractEnd));
+
+                if ($periodContractInvalid) {
+
+                    Payroll::updateOrCreate(
+                        [
+                            'employee_id' =>
+                                $empId,
+
+                            'period_month' =>
+                                $period,
+                        ],
+                        [
+                            'cutoff_day' => $cutoffDay,
+                            'daily_attendance' => [],
+                            'work_days' => 0,
+                            'unpaid_leave' => 0,
+                            'gantungan_days' => 0,
+                            'overtime_hours' => 0,
+                            'basic_salary' => 0,
+                            'allowance' => 0,
+                            'overtime_pay' => 0,
+                            'maternity_leave_pay' => 0,
+                            'incentive' => 0,
+                            'cash_advance' => 0,
+                            'other_deductions' => 0,
+                            'gantungan_deduction' => 0,
+                            'previous_gantungan_deduction' => 0,
+                            'bpjs_tk_deduction' => 0,
+                            'bpjs_ks_deduction' => 0,
+                            'is_bpjs_override' => false,
+                            'pph21_deduction' => 0,
+                            'gross_salary' => 0,
+                            'net_salary' => 0,
+                            'status' => 'Draft',
+                        ]
+                    );
+
+                    continue;
+                }
 
                 // ====================================================
                 // LOCKED PERIOD WITHOUT PAYROLL
@@ -1207,7 +1727,9 @@ class PayrollController extends Controller
                     (float) $contract->basic_salary;
 
                 $allowance =
-                    (float) $contract->allowance;
+                    $this->calculateAllowance(
+                        $contract
+                    );
 
                 // ====================================================
                 // CURRENT UNPAID
@@ -2034,14 +2556,76 @@ class PayrollController extends Controller
         ?Payroll $previousPayroll
     ): array {
 
-        $previousCutoffDay =
-            $this->getPeriodCutoffDay(
-                $previousPeriod
+        // ========================================================
+        // PRIORITAS 1: SNAPSHOT PAYROLL BULAN SEBELUMNYA
+        // ========================================================
+        //
+        // Bila snapshot sudah memiliki nilai gantungan, gunakan
+        // snapshot tersebut. Ini menjaga nominal historis agar tidak
+        // berubah ketika gaji bulan berikutnya berubah.
+        // ========================================================
+
+        $snapshotDays =
+            (float) (
+                $previousPayroll?->gantungan_days
+                ?? 0
             );
 
+        $snapshotDeduction =
+            (float) (
+                $previousPayroll?->gantungan_deduction
+                ?? 0
+            );
+
+        if (
+            $previousPayroll
+            && (
+                $snapshotDays > 0
+                ||
+                $snapshotDeduction > 0
+            )
+        ) {
+            return [
+                'days' => round(
+                    $snapshotDays,
+                    1
+                ),
+                'deduction' => round(
+                    $snapshotDeduction,
+                    2
+                ),
+                'cutoff_day' =>
+                    $previousPayroll->cutoff_day
+                    ?? $this->getPeriodCutoffDay(
+                        $previousPeriod
+                    ),
+                'basic_salary' =>
+                    (float) (
+                        $previousPayroll->basic_salary
+                        ?? 0
+                    ),
+                'allowance' =>
+                    (float) (
+                        $previousPayroll->allowance
+                        ?? 0
+                    ),
+            ];
+        }
+
         // ========================================================
-        // LOAD ATTENDANCE RECORDS LANGSUNG DARI DB
+        // FALLBACK: ATTENDANCE BULAN SEBELUMNYA
         // ========================================================
+        //
+        // Ini penting untuk data historis yang terlanjur disimpan
+        // sebelum snapshot gantungan diperbarui. Jadi Agustus tetap
+        // bisa menemukan A/I/H0.5 Juli setelah cutoff.
+        // ========================================================
+
+        $previousCutoffDay =
+            $previousPayroll?->cutoff_day
+            ?? $this->getPeriodCutoffDay(
+                $previousPeriod
+            );
 
         $records =
             $this->loadAttendanceRecords(
@@ -2049,55 +2633,60 @@ class PayrollController extends Controller
                 $previousPeriod
             );
 
-        // ========================================================
-        // HITUNG GANTUNGAN
-        // ========================================================
-
         $gantunganDays =
             $this->calculateCurrentGantungan(
                 $records,
-                $previousCutoffDay
+                (int) $previousCutoffDay
             );
 
+        // Tidak ada gantungan.
+        if ($gantunganDays <= 0) {
+            return [
+                'days' => 0.0,
+                'deduction' => 0.0,
+                'cutoff_day' =>
+                    $previousCutoffDay,
+                'basic_salary' =>
+                    (float) (
+                        $previousPayroll?->basic_salary
+                        ??
+                        $employee->contract?->currentHistory?->basic_salary
+                        ?? 0
+                    ),
+                'allowance' =>
+                    (float) (
+                        $previousPayroll?->allowance
+                        ??
+                        $employee->contract?->currentHistory?->allowance
+                        ?? 0
+                    ),
+            ];
+        }
+
         // ========================================================
-        // SALARY BASIS PERIODE SEBELUMNYA
+        // SALARY BASIS BULAN SEBELUMNYA
         // ========================================================
         //
         // Prioritas:
-        //
-        // 1. Payroll periode sebelumnya
-        // 2. Active contract
-        //
-        // Supaya kenaikan gaji bulan sekarang tidak mengubah
-        // nominal gantungan bulan sebelumnya.
-        //
+        // 1. Payroll bulan sebelumnya
+        // 2. Contract saat ini sebagai fallback terakhir
         // ========================================================
 
         $basicSalary =
             (float) (
                 $previousPayroll?->basic_salary
                 ??
-                $employee
-                    ->activeContract
-                    ?->basic_salary
-                ??
-                0
+                $employee->contract?->currentHistory?->basic_salary
+                ?? 0
             );
 
         $allowance =
             (float) (
                 $previousPayroll?->allowance
                 ??
-                $employee
-                    ->activeContract
-                    ?->allowance
-                ??
-                0
+                $employee->contract?->currentHistory?->allowance
+                ?? 0
             );
-
-        // ========================================================
-        // DAILY RATE
-        // ========================================================
 
         $dailyRate =
             $standardWorkDays > 0
@@ -2112,35 +2701,26 @@ class PayrollController extends Controller
                 )
                 : 0;
 
-        // ========================================================
-        // DEDUCTION
-        // ========================================================
-
         $deduction =
             $dailyRate
             *
             $gantunganDays;
 
         return [
-
             'days' =>
                 round(
                     $gantunganDays,
                     1
                 ),
-
             'deduction' =>
                 round(
                     $deduction,
                     2
                 ),
-
             'cutoff_day' =>
                 $previousCutoffDay,
-
             'basic_salary' =>
                 $basicSalary,
-
             'allowance' =>
                 $allowance,
         ];
@@ -2533,7 +3113,7 @@ class PayrollController extends Controller
 
         $query =
             Payroll::with([
-                'employee.activeContract',
+                'employee.contract.currentHistory',
             ])
                 ->whereHas(
                     'employee',
@@ -2589,7 +3169,7 @@ class PayrollController extends Controller
 
         $query =
             Payroll::with([
-                'employee.activeContract',
+                'employee.contract.currentHistory',
             ])
                 ->whereHas(
                     'employee',
@@ -2867,16 +3447,7 @@ class PayrollController extends Controller
 
         return in_array(
             $status,
-            [
-                'H',
-                'H0.5',
-                'A',
-                'I',
-                'SKD',
-                'C',
-                'CM',
-                'HB',
-            ],
+            self::ATTENDANCE_STATUSES,
             true
         )
             ? $status
@@ -2990,13 +3561,17 @@ class PayrollController extends Controller
                     break;
 
                 case 'SKD':
+                case 'S':
                 case 'C':
                 case 'CM':
+                case 'M/HB':
 
                     $paidAbsenceDays += 1;
 
                     if (
                         $status === 'CM'
+                        ||
+                        $status === 'M/HB'
                     ) {
                         $normativeDays += 1;
                     }
@@ -3309,21 +3884,56 @@ class PayrollController extends Controller
         float $gross
     ): float {
 
-        $category =
-            match ($ptkp) {
+        $raw = strtoupper(
+            trim(
+                $ptkp
+            )
+        );
 
-                'TK/0',
-                'TK/1',
-                'K/0'
+        $normalizedPtkp = [
+            'TK/0' => 'TK0',
+            'TK0' => 'TK0',
+            'TK/1' => 'TK01',
+            'TK1' => 'TK01',
+            'TK/2' => 'TK02',
+            'TK2' => 'TK02',
+            'TK/3' => 'TK03',
+            'TK3' => 'TK03',
+            'TK/4' => 'TK04',
+            'TK4' => 'TK04',
+            'K/0' => 'K01',
+            'K0' => 'K01',
+            'K/1' => 'K02',
+            'K1' => 'K02',
+            'K/2' => 'K03',
+            'K2' => 'K03',
+            'K/3' => 'K04',
+            'K3' => 'K04',
+            'K01' => 'K01',
+            'K02' => 'K02',
+            'K03' => 'K03',
+            'K04' => 'K04',
+            'TK01' => 'TK01',
+            'TK02' => 'TK02',
+            'TK03' => 'TK03',
+            'TK04' => 'TK04',
+        ][$raw] ?? $raw;
+
+        $category =
+            match ($normalizedPtkp) {
+
+                'TK0',
+                'TK01',
+                'K01'
                     => 'TER_A',
 
-                'TK/2',
-                'TK/3',
-                'K/1',
-                'K/2'
+                'TK02',
+                'TK03',
+                'K02',
+                'K03'
                     => 'TER_B',
 
-                'K/3'
+                'K04'
                     => 'TER_C',
 
                 default

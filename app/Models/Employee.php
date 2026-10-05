@@ -5,39 +5,69 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
-use App\Models\Payroll;
-use Laravolt\Indonesia\Models\Province;
-use Laravolt\Indonesia\Models\City;
-use Laravolt\Indonesia\Models\District;
-use Laravolt\Indonesia\Models\Village;
 
 class Employee extends Model
 {
     use HasFactory;
-    
+
+    /*
+    |--------------------------------------------------------------------------
+    | TABLE
+    |--------------------------------------------------------------------------
+    */
+
     protected $table = 'employees';
 
     protected $primaryKey = 'id_employee';
 
-    // Kolom yang dilindungi dari mass assignment
-    protected $guarded = ['id_employee'];
+    /*
+    |--------------------------------------------------------------------------
+    | MASS ASSIGNMENT
+    |--------------------------------------------------------------------------
+    |
+    | id_employee tidak boleh diisi melalui mass assignment.
+    |
+    */
 
-    /**
-     * Auto-generate UUID saat membuat data baru
-     */
+    protected $guarded = [
+        'id_employee',
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | BOOT
+    |--------------------------------------------------------------------------
+    |
+    | Generate UUID otomatis saat Employee dibuat.
+    |
+    */
+
     protected static function boot()
     {
         parent::boot();
+
         static::creating(function ($model) {
+
             if (empty($model->uuid)) {
                 $model->uuid = (string) Str::uuid();
             }
+
         });
     }
 
-    /**
-     * Menggunakan UUID untuk Route Model Binding di URL (misal: /employees/{uuid}/edit)
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | ROUTE MODEL BINDING
+    |--------------------------------------------------------------------------
+    |
+    | URL menggunakan UUID.
+    |
+    | Contoh:
+    |
+    | /employees/{uuid}/edit
+    |
+    */
+
     public function getRouteKeyName()
     {
         return 'uuid';
@@ -45,39 +75,122 @@ class Employee extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | RELASI WILAYAH LARAVOLT INDONESIA
+    | RELASI WILAYAH
     |--------------------------------------------------------------------------
+    |
+    | Relasi wilayah tetap dapat digunakan oleh bagian lain
+    | dari aplikasi.
+    |
     */
 
     /*
     |--------------------------------------------------------------------------
-    | RELASI MODUL JABATAN & KONTRAK (MODUL 2)
+    | RELASI MODUL JABATAN
     |--------------------------------------------------------------------------
     */
 
     public function jobPositions()
     {
-        return $this->hasMany(EmployeeJobPosition::class, 'employee_id', 'id_employee');
+        return $this->hasMany(
+            EmployeeJobPosition::class,
+            'employee_id',
+            'id_employee'
+        );
     }
 
     public function activeJobPosition()
     {
-        return $this->hasOne(EmployeeJobPosition::class, 'employee_id', 'id_employee')->where('is_active', true);
+        return $this->hasOne(
+            EmployeeJobPosition::class,
+            'employee_id',
+            'id_employee'
+        )->where('is_active', true);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONTRACT MASTER
+    |--------------------------------------------------------------------------
+    |
+    | Employee → Contract Master
+    |
+    | Struktur:
+    |
+    | employees
+    |      ↓
+    | employee_contracts
+    |
+    */
+
+    public function contract()
+    {
+        return $this->hasOne(
+            ContractLocal::class,
+            'employee_id',
+            'id_employee'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | BACKWARD COMPATIBILITY
+    |--------------------------------------------------------------------------
+    |
+    | Dipertahankan sementara agar kode lama yang masih memanggil:
+    |
+    | $employee->activeContract
+    |
+    | tidak langsung error.
+    |
+    | Sekarang activeContract sebenarnya mengambil:
+    |
+    | employee_contracts
+    |
+    | melalui ContractLocal.
+    |
+    */
+
     public function activeContract()
     {
-        return $this->hasOne(EmployeeContract::class, 'employee_id', 'id_employee')->where('is_active', true);
+        return $this->contract();
     }
-    // Relasi ke Payroll
+
+    /*
+    |--------------------------------------------------------------------------
+    | PAYROLL
+    |--------------------------------------------------------------------------
+    */
+
     public function payrolls()
     {
-        return $this->hasMany(Payroll::class, 'employee_id', 'id_employee');
+        return $this->hasMany(
+            Payroll::class,
+            'employee_id',
+            'id_employee'
+        );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | USER
+    |--------------------------------------------------------------------------
+    */
 
     public function user()
     {
-        return $this->hasOne(User::class, 'employee_id', 'id_employee');
+        return $this->hasOne(
+            User::class,
+            'employee_id',
+            'id_employee'
+        );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | ATTENDANCE
+    |--------------------------------------------------------------------------
+    */
+
     public function attendanceRecords()
     {
         return $this->hasMany(
@@ -86,5 +199,4 @@ class Employee extends Model
             'id_employee'
         );
     }
-
 }

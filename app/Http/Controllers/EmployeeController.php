@@ -11,6 +11,25 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class EmployeeController extends Controller
 {
+    private function normalizePtkp(string|null $value): string
+    {
+        $raw = strtoupper(trim((string) ($value ?? '')));
+        $raw = preg_replace('/\s+/', '', $raw) ?? $raw;
+        $raw = str_replace(['/', '-', '_'], '', $raw);
+
+        if ($raw === '' || $raw === '0') {
+            return 'TK0';
+        }
+
+        if (preg_match('/^(TK|K)(0|[1-4])$/', $raw, $match)) {
+            return $match[2] === '0'
+                ? $match[1] . '0'
+                : $match[1] . '0' . $match[2];
+        }
+
+        return 'TK0';
+    }
+
     // 1. Index: Fitur Search & Pengurutan
     public function index(Request $request)
     {
@@ -79,7 +98,7 @@ class EmployeeController extends Controller
                         'birth_place'         => $row[4] ?? '-',
                         'birth_date'          => !empty($row[5]) ? date('Y-m-d', strtotime($row[5])) : now()->format('Y-m-d'),
                         'religion'            => $row[6] ?? null,
-                        'marital_status'      => strtolower($row[7] ?? 'single'),
+                        'marital_status'      => $this->normalizePtkp($row[7] ?? null),
                         'phone_number'        => $cleanNumber($row[8] ?? null),
                         'email'               => $row[9] ?? null,
                         'address_ktp'         => $row[10] ?? '-',
@@ -206,7 +225,7 @@ class EmployeeController extends Controller
             'birth_place'         => 'required|string|max:100',
             'birth_date'          => 'required|date',
             'religion'            => 'nullable|string',
-            'marital_status'      => 'required|in:single,married,divorced',
+            'marital_status'      => ['required', 'regex:/^(TK|K)(0[1-4]?|0)$/'],
             'phone_number'        => 'nullable|string|max:20',
             'email'               => 'nullable|email|max:255',
             'address_ktp'         => 'required|string',
@@ -217,6 +236,8 @@ class EmployeeController extends Controller
             'bank_account_holder' => 'nullable|string|max:255',
             'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5000',
         ]);
+
+        $validated['marital_status'] = $this->normalizePtkp($validated['marital_status']);
 
         $validated['uuid'] = (string) Str::uuid();
 
@@ -247,7 +268,7 @@ class EmployeeController extends Controller
             'birth_place'         => 'required|string|max:100',
             'birth_date'          => 'required|date',
             'religion'            => 'nullable|string',
-            'marital_status'      => 'required|in:single,married,divorced',
+            'marital_status'      => ['required', 'regex:/^(TK|K)(0[1-4]?|0)$/'],
             'phone_number'        => 'nullable|string|max:20',
             'email'               => 'nullable|email|max:255',
             'address_ktp'         => 'required|string',
@@ -258,6 +279,8 @@ class EmployeeController extends Controller
             'bank_account_holder' => 'nullable|string|max:255',
             'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5000',
         ]);
+
+        $validated['marital_status'] = $this->normalizePtkp($validated['marital_status']);
 
         if ($request->hasFile('ktp_file')) {
             if ($employee->ktp_path && Storage::disk('public')->exists($employee->ktp_path)) {
