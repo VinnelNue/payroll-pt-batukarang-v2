@@ -282,6 +282,13 @@ $isHeadHrd = in_array(
     true
 );
 
+$isHrd = $userRole === 'hrd';
+
+$canAttendanceImportExport =
+    $isFinanceRole
+    || $isHeadHrd
+    || $isHrd;
+
 $showFinancialColumns =
     $isFinanceRole
     || $isHeadHrd;
@@ -491,6 +498,22 @@ $tableColspan =
 
             @endif
 
+            @if($canAttendanceImportExport)
+
+                <a href="{{ route(
+                    'payrolls.local.export-excel',
+                    ['period' => $period ?? date('Y-m')]
+                ) }}"
+                   class="btn btn-outline-primary btn-sm px-3 py-2 rounded-3 fw-semibold">
+
+                    <i class="fa-solid fa-file-excel me-1"></i>
+
+                    Export Excel
+
+                </a>
+
+            @endif
+
 
             <a href="{{ route('payrolls.local.index') }}"
                class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3 fw-medium">
@@ -564,6 +587,8 @@ $tableColspan =
 
         {{-- IMPORT INFO --}}
 
+        @if($canAttendanceImportExport)
+
         <div class="col-lg-4">
 
             <div class="p-3 rounded-4 bg-success bg-opacity-10 border border-success border-opacity-25 h-100">
@@ -636,6 +661,8 @@ $tableColspan =
 
         </div>
 
+
+        @endif
 
         {{-- PERIOD + CUTOFF --}}
 

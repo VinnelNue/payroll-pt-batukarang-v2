@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Imports\AttendanceImport;
+use App\Exports\PayrollLocalExport;
 use App\Mail\SalarySlipMail;
 use App\Models\CompanySetting;
 use App\Models\Employee;
@@ -28,8 +29,20 @@ class PayrollController extends Controller
         'super_admin',
     ];
 
-    private const HEAD_HRD_ROLE = 'kepala_hrd';
+    private const HEAD_HRD_ROLES = [
+        'head_hrd',
+        'kepala_hrd',
+    ];
+
     private const HRD_ROLE = 'hrd';
+
+    private const ATTENDANCE_ACCESS_ROLES = [
+        'manager_keuangan',
+        'super_admin',
+        'head_hrd',
+        'kepala_hrd',
+        'hrd',
+    ];
 
     private const DEFAULT_CUTOFF_DAY = 26;
     private const MIN_CUTOFF_DAY = 20;
@@ -69,6 +82,33 @@ class PayrollController extends Controller
         );
     }
 
+    private function isHeadHrdRole(): bool
+    {
+        return in_array(
+            $this->userRole(),
+            self::HEAD_HRD_ROLES,
+            true
+        );
+    }
+
+    private function canImportAttendance(): bool
+    {
+        return in_array(
+            $this->userRole(),
+            self::ATTENDANCE_ACCESS_ROLES,
+            true
+        );
+    }
+
+    private function canExportExcel(): bool
+    {
+        return in_array(
+            $this->userRole(),
+            self::ATTENDANCE_ACCESS_ROLES,
+            true
+        );
+    }
+
     private function canManageCutoff(): bool
     {
         return $this->isFinanceRole();
@@ -85,12 +125,17 @@ class PayrollController extends Controller
             return true;
         }
 
-        if ($this->userRole() !== self::HEAD_HRD_ROLE) {
+        if (!$this->isHeadHrdRole()) {
             return false;
         }
 
         $level = $employee->contract?->currentHistory?->level;
 
+        /*
+         * Head HRD:
+         * Level 1-13  = data finansial terlihat
+         * Level 14+    = data finansial disembunyikan
+         */
         return $level !== null
             && (int) $level <= 13;
     }
@@ -101,7 +146,7 @@ class PayrollController extends Controller
             return true;
         }
 
-        return $this->userRole() === self::HEAD_HRD_ROLE
+        return $this->isHeadHrdRole()
             && $level !== null
             && (int) $level <= 13;
     }
@@ -626,6 +671,11 @@ class PayrollController extends Controller
 
     public function import(Request $request)
     {
+        abort_unless(
+            $this->canImportAttendance(),
+            403
+        );
+
         $request->validate([
             'file' => [
                 'required',
@@ -1983,6 +2033,22 @@ class PayrollController extends Controller
 
                 } else {
 
+                    /*
+                     * BPJS employee contribution base:
+                     * upah sebulan = gaji pokok + tunjangan tetap.
+                     *
+                     * Contract payroll menggunakan Tunj. Jabatan sebagai
+                     * tunjangan tetap bulanan, sehingga basis BPJS memakai
+                     * basic salary + allowance.
+                     */
+                    $bpjsWageBase =
+                        max(
+                            0,
+                            $basicSalary
+                            +
+                            $allowance
+                        );
+
                     $bpjsTkDeduction =
                         (
                             $contract
@@ -1990,7 +2056,7 @@ class PayrollController extends Controller
                             ?? false
                         )
                             ? (
-                                $basicSalary
+                                $bpjsWageBase
                                 *
                                 $tkRate
                             )
@@ -1998,7 +2064,7 @@ class PayrollController extends Controller
 
                     $basisBpjsKs =
                         min(
-                            $basicSalary,
+                            $bpjsWageBase,
                             $ksCap
                         );
 
@@ -2019,18 +2085,52 @@ class PayrollController extends Controller
                 // ====================================================
                 // PPH 21
                 // ====================================================
+                //
+                // Jan-Nov / setiap masa pajak selain masa pajak terakhir:
+                // Gross x TER category dari Contract (A/B/C).
+                //
+                // Masa pajak terakhir:
+                // hitung PPh21 setahun/bagian tahun dengan tarif Pasal 17,
+                // lalu kurangi seluruh PPh21 masa sebelumnya.
+                // ====================================================
 
-                $pph21Rate =
-                    $this->calculateTerRate(
-                        $contract->ptkp_status
-                            ?? 'TK/0',
-                        $grossSalary
+                $terCategory =
+                    $this->resolveTerCategory(
+                        $contract
                     );
 
+                if (
+                    $this->isPph21FinalPeriod(
+                        $period,
+                        $contract
+                    )
+                ) {
+                    $pph21Deduction =
+                        $this->calculateFinalPph21(
+                            $employee,
+                            $contract,
+                            $period,
+                            $grossSalary,
+                            $bpjsTkDeduction
+                        );
+                } else {
+                    $pph21Rate =
+                        $this->calculateTerRateByCategory(
+                            $terCategory,
+                            $grossSalary
+                        );
+
+                    $pph21Deduction =
+                        $grossSalary
+                        *
+                        $pph21Rate;
+                }
+
                 $pph21Deduction =
-                    $grossSalary
-                    *
-                    $pph21Rate;
+                    round(
+                        $pph21Deduction,
+                        2
+                    );
 
                 // ====================================================
                 // TOTAL DEDUCTIONS
@@ -2802,7 +2902,7 @@ class PayrollController extends Controller
         CompanySetting::updateOrCreate(
             [
                 'key' =>
-                    'attendance_cutoff_day',
+                    'attendance_cutoff_day:' . $period,
             ],
             [
                 'value' =>
@@ -3470,6 +3570,8 @@ class PayrollController extends Controller
 
         $paidAbsenceDays = 0.0;
 
+        $maternityLeaveDays = 0.0;
+
         $normativeDays = 0.0;
 
         $currentUnpaidDays = 0.0;
@@ -3568,6 +3670,10 @@ class PayrollController extends Controller
 
                     $paidAbsenceDays += 1;
 
+                    if ($status === 'CM') {
+                        $maternityLeaveDays += 1;
+                    }
+
                     if (
                         $status === 'CM'
                         ||
@@ -3633,6 +3739,12 @@ class PayrollController extends Controller
             'current_unpaid_days' =>
                 round(
                     $currentUnpaidDays,
+                    1
+                ),
+
+            'maternity_leave_days' =>
+                round(
+                    $maternityLeaveDays,
                     1
                 ),
 
@@ -3743,230 +3855,834 @@ class PayrollController extends Controller
     }
 
     // ============================================================
-    // TER
+    // PPH 21 / TER
     // ============================================================
+
+    /**
+     * Resolve TER category from the employee contract.
+     *
+     * Contract.ter_category is the primary source of truth because
+     * the company explicitly maintains TER A/B/C on Contract.
+     *
+     * Fallback to PTKP is retained for legacy records where
+     * ter_category is still NULL.
+     */
+    private function resolveTerCategory($contract): string
+    {
+        $category =
+            strtoupper(
+                trim(
+                    (string) (
+                        $contract->ter_category
+                        ?? ''
+                    )
+                )
+            );
+
+        if (
+            in_array(
+                $category,
+                ['A', 'B', 'C'],
+                true
+            )
+        ) {
+            return $category;
+        }
+
+        return $this->deriveTerCategoryFromPtkp(
+            $contract->ptkp_status
+                ?? 'TK0'
+        );
+    }
+
+    /**
+     * Fallback mapping for legacy records.
+     *
+     * Official mapping:
+     * A = TK/0, TK/1, K/0
+     * B = TK/2, TK/3, K/1, K/2
+     * C = K/3
+     */
+    private function deriveTerCategoryFromPtkp(
+        mixed $ptkp
+    ): string {
+        $raw =
+            strtoupper(
+                trim(
+                    (string) (
+                        $ptkp
+                        ?? ''
+                    )
+                )
+            );
+
+        $map = [
+            'TK/0' => 'A',
+            'TK0'  => 'A',
+
+            'TK/1' => 'A',
+            'TK1'  => 'A',
+            'TK01' => 'A',
+
+            'K/0'  => 'A',
+            'K0'   => 'A',
+            'K01'  => 'A',
+
+            'TK/2' => 'B',
+            'TK2'  => 'B',
+            'TK02' => 'B',
+
+            'TK/3' => 'B',
+            'TK3'  => 'B',
+            'TK03' => 'B',
+
+            'K/1'  => 'B',
+            'K1'   => 'B',
+            'K02'  => 'B',
+
+            'K/2'  => 'B',
+            'K2'   => 'B',
+            'K03'  => 'B',
+
+            'K/3'  => 'C',
+            'K3'   => 'C',
+            'K04'  => 'C',
+        ];
+
+        return $map[$raw] ?? 'A';
+    }
+
+    /**
+     * PTKP annual values used in the final/annual PPh21 calculation.
+     *
+     * The payroll system stores the normalized PTKP code on Contract.
+     */
+    private function ptkpAnnualValue(
+        mixed $ptkp
+    ): float {
+        $raw =
+            strtoupper(
+                trim(
+                    (string) (
+                        $ptkp
+                        ?? ''
+                    )
+                )
+            );
+
+        $map = [
+            'TK/0' => 54000000,
+            'TK0'  => 54000000,
+
+            'TK/1' => 58500000,
+            'TK1'  => 58500000,
+            'TK01' => 58500000,
+
+            'TK/2' => 63000000,
+            'TK2'  => 63000000,
+            'TK02' => 63000000,
+
+            'TK/3' => 67500000,
+            'TK3'  => 67500000,
+            'TK03' => 67500000,
+
+            'TK/4' => 72000000,
+            'TK4'  => 72000000,
+            'TK04' => 72000000,
+
+            'K/0'  => 58500000,
+            'K0'   => 58500000,
+            'K01'  => 58500000,
+
+            'K/1'  => 63000000,
+            'K1'   => 63000000,
+            'K02'  => 63000000,
+
+            'K/2'  => 67500000,
+            'K2'   => 67500000,
+            'K03'  => 67500000,
+
+            'K/3'  => 72000000,
+            'K3'   => 72000000,
+            'K04'  => 72000000,
+        ];
+
+        return (float) (
+            $map[$raw]
+            ?? 54000000
+        );
+    }
+
+    /**
+     * True when the current payroll is the employee's final tax month.
+     *
+     * December is always the final tax month. An actual exit_date within
+     * the current month is also treated as the final tax month.
+     *
+     * We intentionally do not use end_date as the final-tax trigger because
+     * contract periods may roll into another contract without ending the
+     * employee's tax obligation.
+     */
+    private function isPph21FinalPeriod(
+        string $period,
+        $contract
+    ): bool {
+        try {
+            $month =
+                (int) Carbon::createFromFormat(
+                    'Y-m',
+                    $period
+                )->format('m');
+        } catch (Throwable) {
+            $month = 0;
+        }
+
+        if ($month === 12) {
+            return true;
+        }
+
+        $exitDate = $contract->exit_date ?? null;
+
+        if (!$exitDate) {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($exitDate)
+                ->format('Y-m') === $period;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Progressive PPh21 under Article 17.
+     *
+     * PKP is already rounded down to full thousands before this method
+     * is called.
+     */
+    private function calculateProgressivePph21(
+        float $pkp
+    ): float {
+        $pkp = max(0, floor($pkp / 1000) * 1000);
+
+        if ($pkp <= 0) {
+            return 0.0;
+        }
+
+        $tax = 0.0;
+        $remaining = $pkp;
+
+        $brackets = [
+            [
+                'limit' => 60000000,
+                'rate'  => 0.05,
+            ],
+            [
+                'limit' => 190000000,
+                'rate'  => 0.15,
+            ],
+            [
+                'limit' => 250000000,
+                'rate'  => 0.25,
+            ],
+            [
+                'limit' => 4500000000,
+                'rate'  => 0.30,
+            ],
+            [
+                'limit' => null,
+                'rate'  => 0.35,
+            ],
+        ];
+
+        foreach ($brackets as $bracket) {
+            if (
+                $remaining <= 0
+            ) {
+                break;
+            }
+
+            $limit = $bracket['limit'];
+
+            if ($limit === null) {
+                $tax +=
+                    $remaining
+                    *
+                    $bracket['rate'];
+
+                $remaining = 0;
+                break;
+            }
+
+            $taxable =
+                min(
+                    $remaining,
+                    $limit
+                );
+
+            $tax +=
+                $taxable
+                *
+                $bracket['rate'];
+
+            $remaining -= $taxable;
+        }
+
+        return round(
+            $tax,
+            2
+        );
+    }
+
+    /**
+     * Final-month PPh21.
+     *
+     * For a full-year employee (December after a January start),
+     * actual annual gross and permitted deductions are used.
+     *
+     * For an employee whose tax obligation starts/ends inside the year,
+     * net income is annualized and the resulting annual tax is prorated
+     * to the number of months in the part-year period.
+     */
+    private function calculateFinalPph21(
+        Employee $employee,
+        $contract,
+        string $period,
+        float $currentGrossSalary,
+        float $currentBpjsTkDeduction
+    ): float {
+        $periodDate =
+            Carbon::createFromFormat(
+                'Y-m',
+                $period
+            );
+
+        $year =
+            (int) $periodDate->format('Y');
+
+        $yearStart =
+            $year . '-01';
+
+        $previousPayrolls =
+            Payroll::query()
+                ->where(
+                    'employee_id',
+                    $employee->id_employee
+                )
+                ->where(
+                    'period_month',
+                    '>=',
+                    $yearStart
+                )
+                ->where(
+                    'period_month',
+                    '<',
+                    $period
+                )
+                ->orderBy(
+                    'period_month'
+                )
+                ->get([
+                    'period_month',
+                    'gross_salary',
+                    'bpjs_tk_deduction',
+                    'pph21_deduction',
+                ]);
+
+        $grossBeforeCurrent = 0.0;
+        $retirementBeforeCurrent = 0.0;
+        $pph21BeforeCurrent = 0.0;
+
+        foreach ($previousPayrolls as $row) {
+            $grossBeforeCurrent +=
+                (float) (
+                    $row->gross_salary
+                    ?? 0
+                );
+
+            $retirementBeforeCurrent +=
+                (float) (
+                    $row->bpjs_tk_deduction
+                    ?? 0
+                );
+
+            $pph21BeforeCurrent +=
+                (float) (
+                    $row->pph21_deduction
+                    ?? 0
+                );
+        }
+
+        $actualGross =
+            $grossBeforeCurrent
+            +
+            max(
+                0,
+                $currentGrossSalary
+            );
+
+        /*
+         * PMK 168/2023 allows deductions for contributions related
+         * to pension/old-age programs paid by the employee through
+         * the employer. In this system bpjs_tk_deduction is the
+         * employee-side BPJS TK deduction field.
+         */
+        $actualRetirement =
+            max(
+                0,
+                $retirementBeforeCurrent
+                +
+                max(
+                    0,
+                    $currentBpjsTkDeduction
+                )
+            );
+
+        /*
+         * Determine the number of months in the relevant tax period.
+         *
+         * Full-year:
+         *   Jan-Dec = 12 months.
+         *
+         * Part-year:
+         *   start month through the current final month.
+         */
+        $startDate =
+            $contract->start_date
+                ? Carbon::parse(
+                    $contract->start_date
+                )
+                : $periodDate->copy()->startOfYear();
+
+        $taxStart =
+            $startDate->year < $year
+                ? $periodDate->copy()->startOfYear()
+                : Carbon::create(
+                    $year,
+                    (int) $startDate->format('m'),
+                    1
+                );
+
+        $finalMonthDate =
+            $periodDate->copy()->startOfMonth();
+
+        if ($taxStart->gt($finalMonthDate)) {
+            $taxStart =
+                $finalMonthDate->copy();
+        }
+
+        $monthsInPartYear =
+            (
+                (
+                    $taxStart->year
+                    * 12
+                )
+                +
+                $taxStart->month
+            )
+            -
+            (
+                (
+                    $finalMonthDate->year
+                    * 12
+                )
+                +
+                $finalMonthDate->month
+            );
+
+        $monthsInPartYear =
+            abs(
+                $monthsInPartYear
+            ) + 1;
+
+        $monthsInPartYear =
+            max(
+                1,
+                min(
+                    12,
+                    $monthsInPartYear
+                )
+            );
+
+        $isFullYear =
+            $monthsInPartYear === 12
+            &&
+            $taxStart->month === 1;
+
+        if ($isFullYear) {
+            $annualGross = $actualGross;
+            $annualRetirement = $actualRetirement;
+            $annualJobExpense =
+                min(
+                    $annualGross * 0.05,
+                    6000000
+                );
+            $annualNet =
+                max(
+                    0,
+                    $annualGross
+                    -
+                    $annualJobExpense
+                    -
+                    $annualRetirement
+                );
+
+            $ptkp =
+                $this->ptkpAnnualValue(
+                    $contract->ptkp_status
+                        ?? 'TK0'
+                );
+
+            $pkp =
+                max(
+                    0,
+                    floor(
+                        max(
+                            0,
+                            $annualNet
+                            -
+                            $ptkp
+                        )
+                        / 1000
+                    )
+                    * 1000
+                );
+
+            $annualTax =
+                $this->calculateProgressivePph21(
+                    $pkp
+                );
+
+            return round(
+                $annualTax
+                -
+                $pph21BeforeCurrent,
+                2
+            );
+        }
+
+        /*
+         * Part-year employee:
+         * annualize net income and prorate annual tax back to the
+         * number of months in the part-year tax obligation.
+         */
+        $annualizedGross =
+            $actualGross
+            *
+            (
+                12
+                /
+                $monthsInPartYear
+            );
+
+        $annualizedRetirement =
+            $actualRetirement
+            *
+            (
+                12
+                /
+                $monthsInPartYear
+            );
+
+        $annualJobExpense =
+            min(
+                $annualizedGross * 0.05,
+                6000000
+            );
+
+        $annualizedNet =
+            max(
+                0,
+                $annualizedGross
+                -
+                $annualJobExpense
+                -
+                $annualizedRetirement
+            );
+
+        $ptkp =
+            $this->ptkpAnnualValue(
+                $contract->ptkp_status
+                    ?? 'TK0'
+            );
+
+        $pkp =
+            max(
+                0,
+                floor(
+                    max(
+                        0,
+                        $annualizedNet
+                        -
+                        $ptkp
+                    )
+                    / 1000
+                )
+                * 1000
+            );
+
+        $annualTax =
+            $this->calculateProgressivePph21(
+                $pkp
+            );
+
+        $partYearTax =
+            $annualTax
+            *
+            (
+                $monthsInPartYear
+                /
+                12
+            );
+
+        return round(
+            $partYearTax
+            -
+            $pph21BeforeCurrent,
+            2
+        );
+    }
 
     private function terCategories(): array
     {
         return [
-
             'TER_A' => [
-
-                'ptkp' =>
-                    'TK/0, TK/1, K/0',
-
+                'code' => 'A',
+                'ptkp' => 'TK/0, TK/1, K/0',
                 'description' =>
-                    'Tidak Kawin Tanggungan 0-1, atau Kawin Tanggungan 0',
-
+                    'Tidak kawin tanggungan 0-1 atau kawin tanpa tanggungan',
                 'brackets' => [
-
-                    [
-                        'max' =>
-                            5400000,
-                        'rate' =>
-                            0.00,
-                    ],
-
-                    [
-                        'max' =>
-                            5650000,
-                        'rate' =>
-                            0.25,
-                    ],
-
-                    [
-                        'max' =>
-                            5950000,
-                        'rate' =>
-                            0.50,
-                    ],
-
-                    [
-                        'max' =>
-                            6300000,
-                        'rate' =>
-                            0.75,
-                    ],
-
-                    [
-                        'max' =>
-                            6750000,
-                        'rate' =>
-                            1.25,
-                    ],
-
-                    [
-                        'max' =>
-                            7500000,
-                        'rate' =>
-                            1.75,
-                    ],
-
-                    [
-                        'max' =>
-                            'Seterusnya',
-                        'rate' =>
-                            2.50,
-                    ],
+                    ['max' => 5400000,    'rate' => 0.00],
+                    ['max' => 5650000,    'rate' => 0.25],
+                    ['max' => 5950000,    'rate' => 0.50],
+                    ['max' => 6300000,    'rate' => 0.75],
+                    ['max' => 6750000,    'rate' => 1.00],
+                    ['max' => 7500000,    'rate' => 1.25],
+                    ['max' => 8550000,    'rate' => 1.50],
+                    ['max' => 9650000,    'rate' => 1.75],
+                    ['max' => 10050000,   'rate' => 2.00],
+                    ['max' => 10350000,   'rate' => 2.25],
+                    ['max' => 10700000,   'rate' => 2.50],
+                    ['max' => 11050000,   'rate' => 3.00],
+                    ['max' => 11600000,   'rate' => 3.50],
+                    ['max' => 12500000,   'rate' => 4.00],
+                    ['max' => 13750000,   'rate' => 5.00],
+                    ['max' => 15100000,   'rate' => 6.00],
+                    ['max' => 16950000,   'rate' => 7.00],
+                    ['max' => 19750000,   'rate' => 8.00],
+                    ['max' => 24150000,   'rate' => 9.00],
+                    ['max' => 26450000,   'rate' => 10.00],
+                    ['max' => 28000000,   'rate' => 11.00],
+                    ['max' => 30050000,   'rate' => 12.00],
+                    ['max' => 32400000,   'rate' => 13.00],
+                    ['max' => 35400000,   'rate' => 14.00],
+                    ['max' => 39100000,   'rate' => 15.00],
+                    ['max' => 43850000,   'rate' => 16.00],
+                    ['max' => 47800000,   'rate' => 17.00],
+                    ['max' => 51400000,   'rate' => 18.00],
+                    ['max' => 56300000,   'rate' => 19.00],
+                    ['max' => 62200000,   'rate' => 20.00],
+                    ['max' => 68600000,   'rate' => 21.00],
+                    ['max' => 77500000,   'rate' => 22.00],
+                    ['max' => 89000000,   'rate' => 23.00],
+                    ['max' => 103000000,  'rate' => 24.00],
+                    ['max' => 125000000,  'rate' => 25.00],
+                    ['max' => 157000000,  'rate' => 26.00],
+                    ['max' => 206000000,  'rate' => 27.00],
+                    ['max' => 337000000,  'rate' => 28.00],
+                    ['max' => 454000000,  'rate' => 29.00],
+                    ['max' => 550000000,  'rate' => 30.00],
+                    ['max' => 695000000,  'rate' => 31.00],
+                    ['max' => 910000000,  'rate' => 32.00],
+                    ['max' => 1400000000, 'rate' => 33.00],
+                    ['max' => 'Seterusnya', 'rate' => 34.00],
                 ],
             ],
 
             'TER_B' => [
-
-                'ptkp' =>
-                    'TK/2, TK/3, K/1, K/2',
-
+                'code' => 'B',
+                'ptkp' => 'TK/2, TK/3, K/1, K/2',
                 'description' =>
-                    'Tidak Kawin Tanggungan 2-3, atau Kawin Tanggungan 1-2',
-
+                    'Tidak kawin tanggungan 2-3 atau kawin tanggungan 1-2',
                 'brackets' => [
-
-                    [
-                        'max' =>
-                            6200000,
-                        'rate' =>
-                            0.00,
-                    ],
-
-                    [
-                        'max' =>
-                            6500000,
-                        'rate' =>
-                            0.25,
-                    ],
-
-                    [
-                        'max' =>
-                            7000000,
-                        'rate' =>
-                            0.50,
-                    ],
-
-                    [
-                        'max' =>
-                            'Seterusnya',
-                        'rate' =>
-                            1.50,
-                    ],
+                    ['max' => 6200000,     'rate' => 0.00],
+                    ['max' => 6500000,     'rate' => 0.25],
+                    ['max' => 6850000,     'rate' => 0.50],
+                    ['max' => 7300000,     'rate' => 0.75],
+                    ['max' => 9200000,     'rate' => 1.00],
+                    ['max' => 10750000,    'rate' => 1.50],
+                    ['max' => 11250000,    'rate' => 2.00],
+                    ['max' => 11600000,    'rate' => 2.50],
+                    ['max' => 12600000,    'rate' => 3.00],
+                    ['max' => 13600000,    'rate' => 4.00],
+                    ['max' => 14950000,    'rate' => 5.00],
+                    ['max' => 16400000,    'rate' => 6.00],
+                    ['max' => 18450000,    'rate' => 7.00],
+                    ['max' => 21850000,    'rate' => 8.00],
+                    ['max' => 26000000,    'rate' => 9.00],
+                    ['max' => 27700000,    'rate' => 10.00],
+                    ['max' => 29350000,    'rate' => 11.00],
+                    ['max' => 31450000,    'rate' => 12.00],
+                    ['max' => 33950000,    'rate' => 13.00],
+                    ['max' => 37100000,    'rate' => 14.00],
+                    ['max' => 41100000,    'rate' => 15.00],
+                    ['max' => 45800000,    'rate' => 16.00],
+                    ['max' => 49500000,    'rate' => 17.00],
+                    ['max' => 53800000,    'rate' => 18.00],
+                    ['max' => 58500000,    'rate' => 19.00],
+                    ['max' => 64000000,    'rate' => 20.00],
+                    ['max' => 71000000,    'rate' => 21.00],
+                    ['max' => 80000000,    'rate' => 22.00],
+                    ['max' => 93000000,    'rate' => 23.00],
+                    ['max' => 109000000,   'rate' => 24.00],
+                    ['max' => 129000000,   'rate' => 25.00],
+                    ['max' => 163000000,   'rate' => 26.00],
+                    ['max' => 211000000,   'rate' => 27.00],
+                    ['max' => 374000000,   'rate' => 28.00],
+                    ['max' => 459000000,   'rate' => 29.00],
+                    ['max' => 555000000,   'rate' => 30.00],
+                    ['max' => 704000000,   'rate' => 31.00],
+                    ['max' => 957000000,   'rate' => 32.00],
+                    ['max' => 1405000000,  'rate' => 33.00],
+                    ['max' => 'Seterusnya', 'rate' => 34.00],
                 ],
             ],
 
             'TER_C' => [
-
-                'ptkp' =>
-                    'K/3',
-
+                'code' => 'C',
+                'ptkp' => 'K/3',
                 'description' =>
-                    'Kawin Tanggungan 3',
-
+                    'Kawin tanggungan 3',
                 'brackets' => [
-
-                    [
-                        'max' =>
-                            6600000,
-                        'rate' =>
-                            0.00,
-                    ],
-
-                    [
-                        'max' =>
-                            'Seterusnya',
-                        'rate' =>
-                            1.25,
-                    ],
+                    ['max' => 6600000,    'rate' => 0.00],
+                    ['max' => 6950000,    'rate' => 0.25],
+                    ['max' => 7350000,    'rate' => 0.50],
+                    ['max' => 7800000,    'rate' => 0.75],
+                    ['max' => 8850000,    'rate' => 1.00],
+                    ['max' => 9800000,    'rate' => 1.25],
+                    ['max' => 10950000,   'rate' => 1.50],
+                    ['max' => 11200000,   'rate' => 1.75],
+                    ['max' => 12050000,   'rate' => 2.00],
+                    ['max' => 12950000,   'rate' => 3.00],
+                    ['max' => 14150000,   'rate' => 4.00],
+                    ['max' => 15550000,   'rate' => 5.00],
+                    ['max' => 17050000,   'rate' => 6.00],
+                    ['max' => 19500000,   'rate' => 7.00],
+                    ['max' => 22700000,   'rate' => 8.00],
+                    ['max' => 26600000,   'rate' => 9.00],
+                    ['max' => 28100000,   'rate' => 10.00],
+                    ['max' => 30100000,   'rate' => 11.00],
+                    ['max' => 32600000,   'rate' => 12.00],
+                    ['max' => 35400000,   'rate' => 13.00],
+                    ['max' => 38900000,   'rate' => 14.00],
+                    ['max' => 43000000,   'rate' => 15.00],
+                    ['max' => 47400000,   'rate' => 16.00],
+                    ['max' => 51200000,   'rate' => 17.00],
+                    ['max' => 55800000,   'rate' => 18.00],
+                    ['max' => 60400000,   'rate' => 19.00],
+                    ['max' => 66700000,   'rate' => 20.00],
+                    ['max' => 74500000,   'rate' => 21.00],
+                    ['max' => 83200000,   'rate' => 22.00],
+                    ['max' => 95600000,   'rate' => 23.00],
+                    ['max' => 110000000,  'rate' => 24.00],
+                    ['max' => 134000000,  'rate' => 25.00],
+                    ['max' => 169000000,  'rate' => 26.00],
+                    ['max' => 221000000,  'rate' => 27.00],
+                    ['max' => 390000000,  'rate' => 28.00],
+                    ['max' => 463000000,  'rate' => 29.00],
+                    ['max' => 561000000,  'rate' => 30.00],
+                    ['max' => 709000000,  'rate' => 31.00],
+                    ['max' => 965000000,  'rate' => 32.00],
+                    ['max' => 1419000000, 'rate' => 33.00],
+                    ['max' => 'Seterusnya', 'rate' => 34.00],
                 ],
             ],
         ];
     }
 
-    private function calculateTerRate(
-        string $ptkp,
+    private function calculateTerRateByCategory(
+        string $category,
         float $gross
     ): float {
-
-        $raw = strtoupper(
-            trim(
-                $ptkp
-            )
-        );
-
-        $normalizedPtkp = [
-            'TK/0' => 'TK0',
-            'TK0' => 'TK0',
-            'TK/1' => 'TK01',
-            'TK1' => 'TK01',
-            'TK/2' => 'TK02',
-            'TK2' => 'TK02',
-            'TK/3' => 'TK03',
-            'TK3' => 'TK03',
-            'TK/4' => 'TK04',
-            'TK4' => 'TK04',
-            'K/0' => 'K01',
-            'K0' => 'K01',
-            'K/1' => 'K02',
-            'K1' => 'K02',
-            'K/2' => 'K03',
-            'K2' => 'K03',
-            'K/3' => 'K04',
-            'K3' => 'K04',
-            'K01' => 'K01',
-            'K02' => 'K02',
-            'K03' => 'K03',
-            'K04' => 'K04',
-            'TK01' => 'TK01',
-            'TK02' => 'TK02',
-            'TK03' => 'TK03',
-            'TK04' => 'TK04',
-        ][$raw] ?? $raw;
-
         $category =
-            match ($normalizedPtkp) {
+            strtoupper(
+                trim(
+                    $category
+                )
+            );
 
-                'TK0',
-                'TK01',
-                'K01'
-                    => 'TER_A',
-
-                'TK02',
-                'TK03',
-                'K02',
-                'K03'
-                    => 'TER_B',
-
-                'K04'
-                    => 'TER_C',
-
-                default
-                    => 'TER_A',
+        $terKey =
+            match ($category) {
+                'B' => 'TER_B',
+                'C' => 'TER_C',
+                default => 'TER_A',
             };
 
         $brackets =
             $this->terCategories()[
-                $category
+                $terKey
             ]['brackets']
             ?? [];
 
-        foreach (
-            $brackets as $bracket
-        ) {
+        $gross = max(0, $gross);
 
+        foreach ($brackets as $bracket) {
             if (
-                $bracket['max']
-                ===
-                'Seterusnya'
+                $bracket['max'] === 'Seterusnya'
                 ||
-                $gross
-                <=
-                (float) $bracket['max']
+                $gross <= (float) $bracket['max']
             ) {
-
                 return (
-                    (float)
-                    $bracket['rate']
+                    (float) $bracket['rate']
                 ) / 100;
             }
         }
 
         return 0.0;
     }
+
+    public function exportExcel(Request $request)
+    {
+        abort_unless(
+            $this->canExportExcel(),
+            403
+        );
+
+        $validated = $request->validate([
+            'period' => [
+                'required',
+                'date_format:Y-m',
+            ],
+        ]);
+
+        $period = $validated['period'];
+
+        /*
+         * Export mengikuti halaman Input Absensi:
+         * semua employee aktif ikut diexport, walaupun payroll periode
+         * tersebut belum pernah disimpan.
+         */
+        $employeeCount = Employee::query()
+            ->where('is_active', true)
+            ->count();
+
+        if ($employeeCount === 0) {
+            return redirect()
+                ->back()
+                ->with(
+                    'error',
+                    'Tidak ada karyawan aktif untuk diexport.'
+                );
+        }
+
+        return Excel::download(
+            new PayrollLocalExport(
+                $period,
+                $this->userRole()
+            ),
+            "Rekap_Payroll_Local_{$period}.xlsx"
+        );
+    }
+
 }

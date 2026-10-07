@@ -958,8 +958,19 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('export-bca');
 
+            /*
+            |--------------------------------------------------------------------------
+            | EXPORT EXCEL
+            |--------------------------------------------------------------------------
+            */
 
-
+            Route::get(
+                'export-excel',
+                [
+                    PayrollController::class,
+                    'exportExcel'
+                ]
+            )->name('export-excel');
 
 
             /*
