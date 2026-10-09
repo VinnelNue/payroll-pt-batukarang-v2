@@ -1,27 +1,16 @@
 @php
     /*
     |--------------------------------------------------------------------------
-    | EXPORT EXCEL PAYROLL LOCAL - REKAP ABSENSI
+    | EXPORT EXCEL PAYROLL LOCAL - DETAIL LENGKAP
     |--------------------------------------------------------------------------
     |
-    | Lembar pertama mengikuti bentuk laporan referensi:
-    | NO | NAMA | JABATAN | KATEGORI | LEVEL | TANGGAL 01..AKHIR BULAN
-    | Hadir | Absen Tdk Dibayar | Absen Dibayar | Σ Absen | M/HB | Normatif
-    | BPJS TK | BPJS KES
+    | Lembar ini mempertahankan laporan detail sebelumnya, termasuk rekap
+    | tambahan CM, hari kerja, gantungan, lembur, BPJS, serta rincian finansial
+    | yang hanya ditampilkan kepada manager_keuangan / super_admin.
     |
-    | Finance / Super Admin:
-    |   - Kategori, level, dan nominal BPJS semua level ditampilkan.
-    |   - Rincian gaji lengkap ada di lembar Detail Lengkap.
-    |
-    | Head HRD / Kepala HRD:
-    |   - Identitas dasar, absensi, rekap, dan kolom BPJS saja.
-    |   - Nominal BPJS level 1-13 terlihat; level 14+ kosong warna biru.
-    |   - Kategori, level, dan rincian gaji tidak ditampilkan.
-    |
-    | HRD:
-    |   - Identitas dasar dan absensi/rekap saja; tanpa BPJS dan gaji.
-    |
-    | Penghitungan payroll dan kontrol akses tidak diubah oleh template ini.
+    | Role Head HRD tetap hanya mendapatkan identitas dasar, absensi/rekap,
+    | dan BPJS dengan nominal level 1-13; level 14+ berwarna biru/kosong.
+    | Role HRD tidak mendapatkan kolom BPJS atau rincian finansial.
     |--------------------------------------------------------------------------
     */
 
@@ -74,9 +63,7 @@
 
     // Head HRD sees the BPJS columns, but not salary columns.
     $showBpjsColumns = $isFinanceRole || $isHeadHrd;
-    // Finance/Super Admin can see all financial columns on this sheet too.
     $showFinancialColumns = $isFinanceRole;
-    $showDetailedSummary = false;
 
     /*
     |--------------------------------------------------------------------------
@@ -127,14 +114,6 @@
         6 => 'SAB',
     ];
 
-    $monthAbbreviations = [
-        1 => 'JAN', 2 => 'FEB', 3 => 'MAR', 4 => 'APR',
-        5 => 'MEI', 6 => 'JUN', 7 => 'JUL', 8 => 'AGT',
-        9 => 'SEP', 10 => 'OKT', 11 => 'NOV', 12 => 'DES',
-    ];
-
-    $bpjsKesPeriod = $startDate->copy()->addMonth();
-
     /*
     |--------------------------------------------------------------------------
     | DAY COUNT
@@ -170,7 +149,7 @@
     */
 
     $identityCount = $showIdentityDetails ? 5 : 3;
-    $totalCount = $showDetailedSummary ? 10 : 6;
+    $totalCount = 10;
     $bpjsCount = $showBpjsColumns ? 2 : 0;
     $financialCount = $showFinancialColumns ? 9 : 0;
 
@@ -439,19 +418,6 @@
                     ?? 'Tanpa Department';
             }
         );
-
-    // Daily summary: H = 1 and H0.5 = 0.5. This is a display subtotal only.
-    $dailyGrandTotals = [];
-    foreach (\Carbon\CarbonPeriod::create($startDate, '1 day', $endDate) as $date) {
-        $dailyGrandTotals[$date->format('Y-m-d')] = 0.0;
-    }
-
-    $formatDayTotal = static function ($value): string {
-        $value = (float) $value;
-        return abs($value - round($value)) < 0.0001
-            ? number_format($value, 0, ',', '.')
-            : number_format($value, 1, ',', '.');
-    };
 @endphp
 
 <table
@@ -489,21 +455,17 @@
             <col style="width:29px;">
         @endforeach
 
-        {{-- TOTAL: enam kolom ringkasan sesuai lembar referensi --}}
-        <col style="width:48px;">   {{-- Hadir --}}
-        <col style="width:58px;">   {{-- Absen tidak dibayar --}}
-        <col style="width:55px;">   {{-- Absen dibayar --}}
-        <col style="width:50px;">   {{-- Total absen --}}
-        <col style="width:43px;">   {{-- M/HB --}}
-        @if($showDetailedSummary)
-            <col style="width:43px;">   {{-- CM --}}
-        @endif
-        <col style="width:54px;">   {{-- Normatif --}}
-        @if($showDetailedSummary)
-            <col style="width:59px;">   {{-- Hari kerja --}}
-            <col style="width:59px;">   {{-- Gantungan --}}
-            <col style="width:58px;">   {{-- Lembur --}}
-        @endif
+        {{-- TOTAL --}}
+        <col style="width:48px;">
+        <col style="width:58px;">
+        <col style="width:55px;">
+        <col style="width:50px;">
+        <col style="width:43px;">
+        <col style="width:43px;">
+        <col style="width:54px;">
+        <col style="width:59px;">
+        <col style="width:59px;">
+        <col style="width:58px;">
 
         @if($showBpjsColumns)
             <col style="width:82px;">
@@ -555,7 +517,7 @@
                 font-family:Georgia,'Times New Roman',serif;
             "
         >
-            REKAPAN HADIR &amp; LEMBUR HARI LIBUR KARYAWAN BULANAN
+            DETAIL LENGKAP ABSENSI &amp; PAYROLL
         </td>
     </tr>
 
@@ -743,8 +705,10 @@
 
                 if ($isHoliday) {
                     $dayBg = '#ffff00';
+                } elseif ($isSunday) {
+                    $dayBg = '#f4cccc';
                 } else {
-                    $dayBg = '#ffffff';
+                    $dayBg = '#eaf3f8';
                 }
 
                 $dayTextColor =
@@ -768,7 +732,7 @@
                 {{ $date->format('d') }}
                 <br>
                 <span style="font-size:8px;">
-                    H
+                    {{ $dayNames[$date->dayOfWeek] }}
                 </span>
             </th>
 
@@ -838,8 +802,7 @@
             M/HB
         </th>
 
-        @if($showDetailedSummary)
-<th
+        <th
             style="
                 border:1px solid #000;
                 background:#e9d5ff;
@@ -850,7 +813,6 @@
         >
             CM
         </th>
-@endif
 
         <th
             style="
@@ -864,8 +826,7 @@
             Norm<br>atif
         </th>
 
-        @if($showDetailedSummary)
-<th
+        <th
             style="
                 border:1px solid #000;
                 background:#fce4d6;
@@ -877,10 +838,8 @@
         >
             Hari<br>Kerja
         </th>
-@endif
 
-        @if($showDetailedSummary)
-<th
+        <th
             style="
                 border:1px solid #000;
                 background:#fff2cc;
@@ -891,10 +850,8 @@
         >
             Gantungan
         </th>
-@endif
 
-        @if($showDetailedSummary)
-<th
+        <th
             style="
                 border:1px solid #000;
                 background:#d9e1f2;
@@ -906,7 +863,6 @@
         >
             Lembur<br>(Jam)
         </th>
-@endif
 
         @if($showBpjsColumns)
 
@@ -921,7 +877,7 @@
                 "
             >
                 BPJS TK<br>
-                {{ $monthAbbreviations[(int) $startDate->format('m')] }} '{{ $startDate->format('y') }}'
+                {{ strtoupper($startDate->format('M Y')) }}
             </th>
 
             <th
@@ -935,7 +891,7 @@
                 "
             >
                 BPJS KES<br>
-                {{ $monthAbbreviations[(int) $bpjsKesPeriod->format('m')] }} '{{ $bpjsKesPeriod->format('y') }}'
+                {{ strtoupper($startDate->format('M Y')) }}
             </th>
 
         @endif
@@ -1090,11 +1046,6 @@
                 'gross' => 0.0,
                 'net' => 0.0,
             ];
-
-            $departmentDailyTotals = array_fill_keys(
-                array_keys($dailyGrandTotals),
-                0.0
-            );
         @endphp
 
         <tr style="height:18px;">
@@ -1160,17 +1111,6 @@
                     $buildAttendance(
                         $employee
                     );
-
-                foreach ($attendance as $attendanceDateKey => $attendanceStatus) {
-                    $dailyValue = match ($attendanceStatus) {
-                        'H' => 1.0,
-                        'H0.5' => 0.5,
-                        default => 0.0,
-                    };
-
-                    $departmentDailyTotals[$attendanceDateKey] += $dailyValue;
-                    $dailyGrandTotals[$attendanceDateKey] += $dailyValue;
-                }
 
                 $summary =
                     $summarize(
@@ -1508,7 +1448,7 @@
                             padding:0;
                         "
                     >
-                        {{ $status === 'H' ? '1' : ($status === 'H0.5' ? '0.5' : $status) }}
+                        {{ $status }}
                     </td>
 
                 @endforeach
@@ -1595,8 +1535,7 @@
                     ) }}
                 </td>
 
-                @if($showDetailedSummary)
-<td
+                <td
                     style="
                         border:1px solid #000;
                         text-align:right;
@@ -1610,7 +1549,6 @@
                         '.'
                     ) }}
                 </td>
-@endif
 
                 <td
                     style="
@@ -1628,8 +1566,7 @@
                     ) }}
                 </td>
 
-                @if($showDetailedSummary)
-<td
+                <td
                     style="
                         border:1px solid #000;
                         text-align:right;
@@ -1643,10 +1580,8 @@
                         '.'
                     ) }}
                 </td>
-@endif
 
-                @if($showDetailedSummary)
-<td
+                <td
                     style="
                         border:1px solid #000;
                         text-align:right;
@@ -1660,10 +1595,8 @@
                         '.'
                     ) }}
                 </td>
-@endif
 
-                @if($showDetailedSummary)
-<td
+                <td
                     style="
                         border:1px solid #000;
                         text-align:right;
@@ -1677,7 +1610,6 @@
                         '.'
                     ) }}
                 </td>
-@endif
 
                 {{-- =================================================
                      BPJS
@@ -1909,8 +1841,12 @@
                 ) as $date
             )
 
-                @php $dailyTotalValue = (float) ($departmentDailyTotals[$date->format('Y-m-d')] ?? 0); @endphp
-                <td style="border:1px solid #000;background:#f2f2f2;text-align:center;font-weight:800;">{{ $formatDayTotal($dailyTotalValue) }}</td>
+                <td
+                    style="
+                        border:1px solid #000;
+                        background:#f2f2f2;
+                    "
+                ></td>
 
             @endforeach
 
@@ -1992,8 +1928,7 @@
                 ) }}
             </td>
 
-            @if($showDetailedSummary)
-<td
+            <td
                 style="
                     border:1px solid #000;
                     text-align:right;
@@ -2007,7 +1942,6 @@
                     '.'
                 ) }}
             </td>
-@endif
 
             <td
                 style="
@@ -2025,8 +1959,7 @@
                 ) }}
             </td>
 
-            @if($showDetailedSummary)
-<td
+            <td
                 style="
                     border:1px solid #000;
                     text-align:right;
@@ -2040,10 +1973,8 @@
                     '.'
                 ) }}
             </td>
-@endif
 
-            @if($showDetailedSummary)
-<td
+            <td
                 style="
                     border:1px solid #000;
                     text-align:right;
@@ -2057,10 +1988,8 @@
                     '.'
                 ) }}
             </td>
-@endif
 
-            @if($showDetailedSummary)
-<td
+            <td
                 style="
                     border:1px solid #000;
                     text-align:right;
@@ -2074,7 +2003,6 @@
                     '.'
                 ) }}
             </td>
-@endif
 
             @if($showBpjsColumns)
 
@@ -2225,8 +2153,12 @@
             ) as $date
         )
 
-            @php $dailyTotalValue = (float) ($dailyGrandTotals[$date->format('Y-m-d')] ?? 0); @endphp
-            <td style="border:1px solid #000;background:#eaf3f8;text-align:center;font-weight:800;">{{ $formatDayTotal($dailyTotalValue) }}</td>
+            <td
+                style="
+                    border:1px solid #000;
+                    background:#f2f2f2;
+                "
+            ></td>
 
         @endforeach
 
@@ -2275,8 +2207,7 @@
             ) }}
         </td>
 
-        @if($showDetailedSummary)
-<td style="border:1px solid #000;font-weight:800;text-align:right;">
+        <td style="border:1px solid #000;font-weight:800;text-align:right;">
             {{ number_format(
                 $grand['cm'],
                 1,
@@ -2284,7 +2215,6 @@
                 '.'
             ) }}
         </td>
-@endif
 
         <td style="border:1px solid #000;font-weight:800;text-align:right;color:#008000;">
             {{ number_format(
@@ -2295,8 +2225,7 @@
             ) }}
         </td>
 
-        @if($showDetailedSummary)
-<td style="border:1px solid #000;font-weight:800;text-align:right;">
+        <td style="border:1px solid #000;font-weight:800;text-align:right;">
             {{ number_format(
                 $grand['work_days'],
                 1,
@@ -2304,10 +2233,8 @@
                 '.'
             ) }}
         </td>
-@endif
 
-        @if($showDetailedSummary)
-<td style="border:1px solid #000;font-weight:800;text-align:right;">
+        <td style="border:1px solid #000;font-weight:800;text-align:right;">
             {{ number_format(
                 $grand['gantungan'],
                 1,
@@ -2315,10 +2242,8 @@
                 '.'
             ) }}
         </td>
-@endif
 
-        @if($showDetailedSummary)
-<td style="border:1px solid #000;font-weight:800;text-align:right;">
+        <td style="border:1px solid #000;font-weight:800;text-align:right;">
             {{ number_format(
                 $grand['overtime_hours'],
                 1,
@@ -2326,7 +2251,6 @@
                 '.'
             ) }}
         </td>
-@endif
 
         @if($showBpjsColumns)
 

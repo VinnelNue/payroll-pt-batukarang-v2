@@ -7,39 +7,17 @@ use Illuminate\Support\Facades\Route;
 
 
 use App\Http\Controllers\Auth\LoginController;
-
 use App\Http\Controllers\DashboardController;
-
-
-
 use App\Http\Controllers\EmployeeController;
-
 use App\Http\Controllers\EmployeeOuterIslandController;
-
-
-
 use App\Http\Controllers\EmployeeContractController;
-
-
-
 use App\Http\Controllers\PayrollController;
-
+use App\Http\Controllers\PayrollLocalBcaExportController;
 use App\Http\Controllers\PayrollOuterIslandController;
-
-
-
 use App\Http\Controllers\ProfileController;
-
 use App\Http\Controllers\UserController;
-
-
-
 use App\Http\Controllers\ContractLocalController;
-
 use App\Http\Controllers\ContractOuterIslandController;
-
-
-
 use App\Http\Controllers\HolidayController;
 
 
@@ -948,16 +926,10 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('export-bca', [
-
-                PayrollController::class,
-
-                'exportBca'
-
+                PayrollLocalBcaExportController::class,
+                'exportBca',
             ])->name('export-bca');
-
             /*
             |--------------------------------------------------------------------------
             | EXPORT EXCEL
