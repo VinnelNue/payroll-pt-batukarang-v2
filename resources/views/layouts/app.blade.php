@@ -161,11 +161,16 @@
                 </a>
             </div>
 
-            <!-- 3. PPH 21 & BPJS (TETAP TUNGGAL) -->
-            <a href="{{ route('tax-bpjs.index') }}" class="nav-link-custom mt-1 {{ request()->routeIs('tax-bpjs.*') ? 'active' : '' }}" title="PPh 21 & BPJS Master">
-                <i class="fa-solid fa-calculator"></i>
-                <span>PPh 21 & BPJS Master</span>
-            </a>
+            {{-- PPH 21 & BPJS MASTER --}}
+            @if(Auth::check() && Auth::user()->role === 'manager_keuangan')
+                <a href="{{ route('tax-bpjs.index') }}"
+                class="nav-link-custom mt-1 {{ request()->routeIs('tax-bpjs.*') ? 'active' : '' }}"
+                title="PPh 21 & BPJS Master">
+
+                    <i class="fa-solid fa-calculator"></i>
+                    <span>PPh 21 & BPJS Master</span>
+                </a>
+            @endif
 
             <!-- GROUP 4: PERSONAL ACCOUNT  -->
             <div class="menu-header mt-3">Personal Account</div>

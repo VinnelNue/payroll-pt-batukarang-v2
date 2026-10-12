@@ -92,6 +92,29 @@ class PayrollOuterIslandController extends Controller
         );
     }
 
+    /** Use the same configurable work-day and overtime settings as local payroll. */
+    private function standardWorkDays(): float
+    {
+        $value = (float) CompanySetting::get(
+            'standard_work_days',
+            self::DEFAULT_STANDARD_WORK_DAYS
+        );
+
+        return $value > 0 && $value <= 31 ? $value : self::DEFAULT_STANDARD_WORK_DAYS;
+    }
+
+    private function overtimeRate(): float
+    {
+        $value = (float) CompanySetting::get(
+            'overtime_hour_rate',
+            self::DEFAULT_OVERTIME_RATE
+        );
+
+        return $value >= 0 && $value <= 100000000
+            ? $value
+            : self::DEFAULT_OVERTIME_RATE;
+    }
+
     private function isHeadHrd(): bool
     {
         return in_array(
@@ -2050,7 +2073,10 @@ public function generateAttendance(
         */
 
         $standardWorkDays =
-            self::DEFAULT_STANDARD_WORK_DAYS;
+            $this->standardWorkDays();
+
+        $overtimeRate =
+            $this->overtimeRate();
 
         $tkEmployeeRate =
             (float) (
@@ -2177,7 +2203,8 @@ public function generateAttendance(
                 $end,
                 $tkEmployeeRate,
                 $ksEmployeeRate,
-                $ksMaxCap
+                $ksMaxCap,
+                $overtimeRate
             ) {
 
                 foreach ($employees as $employee) {
@@ -2537,6 +2564,9 @@ public function generateAttendance(
 
                     $previousGantungan =
                         $this->calculatePreviousGantungan(
+                            $employee,
+                            $previousPeriod,
+                            $standardWorkDays,
                             $previousPayroll
                         );
 
@@ -2737,7 +2767,7 @@ public function generateAttendance(
                     $overtimePay =
                         $overtimeHours
                         *
-                        self::DEFAULT_OVERTIME_RATE;
+                        $overtimeRate;
 
                     /*
                     |--------------------------------------------------------------------------
@@ -2813,16 +2843,43 @@ public function generateAttendance(
 
                     /*
                     |--------------------------------------------------------------------------
+                    | CURRENT ATTENDANCE DEDUCTION
+                    |--------------------------------------------------------------------------
+                    | A/I/H0.5 up to cutoff reduces this period's basic salary
+                    | and allowance. Post-cutoff absence remains a gantungan.
+                    */
+
+                    $unpaidDays = max(0, (float) ($summary['unpaid_leave'] ?? 0));
+                    $basicSalaryDeduction = $standardWorkDays > 0
+                        ? ($basicSalary / $standardWorkDays) * $unpaidDays
+                        : 0;
+                    $allowanceDeduction = $standardWorkDays > 0
+                        ? ($allowance / $standardWorkDays) * $unpaidDays
+                        : 0;
+                    $netBasicSalary = max(0, $basicSalary - $basicSalaryDeduction);
+                    $netAllowance = max(0, $allowance - $allowanceDeduction);
+
+                    // Preserve a maternity amount already entered for this payroll period.
+                    $existingPayroll = PayrollOuterIsland::query()
+                        ->where('employee_outer_island_id', $employeeId)
+                        ->where('period_month', $period)
+                        ->first();
+                    $maternityLeavePay = max(0, (float) ($existingPayroll?->maternity_leave_pay ?? 0));
+
+                    /*
+                    |--------------------------------------------------------------------------
                     | GROSS
                     |--------------------------------------------------------------------------
                     */
 
                     $grossSalary =
-                        $basicSalary
+                        $netBasicSalary
                         +
-                        $allowance
+                        $netAllowance
                         +
                         $overtimePay
+                        +
+                        $maternityLeavePay
                         +
                         $incentive;
 
@@ -2832,7 +2889,22 @@ public function generateAttendance(
                     |--------------------------------------------------------------------------
                     */
 
-                    $pph21Deduction = 0;
+                    $terCategory = $this->resolveTerCategory($contract);
+                    if ($this->isPph21FinalPeriod($period, $contract)) {
+                        $pph21Deduction = $this->calculateFinalPph21(
+                            $employee,
+                            $contract,
+                            $period,
+                            $grossSalary,
+                            $bpjsTkDeduction
+                        );
+                    } else {
+                        $pph21Deduction = $grossSalary * $this->calculateTerRateByCategory(
+                            $terCategory,
+                            $grossSalary
+                        );
+                    }
+                    $pph21Deduction = round(max(0, $pph21Deduction), 2);
 
                     /*
                     |--------------------------------------------------------------------------
@@ -2939,15 +3011,7 @@ public function generateAttendance(
                                 ),
 
                             'maternity_leave_pay' =>
-                                round(
-                                    (float) (
-                                        $summary[
-                                            'maternity_leave_pay'
-                                        ]
-                                        ?? 0
-                                    ),
-                                    2
-                                ),
+                                round($maternityLeavePay, 2),
 
                             'incentive' =>
                                 round(
@@ -3026,6 +3090,518 @@ public function generateAttendance(
                 'success',
                 "Payroll Outer Island periode {$period} berhasil dihitung."
             );
+    }
+
+
+    private function resolveTerCategory($contract): string
+    {
+        $category =
+            strtoupper(
+                trim(
+                    (string) (
+                        $contract->ter_category
+                        ?? ''
+                    )
+                )
+            );
+
+        if (
+            in_array(
+                $category,
+                ['A', 'B', 'C'],
+                true
+            )
+        ) {
+            return $category;
+        }
+
+        return $this->deriveTerCategoryFromPtkp(
+            $contract->ptkp_status
+                ?? 'TK0'
+        );
+    }
+
+    private function deriveTerCategoryFromPtkp(
+        mixed $ptkp
+    ): string {
+        $raw =
+            strtoupper(
+                trim(
+                    (string) (
+                        $ptkp
+                        ?? ''
+                    )
+                )
+            );
+
+        $map = [
+            'TK/0' => 'A',
+            'TK0'  => 'A',
+
+            'TK/1' => 'A',
+            'TK1'  => 'A',
+            'TK01' => 'A',
+
+            'K/0'  => 'A',
+            'K0'   => 'A',
+            'K01'  => 'A',
+
+            'TK/2' => 'B',
+            'TK2'  => 'B',
+            'TK02' => 'B',
+
+            'TK/3' => 'B',
+            'TK3'  => 'B',
+            'TK03' => 'B',
+
+            'K/1'  => 'B',
+            'K1'   => 'B',
+            'K02'  => 'B',
+
+            'K/2'  => 'B',
+            'K2'   => 'B',
+            'K03'  => 'B',
+
+            'K/3'  => 'C',
+            'K3'   => 'C',
+            'K04'  => 'C',
+        ];
+
+        return $map[$raw] ?? 'A';
+    }
+
+    private function ptkpAnnualValue(
+        mixed $ptkp
+    ): float {
+        $raw =
+            strtoupper(
+                trim(
+                    (string) (
+                        $ptkp
+                        ?? ''
+                    )
+                )
+            );
+
+        $map = [
+            'TK/0' => 54000000,
+            'TK0'  => 54000000,
+
+            'TK/1' => 58500000,
+            'TK1'  => 58500000,
+            'TK01' => 58500000,
+
+            'TK/2' => 63000000,
+            'TK2'  => 63000000,
+            'TK02' => 63000000,
+
+            'TK/3' => 67500000,
+            'TK3'  => 67500000,
+            'TK03' => 67500000,
+
+            'TK/4' => 72000000,
+            'TK4'  => 72000000,
+            'TK04' => 72000000,
+
+            'K/0'  => 58500000,
+            'K0'   => 58500000,
+            'K01'  => 58500000,
+
+            'K/1'  => 63000000,
+            'K1'   => 63000000,
+            'K02'  => 63000000,
+
+            'K/2'  => 67500000,
+            'K2'   => 67500000,
+            'K03'  => 67500000,
+
+            'K/3'  => 72000000,
+            'K3'   => 72000000,
+            'K04'  => 72000000,
+        ];
+
+        return (float) (
+            $map[$raw]
+            ?? 54000000
+        );
+    }
+
+    private function isPph21FinalPeriod(
+        string $period,
+        $contract
+    ): bool {
+        try {
+            $month =
+                (int) Carbon::createFromFormat(
+                    'Y-m',
+                    $period
+                )->format('m');
+        } catch (Throwable) {
+            $month = 0;
+        }
+
+        if ($month === 12) {
+            return true;
+        }
+
+        $exitDate = $contract->exit_date ?? null;
+
+        if (!$exitDate) {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($exitDate)
+                ->format('Y-m') === $period;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function calculateProgressivePph21(
+        float $pkp
+    ): float {
+        $pkp = max(0, floor($pkp / 1000) * 1000);
+
+        if ($pkp <= 0) {
+            return 0.0;
+        }
+
+        $tax = 0.0;
+        $remaining = $pkp;
+
+        $brackets = [
+            [
+                'limit' => 60000000,
+                'rate'  => 0.05,
+            ],
+            [
+                'limit' => 190000000,
+                'rate'  => 0.15,
+            ],
+            [
+                'limit' => 250000000,
+                'rate'  => 0.25,
+            ],
+            [
+                'limit' => 4500000000,
+                'rate'  => 0.30,
+            ],
+            [
+                'limit' => null,
+                'rate'  => 0.35,
+            ],
+        ];
+
+        foreach ($brackets as $bracket) {
+            if (
+                $remaining <= 0
+            ) {
+                break;
+            }
+
+            $limit = $bracket['limit'];
+
+            if ($limit === null) {
+                $tax +=
+                    $remaining
+                    *
+                    $bracket['rate'];
+
+                $remaining = 0;
+                break;
+            }
+
+            $taxable =
+                min(
+                    $remaining,
+                    $limit
+                );
+
+            $tax +=
+                $taxable
+                *
+                $bracket['rate'];
+
+            $remaining -= $taxable;
+        }
+
+        return round(
+            $tax,
+            2
+        );
+    }
+
+
+    private function terCategories(): array
+    {
+        return [
+            'TER_A' => [
+                'code' => 'A',
+                'ptkp' => 'TK/0, TK/1, K/0',
+                'description' =>
+                    'Tidak kawin tanggungan 0-1 atau kawin tanpa tanggungan',
+                'brackets' => [
+                    ['max' => 5400000,    'rate' => 0.00],
+                    ['max' => 5650000,    'rate' => 0.25],
+                    ['max' => 5950000,    'rate' => 0.50],
+                    ['max' => 6300000,    'rate' => 0.75],
+                    ['max' => 6750000,    'rate' => 1.00],
+                    ['max' => 7500000,    'rate' => 1.25],
+                    ['max' => 8550000,    'rate' => 1.50],
+                    ['max' => 9650000,    'rate' => 1.75],
+                    ['max' => 10050000,   'rate' => 2.00],
+                    ['max' => 10350000,   'rate' => 2.25],
+                    ['max' => 10700000,   'rate' => 2.50],
+                    ['max' => 11050000,   'rate' => 3.00],
+                    ['max' => 11600000,   'rate' => 3.50],
+                    ['max' => 12500000,   'rate' => 4.00],
+                    ['max' => 13750000,   'rate' => 5.00],
+                    ['max' => 15100000,   'rate' => 6.00],
+                    ['max' => 16950000,   'rate' => 7.00],
+                    ['max' => 19750000,   'rate' => 8.00],
+                    ['max' => 24150000,   'rate' => 9.00],
+                    ['max' => 26450000,   'rate' => 10.00],
+                    ['max' => 28000000,   'rate' => 11.00],
+                    ['max' => 30050000,   'rate' => 12.00],
+                    ['max' => 32400000,   'rate' => 13.00],
+                    ['max' => 35400000,   'rate' => 14.00],
+                    ['max' => 39100000,   'rate' => 15.00],
+                    ['max' => 43850000,   'rate' => 16.00],
+                    ['max' => 47800000,   'rate' => 17.00],
+                    ['max' => 51400000,   'rate' => 18.00],
+                    ['max' => 56300000,   'rate' => 19.00],
+                    ['max' => 62200000,   'rate' => 20.00],
+                    ['max' => 68600000,   'rate' => 21.00],
+                    ['max' => 77500000,   'rate' => 22.00],
+                    ['max' => 89000000,   'rate' => 23.00],
+                    ['max' => 103000000,  'rate' => 24.00],
+                    ['max' => 125000000,  'rate' => 25.00],
+                    ['max' => 157000000,  'rate' => 26.00],
+                    ['max' => 206000000,  'rate' => 27.00],
+                    ['max' => 337000000,  'rate' => 28.00],
+                    ['max' => 454000000,  'rate' => 29.00],
+                    ['max' => 550000000,  'rate' => 30.00],
+                    ['max' => 695000000,  'rate' => 31.00],
+                    ['max' => 910000000,  'rate' => 32.00],
+                    ['max' => 1400000000, 'rate' => 33.00],
+                    ['max' => 'Seterusnya', 'rate' => 34.00],
+                ],
+            ],
+
+            'TER_B' => [
+                'code' => 'B',
+                'ptkp' => 'TK/2, TK/3, K/1, K/2',
+                'description' =>
+                    'Tidak kawin tanggungan 2-3 atau kawin tanggungan 1-2',
+                'brackets' => [
+                    ['max' => 6200000,     'rate' => 0.00],
+                    ['max' => 6500000,     'rate' => 0.25],
+                    ['max' => 6850000,     'rate' => 0.50],
+                    ['max' => 7300000,     'rate' => 0.75],
+                    ['max' => 9200000,     'rate' => 1.00],
+                    ['max' => 10750000,    'rate' => 1.50],
+                    ['max' => 11250000,    'rate' => 2.00],
+                    ['max' => 11600000,    'rate' => 2.50],
+                    ['max' => 12600000,    'rate' => 3.00],
+                    ['max' => 13600000,    'rate' => 4.00],
+                    ['max' => 14950000,    'rate' => 5.00],
+                    ['max' => 16400000,    'rate' => 6.00],
+                    ['max' => 18450000,    'rate' => 7.00],
+                    ['max' => 21850000,    'rate' => 8.00],
+                    ['max' => 26000000,    'rate' => 9.00],
+                    ['max' => 27700000,    'rate' => 10.00],
+                    ['max' => 29350000,    'rate' => 11.00],
+                    ['max' => 31450000,    'rate' => 12.00],
+                    ['max' => 33950000,    'rate' => 13.00],
+                    ['max' => 37100000,    'rate' => 14.00],
+                    ['max' => 41100000,    'rate' => 15.00],
+                    ['max' => 45800000,    'rate' => 16.00],
+                    ['max' => 49500000,    'rate' => 17.00],
+                    ['max' => 53800000,    'rate' => 18.00],
+                    ['max' => 58500000,    'rate' => 19.00],
+                    ['max' => 64000000,    'rate' => 20.00],
+                    ['max' => 71000000,    'rate' => 21.00],
+                    ['max' => 80000000,    'rate' => 22.00],
+                    ['max' => 93000000,    'rate' => 23.00],
+                    ['max' => 109000000,   'rate' => 24.00],
+                    ['max' => 129000000,   'rate' => 25.00],
+                    ['max' => 163000000,   'rate' => 26.00],
+                    ['max' => 211000000,   'rate' => 27.00],
+                    ['max' => 374000000,   'rate' => 28.00],
+                    ['max' => 459000000,   'rate' => 29.00],
+                    ['max' => 555000000,   'rate' => 30.00],
+                    ['max' => 704000000,   'rate' => 31.00],
+                    ['max' => 957000000,   'rate' => 32.00],
+                    ['max' => 1405000000,  'rate' => 33.00],
+                    ['max' => 'Seterusnya', 'rate' => 34.00],
+                ],
+            ],
+
+            'TER_C' => [
+                'code' => 'C',
+                'ptkp' => 'K/3',
+                'description' =>
+                    'Kawin tanggungan 3',
+                'brackets' => [
+                    ['max' => 6600000,    'rate' => 0.00],
+                    ['max' => 6950000,    'rate' => 0.25],
+                    ['max' => 7350000,    'rate' => 0.50],
+                    ['max' => 7800000,    'rate' => 0.75],
+                    ['max' => 8850000,    'rate' => 1.00],
+                    ['max' => 9800000,    'rate' => 1.25],
+                    ['max' => 10950000,   'rate' => 1.50],
+                    ['max' => 11200000,   'rate' => 1.75],
+                    ['max' => 12050000,   'rate' => 2.00],
+                    ['max' => 12950000,   'rate' => 3.00],
+                    ['max' => 14150000,   'rate' => 4.00],
+                    ['max' => 15550000,   'rate' => 5.00],
+                    ['max' => 17050000,   'rate' => 6.00],
+                    ['max' => 19500000,   'rate' => 7.00],
+                    ['max' => 22700000,   'rate' => 8.00],
+                    ['max' => 26600000,   'rate' => 9.00],
+                    ['max' => 28100000,   'rate' => 10.00],
+                    ['max' => 30100000,   'rate' => 11.00],
+                    ['max' => 32600000,   'rate' => 12.00],
+                    ['max' => 35400000,   'rate' => 13.00],
+                    ['max' => 38900000,   'rate' => 14.00],
+                    ['max' => 43000000,   'rate' => 15.00],
+                    ['max' => 47400000,   'rate' => 16.00],
+                    ['max' => 51200000,   'rate' => 17.00],
+                    ['max' => 55800000,   'rate' => 18.00],
+                    ['max' => 60400000,   'rate' => 19.00],
+                    ['max' => 66700000,   'rate' => 20.00],
+                    ['max' => 74500000,   'rate' => 21.00],
+                    ['max' => 83200000,   'rate' => 22.00],
+                    ['max' => 95600000,   'rate' => 23.00],
+                    ['max' => 110000000,  'rate' => 24.00],
+                    ['max' => 134000000,  'rate' => 25.00],
+                    ['max' => 169000000,  'rate' => 26.00],
+                    ['max' => 221000000,  'rate' => 27.00],
+                    ['max' => 390000000,  'rate' => 28.00],
+                    ['max' => 463000000,  'rate' => 29.00],
+                    ['max' => 561000000,  'rate' => 30.00],
+                    ['max' => 709000000,  'rate' => 31.00],
+                    ['max' => 965000000,  'rate' => 32.00],
+                    ['max' => 1419000000, 'rate' => 33.00],
+                    ['max' => 'Seterusnya', 'rate' => 34.00],
+                ],
+            ],
+        ];
+    }
+
+
+    private function calculateTerRateByCategory(
+        string $category,
+        float $gross
+    ): float {
+        $category =
+            strtoupper(
+                trim(
+                    $category
+                )
+            );
+
+        $terKey =
+            match ($category) {
+                'B' => 'TER_B',
+                'C' => 'TER_C',
+                default => 'TER_A',
+            };
+
+        $brackets =
+            $this->terCategories()[
+                $terKey
+            ]['brackets']
+            ?? [];
+
+        $gross = max(0, $gross);
+
+        foreach ($brackets as $bracket) {
+            if (
+                $bracket['max'] === 'Seterusnya'
+                ||
+                $gross <= (float) $bracket['max']
+            ) {
+                return (
+                    (float) $bracket['rate']
+                ) / 100;
+            }
+        }
+
+        return 0.0;
+    }
+
+    /** Final-month PPh21 using only finalized payroll history. */
+    private function calculateFinalPph21(
+        EmployeeOuterIsland $employee,
+        $contract,
+        string $period,
+        float $currentGrossSalary,
+        float $currentBpjsTkDeduction
+    ): float {
+        $periodDate = Carbon::createFromFormat('Y-m', $period);
+        $year = (int) $periodDate->format('Y');
+        $yearStart = $year . '-01';
+
+        $previousPayrolls = PayrollOuterIsland::query()
+            ->where('employee_outer_island_id', $employee->id_employee_outer_island)
+            ->where('period_month', '>=', $yearStart)
+            ->where('period_month', '<', $period)
+            ->whereIn('status', ['Approved', 'Paid'])
+            ->orderBy('period_month')
+            ->get(['period_month', 'gross_salary', 'bpjs_tk_deduction', 'pph21_deduction']);
+
+        $grossBeforeCurrent = 0.0;
+        $retirementBeforeCurrent = 0.0;
+        $pph21BeforeCurrent = 0.0;
+        foreach ($previousPayrolls as $row) {
+            $grossBeforeCurrent += (float) ($row->gross_salary ?? 0);
+            $retirementBeforeCurrent += (float) ($row->bpjs_tk_deduction ?? 0);
+            $pph21BeforeCurrent += (float) ($row->pph21_deduction ?? 0);
+        }
+
+        $actualGross = $grossBeforeCurrent + max(0, $currentGrossSalary);
+        $actualRetirement = max(0, $retirementBeforeCurrent + max(0, $currentBpjsTkDeduction));
+
+        // A finalized payroll history is a better tax-period anchor than a renewed contract start date.
+        $firstFinalizedPeriod = $previousPayrolls->first()?->period_month;
+        if ($firstFinalizedPeriod) {
+            $taxStart = Carbon::createFromFormat('Y-m', $firstFinalizedPeriod)->startOfMonth();
+        } else {
+            $startDate = !empty($contract->start_date)
+                ? Carbon::parse($contract->start_date)
+                : $periodDate->copy()->startOfYear();
+            $taxStart = $startDate->year < $year
+                ? $periodDate->copy()->startOfYear()
+                : Carbon::create($year, (int) $startDate->format('m'), 1);
+        }
+
+        $finalMonthDate = $periodDate->copy()->startOfMonth();
+        if ($taxStart->gt($finalMonthDate)) $taxStart = $finalMonthDate->copy();
+        $monthsInPartYear = (($finalMonthDate->year * 12 + $finalMonthDate->month)
+            - ($taxStart->year * 12 + $taxStart->month)) + 1;
+        $monthsInPartYear = max(1, min(12, $monthsInPartYear));
+        $isFullYear = $monthsInPartYear === 12 && $taxStart->month === 1;
+
+        if ($isFullYear) {
+            $annualGross = $actualGross;
+            $annualRetirement = $actualRetirement;
+            $annualJobExpense = min($annualGross * 0.05, 6000000);
+            $annualNet = max(0, $annualGross - $annualJobExpense - $annualRetirement);
+            $ptkp = $this->ptkpAnnualValue($contract->ptkp_status ?? 'TK0');
+            $pkp = max(0, floor(max(0, $annualNet - $ptkp) / 1000) * 1000);
+            return round($this->calculateProgressivePph21($pkp) - $pph21BeforeCurrent, 2);
+        }
+
+        $annualizedGross = $actualGross * (12 / $monthsInPartYear);
+        $annualizedRetirement = $actualRetirement * (12 / $monthsInPartYear);
+        $annualJobExpense = min($annualizedGross * 0.05, 6000000);
+        $annualizedNet = max(0, $annualizedGross - $annualJobExpense - $annualizedRetirement);
+        $ptkp = $this->ptkpAnnualValue($contract->ptkp_status ?? 'TK0');
+        $pkp = max(0, floor(max(0, $annualizedNet - $ptkp) / 1000) * 1000);
+        $annualTax = $this->calculateProgressivePph21($pkp);
+        return round(($annualTax * ($monthsInPartYear / 12)) - $pph21BeforeCurrent, 2);
     }
 
     /*
@@ -3277,68 +3853,51 @@ public function generateAttendance(
     */
 
     private function calculatePreviousGantungan(
+        EmployeeOuterIsland $employee,
+        string $previousPeriod,
+        float $standardWorkDays,
         ?PayrollOuterIsland $previousPayroll
     ): array {
+        $snapshotDays = (float) ($previousPayroll?->gantungan_days ?? 0);
+        $snapshotDeduction = (float) ($previousPayroll?->gantungan_deduction ?? 0);
 
-        if (!$previousPayroll) {
-
+        // Use payroll snapshot first so a historical deduction does not drift.
+        if ($previousPayroll && ($snapshotDays > 0 || $snapshotDeduction > 0)) {
             return [
-                'days' =>
-                    0,
-
-                'deduction' =>
-                    0,
-
-                'cutoff_day' =>
-                    null,
-
-                'basic_salary' =>
-                    0,
-
-                'allowance' =>
-                    0,
+                'days' => round($snapshotDays, 1),
+                'deduction' => round($snapshotDeduction, 2),
+                'cutoff_day' => $previousPayroll->cutoff_day !== null
+                    ? (int) $previousPayroll->cutoff_day
+                    : (int) CompanySetting::get('attendance_cutoff_day', self::DEFAULT_CUTOFF_DAY),
+                'basic_salary' => (float) ($previousPayroll->basic_salary ?? 0),
+                'allowance' => (float) ($previousPayroll->allowance ?? 0),
             ];
         }
 
+        // Fallback for legacy rows where the gantungan snapshot was never saved.
+        $previousCutoffDay = $previousPayroll?->cutoff_day !== null
+            ? (int) $previousPayroll->cutoff_day
+            : (int) CompanySetting::get('attendance_cutoff_day', self::DEFAULT_CUTOFF_DAY);
+
+        $previousStart = Carbon::createFromFormat('Y-m', $previousPeriod)->startOfMonth();
+        $previousEnd = $previousStart->copy()->endOfMonth();
+        $records = AttendanceRecordOuterIsland::query()
+            ->where('employee_outer_island_id', $employee->id_employee_outer_island)
+            ->whereBetween('attendance_date', [$previousStart->toDateString(), $previousEnd->toDateString()])
+            ->get();
+
+        $days = $this->calculateCurrentGantungan($records, $previousCutoffDay);
+        $contract = $this->currentContract($employee);
+        $basicSalary = (float) ($previousPayroll?->basic_salary ?? $contract?->basic_salary ?? 0);
+        $allowance = (float) ($previousPayroll?->allowance ?? $this->calculateAllowance($contract));
+        $dailyRate = $standardWorkDays > 0 ? (($basicSalary + $allowance) / $standardWorkDays) : 0;
+
         return [
-            'days' =>
-                round(
-                    (float) (
-                        $previousPayroll
-                            ->gantungan_days
-                        ?? 0
-                    ),
-                    1
-                ),
-
-            'deduction' =>
-                round(
-                    (float) (
-                        $previousPayroll
-                            ->gantungan_deduction
-                        ?? 0
-                    ),
-                    2
-                ),
-
-            'cutoff_day' =>
-                $previousPayroll->cutoff_day !== null
-                    ? (int) $previousPayroll->cutoff_day
-                    : null,
-
-            'basic_salary' =>
-                (float) (
-                    $previousPayroll
-                        ->basic_salary
-                    ?? 0
-                ),
-
-            'allowance' =>
-                (float) (
-                    $previousPayroll
-                        ->allowance
-                    ?? 0
-                ),
+            'days' => round($days, 1),
+            'deduction' => round($dailyRate * $days, 2),
+            'cutoff_day' => $previousCutoffDay,
+            'basic_salary' => $basicSalary,
+            'allowance' => $allowance,
         ];
     }
 

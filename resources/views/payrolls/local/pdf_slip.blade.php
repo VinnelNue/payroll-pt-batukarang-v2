@@ -3526,179 +3526,36 @@ $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
 
 
                 <div class="signature-space"></div>
-
-
-
-
-
-
-
                 <div class="fw-bold">
-
-
-
                     (Yohana)
-
-
-
                 </div>
-
-
-
-
-
-
-
             </div>
-
-
-
-
-
-
-
-
-
-
-
         </td>
-
-
-
-
-
-
-
     </tr>
-
-
-
-
-
-
-
 </table>
-
-
-
-
-
-
-
-
-
-
-
 <!-- ============================================================
-
-
-
      TERBILANG
-
-
-
 ============================================================= -->
-
-
-
-
-
-
-
 <div class="terbilang">
-
-
-
-
-
-
 
     Terbilang :
 
-
-
     # Rp {{ number_format($netSalary, 0, ',', '.') }} #
 
-
-
-
-
-
-
 </div>
-
-
-
-
-
-
-
-
-
 
 
 <!-- ============================================================
-
-
-
      FOOTER / KETERANGAN
-
-
-
 ============================================================= -->
-
-
-
-
-
-
-
 <div class="info-note">
-
-
-
-
-
-
-
     <strong>Keterangan:</strong>
-
-
-
-
-
-
-
     Gantungan periode berjalan merupakan hari tidak dibayar
-
-
-
     setelah tanggal cutoff dan tidak dipotong pada periode ini.
-
-
-
     Gantungan tersebut akan menjadi potongan pada periode berikutnya
-
-
 
     sesuai perhitungan payroll.
 
-
-
-
-
-
-
 </div>
-
-
-
-
-
-
-
 </body>
-
-
-
 </html>

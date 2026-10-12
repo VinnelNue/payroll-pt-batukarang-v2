@@ -1,8 +1,8 @@
 @extends('layouts.app')
 
-@section('title', 'Rekap Process Payroll Outer Island')
+@section('title', 'Rekap Process Payroll Luar Pulau')
 
-@section('page_title', 'Rekap Hasil Penggajian Outer Island')
+@section('page_title', 'Rekap Hasil Penggajian Luar Pulau')
 
 @section('content')
 
@@ -211,7 +211,7 @@
 
                 <h4 class="fw-bold text-dark m-0">
 
-                    Rekap Penggajian Outer Island
+                    Rekap Penggajian Luar Pulau
 
                 </h4>
 
@@ -263,7 +263,7 @@
 
                 Hasil kalkulasi Gaji Kotor, BPJS, PPh 21 TER,
 
-                dan Take Home Pay karyawan Outer Island periode ini.
+                dan Take Home Pay karyawan Luar Pulau periode ini.
 
             </p>
 
@@ -538,7 +538,7 @@
 
                     <i class="fa-solid fa-clock-rotate-left text-warning me-1"></i>
 
-                    Permohonan Buka Kunci Payroll Outer Island
+                    Permohonan Buka Kunci Payroll Luar Pulau
 
                 </h6>
 

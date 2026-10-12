@@ -4029,6 +4029,14 @@ class PayrollController extends Controller
         $yearStart =
             $year . '-01';
 
+        /*
+         * Hanya payroll yang sudah disahkan/dibayarkan yang menjadi
+         * dasar rekonsiliasi pajak. Draft adalah simulasi dan tidak
+         * boleh ikut menjumlahkan bruto maupun PPh 21 sebelumnya.
+         *
+         * Status yang dianggap final mengikuti alur controller:
+         * Approved = disahkan, Paid = sudah dibayarkan.
+         */
         $previousPayrolls =
             Payroll::query()
                 ->where(
@@ -4045,9 +4053,8 @@ class PayrollController extends Controller
                     '<',
                     $period
                 )
-                ->orderBy(
-                    'period_month'
-                )
+                ->whereIn('status', ['Approved', 'Paid'])
+                ->orderBy('period_month')
                 ->get([
                     'period_month',
                     'gross_salary',
@@ -4113,53 +4120,38 @@ class PayrollController extends Controller
          * Part-year:
          *   start month through the current final month.
          */
-        $startDate =
-            $contract->start_date
-                ? Carbon::parse(
-                    $contract->start_date
-                )
+        /*
+         * Gunakan payroll final paling awal dalam tahun pajak jika ada.
+         * Ini mencegah perpanjangan kontrak di tengah tahun menggeser
+         * awal masa pajak karyawan lama.
+         */
+        $firstFinalPayrollPeriod = $previousPayrolls->first()?->period_month;
+
+        if ($firstFinalPayrollPeriod) {
+            $taxStart = Carbon::createFromFormat(
+                'Y-m',
+                substr((string) $firstFinalPayrollPeriod, 0, 7)
+            )->startOfMonth();
+        } else {
+            $startDate = $contract->start_date
+                ? Carbon::parse($contract->start_date)
                 : $periodDate->copy()->startOfYear();
 
-        $taxStart =
-            $startDate->year < $year
+            $taxStart = $startDate->year < $year
                 ? $periodDate->copy()->startOfYear()
-                : Carbon::create(
-                    $year,
-                    (int) $startDate->format('m'),
-                    1
-                );
+                : Carbon::create($year, (int) $startDate->format('m'), 1);
+        }
 
-        $finalMonthDate =
-            $periodDate->copy()->startOfMonth();
+        $finalMonthDate = $periodDate->copy()->startOfMonth();
 
         if ($taxStart->gt($finalMonthDate)) {
-            $taxStart =
-                $finalMonthDate->copy();
+            $taxStart = $finalMonthDate->copy();
         }
 
         $monthsInPartYear =
-            (
-                (
-                    $taxStart->year
-                    * 12
-                )
-                +
-                $taxStart->month
-            )
-            -
-            (
-                (
-                    $finalMonthDate->year
-                    * 12
-                )
-                +
-                $finalMonthDate->month
-            );
-
-        $monthsInPartYear =
-            abs(
-                $monthsInPartYear
-            ) + 1;
+            (($finalMonthDate->year * 12) + $finalMonthDate->month)
+            - (($taxStart->year * 12) + $taxStart->month)
+            + 1;
 
         $monthsInPartYear =
             max(

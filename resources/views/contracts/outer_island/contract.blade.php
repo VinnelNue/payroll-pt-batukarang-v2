@@ -1183,9 +1183,7 @@ if ($endDate) {
 
                             <i class="fas fa-lock me-1"></i>
 
-                            Contract level
-                            <strong>{{ $levelNumber }}</strong>
-                            berada pada level 14 atau lebih.
+                            Berada di atas level 14.
 
                             Data kategori, level dan financial
                             dibatasi berdasarkan role Anda.
