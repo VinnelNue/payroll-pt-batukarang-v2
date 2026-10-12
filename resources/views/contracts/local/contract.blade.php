@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Setup Kontrak & Gaji - Local')
+@section('title', 'Setup Kontrak & Gaji - Malang')
 
 @section('content')
 
@@ -548,10 +548,321 @@ if ($endDate) {
     color: #6c757d;
 }
 
+
+/* -----------------------------------------------------------------
+   CONTRACT FORM VISUAL REFRESH — scoped to this page only
+------------------------------------------------------------------ */
+.contract-setup-page {
+    --contract-ink: #172033;
+    --contract-muted: #697586;
+    --contract-border: #e3e9f2;
+    --contract-primary: #3157d5;
+    --contract-soft: #f5f7fc;
+    color: var(--contract-ink);
+    padding-bottom: 3rem !important;
+}
+
+.contract-setup-page .contract-setup-header {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    min-height: 156px;
+    border-radius: 22px;
+    color: #fff;
+    background:
+        radial-gradient(circle at 88% 10%, rgba(137, 165, 255, .45), transparent 26%),
+        radial-gradient(circle at 74% 120%, rgba(89, 114, 239, .45), transparent 35%),
+        linear-gradient(125deg, #17264b 0%, #243d82 50%, #3157d5 100%);
+    box-shadow: 0 18px 42px rgba(31, 56, 130, .18);
+}
+
+.contract-setup-page .contract-setup-header::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    width: 230px;
+    height: 230px;
+    right: -65px;
+    bottom: -140px;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 50%;
+    box-shadow: 0 0 0 24px rgba(255,255,255,.035), 0 0 0 48px rgba(255,255,255,.025);
+}
+
+.contract-setup-page .contract-setup-header h3 {
+    color: #fff !important;
+    font-size: clamp(1.25rem, 2.2vw, 1.8rem);
+    letter-spacing: -.035em;
+    line-height: 1.25;
+}
+
+.contract-setup-page .contract-setup-header .text-muted {
+    color: rgba(255,255,255,.76) !important;
+}
+
+.contract-setup-page .contract-setup-header .fw-semibold {
+    display: inline-block;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.contract-setup-page .contract-setup-header .mt-2 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem .7rem;
+    margin-top: 1rem !important;
+}
+
+.contract-setup-page .contract-setup-header .mt-2 .fw-semibold {
+    padding: .4rem .75rem;
+    border: 1px solid rgba(255,255,255,.22);
+    border-radius: 999px;
+    background: rgba(255,255,255,.10);
+    backdrop-filter: blur(6px);
+}
+
+.contract-setup-page .contract-setup-header .btn-outline-secondary {
+    color: #fff;
+    border-color: rgba(255,255,255,.55);
+    background: rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: .65rem 1rem;
+    font-weight: 650;
+}
+
+.contract-setup-page .contract-setup-header .btn-outline-secondary:hover {
+    color: #1e3270;
+    border-color: #fff;
+    background: #fff;
+}
+
+.contract-setup-page .card-custom {
+    overflow: hidden;
+    border: 1px solid var(--contract-border) !important;
+    border-radius: 18px !important;
+    background: #fff;
+    box-shadow: 0 10px 32px rgba(24, 39, 75, .065) !important;
+    transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.contract-setup-page .card-custom:hover {
+    box-shadow: 0 14px 38px rgba(24, 39, 75, .09) !important;
+}
+
+.contract-setup-page .card-custom .card-body {
+    padding: clamp(1.15rem, 2.2vw, 1.75rem) !important;
+}
+
+.contract-setup-page .card-custom h5,
+.contract-setup-page .card-custom h6 {
+    color: var(--contract-ink);
+    letter-spacing: -.02em;
+}
+
+.contract-setup-page .card-custom h5 {
+    font-size: 1.08rem;
+}
+
+.contract-setup-page .card-custom small.text-muted {
+    color: var(--contract-muted) !important;
+}
+
+.contract-setup-page hr {
+    border-color: #e9edf5;
+    opacity: 1;
+}
+
+.contract-setup-page .form-label {
+    margin-bottom: .45rem;
+    color: #344054;
+    font-size: .83rem;
+    font-weight: 650 !important;
+}
+
+.contract-setup-page .form-control,
+.contract-setup-page .form-select,
+.contract-setup-page textarea.form-control {
+    min-height: 43px;
+    border: 1px solid #d9e1ed;
+    border-radius: 10px;
+    background-color: #fff;
+    color: #172033;
+    font-size: .92rem;
+    box-shadow: none;
+    transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.contract-setup-page .form-control:focus,
+.contract-setup-page .form-select:focus,
+.contract-setup-page textarea.form-control:focus {
+    border-color: #7290ff;
+    box-shadow: 0 0 0 .22rem rgba(49, 87, 213, .12);
+}
+
+.contract-setup-page .form-control[readonly],
+.contract-setup-page .form-control:disabled {
+    background-color: #f4f6fb;
+    color: #667085;
+}
+
+.contract-setup-page .input-group-text {
+    min-width: 45px;
+    justify-content: center;
+    border-color: #d9e1ed;
+    background: #f2f5fb;
+    color: #475467;
+    font-weight: 700;
+}
+
+.contract-setup-page .input-group > .input-group-text:first-child {
+    border-radius: 10px 0 0 10px;
+}
+
+.contract-setup-page .input-group > .form-control:last-child {
+    border-radius: 0 10px 10px 0;
+}
+
+.contract-setup-page .currency-input,
+.contract-setup-page #allowance,
+.contract-setup-page .new-currency {
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+}
+
+.contract-setup-page #basic_salary,
+.contract-setup-page #new_basic_salary {
+    color: #163fa8;
+    font-weight: 750;
+}
+
+.contract-setup-page .rhuekamp-toggle-wrapper {
+    flex-wrap: wrap;
+    padding: .75rem;
+    border: 1px solid var(--contract-border);
+    border-radius: 12px;
+    background: #f8faff;
+}
+
+.contract-setup-page .rhuekamp-toggle {
+    min-width: 105px;
+    justify-content: center;
+    border-radius: 9px;
+    box-shadow: none;
+}
+
+.contract-setup-page .rhuekamp-toggle-description {
+    flex: 1 1 180px;
+    line-height: 1.45;
+}
+
+.contract-setup-page .alert {
+    border-radius: 13px;
+    border-width: 1px;
+    padding: .9rem 1rem;
+}
+
+.contract-setup-page .badge {
+    border-radius: 8px;
+    font-weight: 700;
+    letter-spacing: .02em;
+}
+
+.contract-setup-page .btn {
+    border-radius: 10px;
+    font-weight: 650;
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.contract-setup-page .btn:hover {
+    transform: translateY(-1px);
+}
+
+.contract-setup-page .btn-primary {
+    border-color: #3157d5;
+    background: linear-gradient(135deg, #3157d5, #2445ba);
+    box-shadow: 0 5px 13px rgba(49, 87, 213, .16);
+}
+
+.contract-setup-page .btn-success {
+    box-shadow: 0 5px 13px rgba(25, 135, 84, .13);
+}
+
+.contract-setup-page .table-responsive {
+    overflow-x: auto;
+    border: 1px solid var(--contract-border);
+    border-radius: 14px;
+    background: #fff;
+}
+
+.contract-setup-page .table {
+    margin-bottom: 0;
+    color: #344054;
+}
+
+.contract-setup-page .table thead th {
+    padding: .85rem 1rem;
+    border-bottom: 1px solid var(--contract-border);
+    background: #f5f7fc;
+    color: #667085;
+    font-size: .73rem;
+    font-weight: 750;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.contract-setup-page .table tbody td {
+    padding: .9rem 1rem;
+    border-color: #edf0f6;
+    font-size: .86rem;
+    vertical-align: middle;
+}
+
+.contract-setup-page .table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.contract-setup-page .table-hover tbody tr:hover {
+    background: #f8faff;
+}
+
+.contract-setup-page .text-muted {
+    color: var(--contract-muted) !important;
+}
+
+.contract-setup-page .card-custom .d-flex.justify-content-end.gap-2 {
+    padding-top: 1rem;
+    border-top: 1px solid #edf0f6;
+}
+
+@media (max-width: 767.98px) {
+    .contract-setup-page .contract-setup-header {
+        padding: 1.25rem !important;
+        border-radius: 17px;
+    }
+
+    .contract-setup-page .contract-setup-header > div:last-child {
+        width: 100%;
+    }
+
+    .contract-setup-page .contract-setup-header > div:last-child .btn {
+        width: 100%;
+    }
+
+    .contract-setup-page .card-custom .card-body {
+        padding: 1.1rem !important;
+    }
+
+    .contract-setup-page .rhuekamp-toggle-wrapper {
+        align-items: flex-start;
+    }
+}
+
 </style>
 
 
-<div class="container-fluid py-4">
+<div class="container-fluid py-4 contract-setup-page">
 
 
 {{-- ==============================================================
@@ -627,7 +938,7 @@ if ($endDate) {
      HEADER
 ============================================================== --}}
 
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+<div class="contract-setup-header d-flex flex-wrap justify-content-between align-items-center p-4 p-lg-5 mb-4">
 
     <div>
 
@@ -636,7 +947,7 @@ if ($endDate) {
         </h3>
 
         <div class="text-muted">
-            Local
+            Malang
         </div>
 
         <div class="mt-2">

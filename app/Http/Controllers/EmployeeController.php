@@ -225,7 +225,7 @@ class EmployeeController extends Controller
             'birth_place'         => 'required|string|max:100',
             'birth_date'          => 'required|date',
             'religion'            => 'nullable|string',
-            'marital_status'      => ['required', 'regex:/^(TK|K)(0[1-4]?|0)$/'],
+            'marital_status' => 'required|in:single,married,divorced',
             'phone_number'        => 'nullable|string|max:20',
             'email'               => 'nullable|email|max:255',
             'address_ktp'         => 'required|string',
@@ -236,8 +236,6 @@ class EmployeeController extends Controller
             'bank_account_holder' => 'nullable|string|max:255',
             'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5000',
         ]);
-
-        $validated['marital_status'] = $this->normalizePtkp($validated['marital_status']);
 
         $validated['uuid'] = (string) Str::uuid();
 
@@ -268,7 +266,7 @@ class EmployeeController extends Controller
             'birth_place'         => 'required|string|max:100',
             'birth_date'          => 'required|date',
             'religion'            => 'nullable|string',
-            'marital_status'      => ['required', 'regex:/^(TK|K)(0[1-4]?|0)$/'],
+            'marital_status' => 'required|in:single,married,divorced',
             'phone_number'        => 'nullable|string|max:20',
             'email'               => 'nullable|email|max:255',
             'address_ktp'         => 'required|string',
@@ -280,7 +278,6 @@ class EmployeeController extends Controller
             'ktp_file'            => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5000',
         ]);
 
-        $validated['marital_status'] = $this->normalizePtkp($validated['marital_status']);
 
         if ($request->hasFile('ktp_file')) {
             if ($employee->ktp_path && Storage::disk('public')->exists($employee->ktp_path)) {
