@@ -279,7 +279,8 @@ class DashboardController extends Controller
                 return [$normalized['key'] => $normalized];
             });
 
-        $employeeMap = $localEmployeeMap->merge($outerEmployeeMap);
+        $employeeMap = collect($localEmployeeMap->all())
+        ->merge($outerEmployeeMap->all());
 
         $activeEmployees = $employeeMap
             ->filter(fn (array $employee) => $employee['active'])

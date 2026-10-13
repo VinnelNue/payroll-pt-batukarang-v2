@@ -202,6 +202,37 @@ $pkwtSequence =
     ?? $currentContract?->pkwt_sequence
     ?? '';
 
+$freelanceSequence =
+    $currentHistory?->freelance_sequence
+    ?? $currentContract?->freelance_sequence
+    ?? '';
+
+$usedPkwtSequences = $histories
+    ->where('employment_type', 'PKWT')
+    ->pluck('pkwt_sequence')
+    ->filter(fn ($sequence) => $sequence !== null && $sequence !== '')
+    ->map(fn ($sequence) => (int) $sequence)
+    ->all();
+
+$availablePkwtSequences = collect(range(1, 7))
+    ->reject(fn ($sequence) => in_array($sequence, $usedPkwtSequences, true))
+    ->values();
+
+$nextPkwtSequence = $availablePkwtSequences->first();
+
+$usedFreelanceSequences = $histories
+    ->where('employment_type', 'Freelance')
+    ->pluck('freelance_sequence')
+    ->filter(fn ($sequence) => $sequence !== null && $sequence !== '')
+    ->map(fn ($sequence) => (int) $sequence)
+    ->all();
+
+$availableFreelanceSequences = collect(range(1, 6))
+    ->reject(fn ($sequence) => in_array($sequence, $usedFreelanceSequences, true))
+    ->values();
+
+$nextFreelanceSequence = $availableFreelanceSequences->first();
+
 $jobTitle =
     $currentHistory?->job_title
     ?? $currentContract?->job_title
@@ -384,23 +415,6 @@ $addPeriodUrl = route(
     'contracts.outer_island.period.store',
     $employee->uuid
 );
-
-/*
-|--------------------------------------------------------------------------
-| NEXT PKWT
-|--------------------------------------------------------------------------
-*/
-
-$nextPkwtSequence =
-    ((int) ($currentHistory?->pkwt_sequence ?? 0)) + 1;
-
-if ($nextPkwtSequence > 4) {
-    $nextPkwtSequence = 4;
-}
-
-if ($nextPkwtSequence < 1) {
-    $nextPkwtSequence = 1;
-}
 
 /*
 |--------------------------------------------------------------------------
@@ -1182,6 +1196,7 @@ if ($endDate) {
 
                                 @foreach([
                                     'PKWT'       => 'PKWT',
+                                    'Freelance'  => 'Freelance',
                                     'PKWTT'      => 'PKWTT',
                                     'Probation'  => 'Probation',
                                     'Internship' => 'Internship',
@@ -1248,25 +1263,50 @@ if ($endDate) {
                                 Pilih PKWT
                             </option>
 
-                            @for($i = 1; $i <= 4; $i++)
-
+                            @for($i = 1; $i <= 7; $i++)
+                                @php
+                                    $pkwtUsedByOtherHistory = in_array($i, $usedPkwtSequences, true)
+                                        && (string) $i !== (string) $pkwtSequence;
+                                @endphp
                                 <option
                                     value="{{ $i }}"
-                                    @selected(
-                                        (string) old(
-                                            'pkwt_sequence',
-                                            $pkwtSequence
-                                        ) === (string) $i
-                                    )>
-
-                                    PKWT {{ $i }}
-
+                                    @selected((string) old('pkwt_sequence', $pkwtSequence) === (string) $i)
+                                    @disabled($pkwtUsedByOtherHistory)>
+                                    PKWT {{ $i }}{{ $pkwtUsedByOtherHistory ? ' (sudah dipakai)' : '' }}
                                 </option>
-
                             @endfor
 
                         </select>
 
+                    </div>
+
+                    {{-- FREELANCE SEQUENCE --}}
+                    <div
+                        class="mb-3"
+                        id="freelanceSequenceBox"
+                        style="{{ $employmentType === 'Freelance' ? '' : 'display:none;' }}">
+
+                        <label class="form-label fw-semibold">Freelance Ke</label>
+
+                        <select
+                            name="freelance_sequence"
+                            id="freelance_sequence"
+                            class="form-select"
+                            {{ $employmentType === 'Freelance' ? 'required' : 'disabled' }}>
+                            <option value="">Pilih Periode Freelance</option>
+                            @for($i = 1; $i <= 6; $i++)
+                                @php
+                                    $freelanceUsedByOtherHistory = in_array($i, $usedFreelanceSequences, true)
+                                        && (string) $i !== (string) $freelanceSequence;
+                                @endphp
+                                <option
+                                    value="{{ $i }}"
+                                    @selected((string) old('freelance_sequence', $freelanceSequence) === (string) $i)
+                                    @disabled($freelanceUsedByOtherHistory)>
+                                    Freelance {{ $i }}{{ $freelanceUsedByOtherHistory ? ' (sudah dipakai)' : '' }}
+                                </option>
+                            @endfor
+                        </select>
                     </div>
 
                     {{-- DATE --}}
@@ -1919,7 +1959,10 @@ if ($endDate) {
 
                     {{-- PKWT --}}
 
-                    <div class="col-md-4">
+                    <div
+                        class="col-md-4"
+                        id="newPkwtSequenceBox"
+                        style="{{ $employmentType === 'PKWT' ? '' : 'display:none;' }}">
 
                         <label class="form-label fw-semibold">
                             PKWT Ke
@@ -1930,17 +1973,13 @@ if ($endDate) {
                             id="new_pkwt_sequence"
                             class="form-select">
 
-                            @for($i = 1; $i <= 4; $i++)
-
-                                <option
-                                    value="{{ $i }}"
-                                    @selected($i === $nextPkwtSequence)>
-
+                            @forelse($availablePkwtSequences as $i)
+                                <option value="{{ $i }}" @selected($i === $nextPkwtSequence)>
                                     PKWT {{ $i }}
-
                                 </option>
-
-                            @endfor
+                            @empty
+                                <option value="" selected disabled>Semua periode PKWT 1–7 sudah tercatat</option>
+                            @endforelse
 
                         </select>
 
@@ -1961,6 +2000,7 @@ if ($endDate) {
 
                             @foreach([
                                 'PKWT',
+                                'Freelance',
                                 'PKWTT',
                                 'Probation',
                                 'Internship',
@@ -1978,6 +2018,29 @@ if ($endDate) {
 
                         </select>
 
+                    </div>
+
+                    {{-- FREELANCE SEQUENCE --}}
+                    <div
+                        class="col-md-4"
+                        id="newFreelanceSequenceBox"
+                        style="{{ $employmentType === 'Freelance' ? '' : 'display:none;' }}">
+
+                        <label class="form-label fw-semibold">Freelance Ke</label>
+                        <select
+                            name="freelance_sequence"
+                            id="new_freelance_sequence"
+                            class="form-select"
+                            disabled>
+                            <option value="">Pilih Periode Freelance</option>
+                            @forelse($availableFreelanceSequences as $i)
+                                <option value="{{ $i }}" @selected($i === $nextFreelanceSequence)>
+                                    Freelance {{ $i }}
+                                </option>
+                            @empty
+                                <option value="" selected disabled>Semua periode Freelance 1–6 sudah tercatat</option>
+                            @endforelse
+                        </select>
                     </div>
 
                     {{-- JOB --}}
@@ -2614,8 +2677,11 @@ if ($endDate) {
 
                                     @if($item->employment_type === 'PKWT')
 
-                                        PKWT
-                                        {{ $item->pkwt_sequence ?? '-' }}
+                                        PKWT {{ $item->pkwt_sequence ?? '-' }}
+
+                                    @elseif($item->employment_type === 'Freelance')
+
+                                        Freelance {{ $item->freelance_sequence ?? '-' }}
 
                                     @else
 
@@ -3156,6 +3222,32 @@ document.addEventListener('DOMContentLoaded', function () {
             'pkwtSequenceBox'
         );
 
+    const pkwtSequenceSelect =
+        pkwtSequenceBox?.querySelector(
+            '[name="pkwt_sequence"]'
+        );
+
+    const freelanceSequenceBox = document.getElementById('freelanceSequenceBox');
+    const freelanceSequenceSelect = document.getElementById('freelance_sequence');
+
+    const newEmploymentType =
+        document.getElementById(
+            'new_employment_type'
+        );
+
+    const newPkwtSequenceBox =
+        document.getElementById(
+            'newPkwtSequenceBox'
+        );
+
+    const newPkwtSequenceSelect =
+        document.getElementById(
+            'new_pkwt_sequence'
+        );
+
+    const newFreelanceSequenceBox = document.getElementById('newFreelanceSequenceBox');
+    const newFreelanceSequenceSelect = document.getElementById('new_freelance_sequence');
+
     const terminationBox =
         document.getElementById(
             'terminationBox'
@@ -3167,13 +3259,28 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        const isCurrentPkwt = employmentType.value === 'PKWT';
+
         if (pkwtSequenceBox) {
+            pkwtSequenceBox.style.display = isCurrentPkwt ? '' : 'none';
+        }
 
-            pkwtSequenceBox.style.display =
-                employmentType.value === 'PKWT'
-                    ? ''
-                    : 'none';
+        if (pkwtSequenceSelect) {
+            pkwtSequenceSelect.disabled = !isCurrentPkwt;
+            pkwtSequenceSelect.required = isCurrentPkwt;
+            if (!isCurrentPkwt) {
+                pkwtSequenceSelect.value = '';
+            }
+        }
 
+        const isCurrentFreelance = employmentType.value === 'Freelance';
+        if (freelanceSequenceBox) {
+            freelanceSequenceBox.style.display = isCurrentFreelance ? '' : 'none';
+        }
+        if (freelanceSequenceSelect) {
+            freelanceSequenceSelect.disabled = !isCurrentFreelance;
+            freelanceSequenceSelect.required = isCurrentFreelance;
+            if (!isCurrentFreelance) freelanceSequenceSelect.value = '';
         }
 
         if (terminationBox) {
@@ -3202,6 +3309,43 @@ document.addEventListener('DOMContentLoaded', function () {
     );
 
     toggleCurrentEmployment();
+
+    function toggleNewPeriodEmployment() {
+        if (!newEmploymentType) {
+            return;
+        }
+
+        const isNewPkwt = newEmploymentType.value === 'PKWT';
+
+        if (newPkwtSequenceBox) {
+            newPkwtSequenceBox.style.display = isNewPkwt ? '' : 'none';
+        }
+
+        if (newPkwtSequenceSelect) {
+            newPkwtSequenceSelect.disabled = !isNewPkwt;
+            newPkwtSequenceSelect.required = isNewPkwt;
+            if (!isNewPkwt) {
+                newPkwtSequenceSelect.value = '';
+            }
+        }
+
+        const isNewFreelance = newEmploymentType.value === 'Freelance';
+        if (newFreelanceSequenceBox) {
+            newFreelanceSequenceBox.style.display = isNewFreelance ? '' : 'none';
+        }
+        if (newFreelanceSequenceSelect) {
+            newFreelanceSequenceSelect.disabled = !isNewFreelance;
+            newFreelanceSequenceSelect.required = isNewFreelance;
+            if (!isNewFreelance) newFreelanceSequenceSelect.value = '';
+        }
+    }
+
+    newEmploymentType?.addEventListener(
+        'change',
+        toggleNewPeriodEmployment
+    );
+
+    toggleNewPeriodEmployment();
 
     /*
     |--------------------------------------------------------------------------

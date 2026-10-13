@@ -1525,6 +1525,20 @@ Route::middleware(['auth'])->group(function () {
 
     ]);
 
+    // Tambahkan ke routes/web.php.
+    // Route POST boleh memakai path yang sama dengan route GET lama karena HTTP method-nya berbeda.
+    // Nama route baru sengaja berbeda agar tidak bentrok dengan route GET lama.
+    Route::post(
+        '/payrolls/outer-island/{uuid}/send-email',
+        [\App\Http\Controllers\PayrollOuterIslandController::class, 'sendEmail']
+    )->middleware('auth')->name('payrolls.outer_island.send-email.post');
+
+    // Tambahkan sekali di routes/web.php, bersama route payroll Outer Island lainnya.
+    Route::post(
+        '/payrolls/outer-island/send-email-bulk',
+        [\App\Http\Controllers\PayrollOuterIslandController::class, 'sendEmailBulk']
+    )->middleware('auth')->name('payrolls.outer_island.send-email-bulk');
+
 
 
 });

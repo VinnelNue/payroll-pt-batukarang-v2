@@ -1,6 +1,10 @@
 <?php
 
+
+
 namespace App\Http\Controllers;
+
+
 
 use App\Models\EmployeeOuterIsland;
 
@@ -30,6 +34,8 @@ class ContractOuterIslandController extends Controller
 
     */
 
+
+
     private const FINANCE_ROLES = [
 
         'manager_keuangan',
@@ -37,6 +43,8 @@ class ContractOuterIslandController extends Controller
         'super_admin',
 
     ];
+
+
 
     private const HEAD_HRD_ROLES = [
 
@@ -46,9 +54,15 @@ class ContractOuterIslandController extends Controller
 
     ];
 
+
+
     private const KEUANGAN_ROLE = 'keuangan';
 
+
+
     private const HRD_ROLE = 'hrd';
+
+
 
     /*
 
@@ -78,6 +92,8 @@ class ContractOuterIslandController extends Controller
 
     */
 
+
+
     public function index(Request $request)
 
     {
@@ -88,9 +104,12 @@ class ContractOuterIslandController extends Controller
 
         );
 
+
+
         $employees = EmployeeOuterIsland::with([
 
             'contractMaster.currentHistory',
+            'contractMaster.histories',
 
         ])
 
@@ -100,7 +119,11 @@ class ContractOuterIslandController extends Controller
 
                 function ($query) use ($search) {
 
+
+
                     $query->where(function ($q) use ($search) {
+
+
 
                         $q->where(
 
@@ -112,6 +135,8 @@ class ContractOuterIslandController extends Controller
 
                         )
 
+
+
                         ->orWhere(
 
                             'nik_ktp_outer',
@@ -122,11 +147,15 @@ class ContractOuterIslandController extends Controller
 
                         )
 
+
+
                         ->orWhereHas(
 
                             'contractMaster.currentHistory',
 
                             function ($history) use ($search) {
+
+
 
                                 $history
 
@@ -140,6 +169,8 @@ class ContractOuterIslandController extends Controller
 
                                     )
 
+
+
                                     ->orWhere(
 
                                         'department',
@@ -149,6 +180,8 @@ class ContractOuterIslandController extends Controller
                                         "%{$search}%"
 
                                     )
+
+
 
                                     ->orWhere(
 
@@ -180,6 +213,8 @@ class ContractOuterIslandController extends Controller
 
             ->withQueryString();
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -190,9 +225,13 @@ class ContractOuterIslandController extends Controller
 
         */
 
+
+
         $employees->getCollection()->transform(
 
             function ($employee) {
+
+
 
                 $history =
 
@@ -202,21 +241,31 @@ class ContractOuterIslandController extends Controller
 
                         ?->currentHistory;
 
+
+
                 $employee->current_contract_history =
 
                     $history;
+
+
 
                 $employee->current_contract_level =
 
                     $history?->level;
 
+
+
                 $employee->has_contract_master =
 
                     $employee->contractMaster !== null;
 
+
+
                 $employee->has_current_contract =
 
                     $history !== null;
+
+
 
                 $employee->can_view_sensitive_data =
 
@@ -226,11 +275,15 @@ class ContractOuterIslandController extends Controller
 
                     );
 
+
+
                 return $employee;
 
             }
 
         );
+
+
 
         return view(
 
@@ -248,6 +301,8 @@ class ContractOuterIslandController extends Controller
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -257,6 +312,8 @@ class ContractOuterIslandController extends Controller
     |--------------------------------------------------------------------------
 
     */
+
+
 
     public function edit(
 
@@ -272,17 +329,25 @@ class ContractOuterIslandController extends Controller
 
         ]);
 
+
+
         $contract =
 
             $employee->contractMaster;
+
+
 
         $history =
 
             $contract?->currentHistory;
 
+
+
         $histories =
 
             $contract?->histories ?? collect();
+
+
 
         /*
 
@@ -293,6 +358,8 @@ class ContractOuterIslandController extends Controller
         |--------------------------------------------------------------------------
 
         */
+
+
 
         $histories =
 
@@ -306,6 +373,8 @@ class ContractOuterIslandController extends Controller
 
                 ->values();
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -316,6 +385,8 @@ class ContractOuterIslandController extends Controller
 
         */
 
+
+
         $canViewSensitiveData =
 
             $this->canViewSensitiveData(
@@ -324,6 +395,8 @@ class ContractOuterIslandController extends Controller
 
             );
 
+
+
         $canEditCurrent =
 
             $this->canEditCurrentContract(
@@ -331,6 +404,8 @@ class ContractOuterIslandController extends Controller
                 $history
 
             );
+
+
 
         /*
 
@@ -342,6 +417,8 @@ class ContractOuterIslandController extends Controller
 
         */
 
+
+
         $nextPkwtSequence =
 
             $contract
@@ -349,6 +426,8 @@ class ContractOuterIslandController extends Controller
                 ? $this->getNextPkwtSequence($contract)
 
                 : 1;
+
+
 
         /*
 
@@ -360,9 +439,13 @@ class ContractOuterIslandController extends Controller
 
         */
 
+
+
         $contractLevel =
 
             $history?->level;
+
+
 
         $levelNumber =
 
@@ -372,11 +455,15 @@ class ContractOuterIslandController extends Controller
 
                 : null;
 
+
+
         $isHighLevel =
 
             $levelNumber !== null &&
 
             $levelNumber >= 14;
+
+
 
         /*
 
@@ -388,9 +475,13 @@ class ContractOuterIslandController extends Controller
 
         */
 
+
+
         $userRole =
 
             auth()->user()?->role;
+
+
 
         $isManagerKeuangan =
 
@@ -400,6 +491,8 @@ class ContractOuterIslandController extends Controller
 
             );
 
+
+
         $isHeadHrd =
 
             $this->isHeadHrdRole(
@@ -408,13 +501,19 @@ class ContractOuterIslandController extends Controller
 
             );
 
+
+
         $isKeuangan =
 
             $userRole === self::KEUANGAN_ROLE;
 
+
+
         $isHrd =
 
             $userRole === self::HRD_ROLE;
+
+
 
         /*
 
@@ -425,6 +524,8 @@ class ContractOuterIslandController extends Controller
         |--------------------------------------------------------------------------
 
         */
+
+
 
         $canSeeLevelCategory =
 
@@ -462,6 +563,8 @@ class ContractOuterIslandController extends Controller
 
             );
 
+
+
         $maskLevelCategory =
 
             !$isManagerKeuangan
@@ -486,6 +589,8 @@ class ContractOuterIslandController extends Controller
 
             $isHighLevel;
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -496,13 +601,19 @@ class ContractOuterIslandController extends Controller
 
         */
 
+
+
         $canSeeSalary =
 
             $canViewSensitiveData;
 
+
+
         $maskFinancial =
 
             !$canSeeSalary;
+
+
 
         /*
 
@@ -514,13 +625,19 @@ class ContractOuterIslandController extends Controller
 
         */
 
+
+
         $hasContractMaster =
 
             $contract !== null;
 
+
+
         $hasCurrentHistory =
 
             $history !== null;
+
+
 
         return view(
 
@@ -576,6 +693,8 @@ class ContractOuterIslandController extends Controller
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -616,13 +735,19 @@ public function update(
 
     */
 
+
+
     $employee->load([
 
         'contractMaster.currentHistory',
 
     ]);
 
+
+
     $contract = $employee->contractMaster;
+
+
 
     if (!$contract) {
 
@@ -640,7 +765,11 @@ public function update(
 
     }
 
+
+
     $history = $contract->currentHistory;
+
+
 
     if (!$history) {
 
@@ -658,6 +787,8 @@ public function update(
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -668,19 +799,31 @@ public function update(
 
     */
 
+
+
     $role = auth()->user()?->role;
+
+
 
     $isFinance = $this->isFinanceRole($role);
 
+
+
     $isHeadHrd = $this->isHeadHrdRole($role);
+
+
 
     $isKeuangan =
 
         $role === self::KEUANGAN_ROLE;
 
+
+
     $isHrd =
 
         $role === self::HRD_ROLE;
+
+
 
     /*
 
@@ -698,6 +841,8 @@ public function update(
 
     */
 
+
+
     abort_unless(
 
         $isFinance ||
@@ -711,6 +856,8 @@ public function update(
         403
 
     );
+
+
 
     /*
 
@@ -728,6 +875,8 @@ public function update(
 
     */
 
+
+
     abort_unless(
 
         (int) $contract->current_contract_history_id ===
@@ -737,6 +886,8 @@ public function update(
         403
 
     );
+
+
 
     /*
 
@@ -748,6 +899,8 @@ public function update(
 
     */
 
+
+
     $oldLevelNumber =
 
         is_numeric($history->level)
@@ -756,11 +909,15 @@ public function update(
 
             : null;
 
+
+
     $oldLevelSensitive =
 
         $oldLevelNumber === null ||
 
         $oldLevelNumber <= 13;
+
+
 
     /*
 
@@ -798,6 +955,8 @@ public function update(
 
     */
 
+
+
     $canEditFinancial =
 
         $isFinance ||
@@ -818,9 +977,6 @@ public function update(
 
         );
 
-    // HRD hanya boleh mengubah PTKP untuk level 13 ke bawah.
-    $canEditPtkp = $canEditFinancial || ($isHrd && $oldLevelSensitive);
-
     // Snapshot input finansial sebelum normalisasi/proteksi akses. Ini tidak
     // mengizinkan akses tambahan; hanya untuk menjelaskan bila perubahan ditolak.
     $financialInputBeforeNormalization = [];
@@ -840,6 +996,9 @@ public function update(
         }
     }
 
+
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -856,7 +1015,11 @@ public function update(
 
     */
 
+
+
     $request->merge([
+
+
 
         'basic_salary' =>
 
@@ -866,6 +1029,8 @@ public function update(
 
             ),
 
+
+
         'allowance' =>
 
             $this->cleanRupiah(
@@ -873,6 +1038,8 @@ public function update(
                 $request->input('allowance')
 
             ),
+
+
 
         'manual_bpjs_tk_employee' =>
 
@@ -886,6 +1053,8 @@ public function update(
 
             ),
 
+
+
         'manual_bpjs_ks_employee' =>
 
             $this->cleanRupiah(
@@ -897,6 +1066,8 @@ public function update(
                 )
 
             ),
+
+
 
         'manual_bpjs_company' =>
 
@@ -911,6 +1082,8 @@ public function update(
             ),
 
     ]);
+
+
 
     /*
 
@@ -930,7 +1103,11 @@ public function update(
 
     */
 
+
+
     $validated = $request->validate([
+
+
 
         'job_title' => [
 
@@ -942,6 +1119,8 @@ public function update(
 
         ],
 
+
+
         'department' => [
 
             'nullable',
@@ -951,6 +1130,8 @@ public function update(
             'max:255',
 
         ],
+
+
 
         'placement_area' => [
 
@@ -962,6 +1143,8 @@ public function update(
 
         ],
 
+
+
         'fingerprint_pin' => [
 
             'nullable',
@@ -971,6 +1154,8 @@ public function update(
             'max:255',
 
         ],
+
+
 
         'nik_fingerprint' => [
 
@@ -982,6 +1167,8 @@ public function update(
 
         ],
 
+
+
         'category' => [
 
             'nullable',
@@ -991,6 +1178,8 @@ public function update(
             'max:10',
 
         ],
+
+
 
         'level' => [
 
@@ -1004,6 +1193,8 @@ public function update(
 
         ],
 
+
+
         'basic_salary' => [
 
             'required',
@@ -1015,6 +1206,8 @@ public function update(
             'max:999999999999.99',
 
         ],
+
+
 
         'allowance' => [
 
@@ -1028,6 +1221,8 @@ public function update(
 
         ],
 
+
+
         'is_bpjstk_active' => [
 
             'nullable',
@@ -1036,6 +1231,8 @@ public function update(
 
         ],
 
+
+
         'is_bpjs_health_active' => [
 
             'nullable',
@@ -1043,6 +1240,8 @@ public function update(
             'boolean',
 
         ],
+
+
 
         'ptkp_status' => [
 
@@ -1054,6 +1253,8 @@ public function update(
 
         ],
 
+
+
         'use_manual_bpjs' => [
 
             'nullable',
@@ -1061,6 +1262,8 @@ public function update(
             'boolean',
 
         ],
+
+
 
         'manual_bpjs_tk_employee' => [
 
@@ -1074,6 +1277,8 @@ public function update(
 
         ],
 
+
+
         'manual_bpjs_ks_employee' => [
 
             'nullable',
@@ -1085,6 +1290,8 @@ public function update(
             'max:999999999999.99',
 
         ],
+
+
 
         'manual_bpjs_company' => [
 
@@ -1098,15 +1305,35 @@ public function update(
 
         ],
 
+
+
         'employment_type' => [
 
             'required',
 
             'string',
 
-            'in:PKWT,PKWTT,Probation,Internship,PHK,Resign,Pensiun,End_Contract',
+            'in:PKWT,Freelance,PKWTT,Probation,Internship,PHK,Resign,Pensiun,End_Contract',
 
         ],
+
+        'pkwt_sequence' => [
+            'required_if:employment_type,PKWT',
+            'nullable',
+            'integer',
+            'min:1',
+            'max:7',
+        ],
+
+        'freelance_sequence' => [
+            'required_if:employment_type,Freelance',
+            'nullable',
+            'integer',
+            'min:1',
+            'max:6',
+        ],
+
+
 
         'start_date' => [
 
@@ -1115,6 +1342,8 @@ public function update(
             'date',
 
         ],
+
+
 
         'end_date' => [
 
@@ -1126,6 +1355,8 @@ public function update(
 
         ],
 
+
+
         'exit_date' => [
 
             'nullable',
@@ -1133,6 +1364,8 @@ public function update(
             'date',
 
         ],
+
+
 
         'exit_reason' => [
 
@@ -1146,6 +1379,8 @@ public function update(
 
     ]);
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -1156,17 +1391,25 @@ public function update(
 
     */
 
+
+
     $validated['is_bpjstk_active'] =
 
         $request->has('is_bpjstk_active');
+
+
 
     $validated['is_bpjs_health_active'] =
 
         $request->has('is_bpjs_health_active');
 
+
+
     $validated['use_manual_bpjs'] =
 
         $request->has('use_manual_bpjs');
+
+
 
     /*
 
@@ -1178,9 +1421,13 @@ public function update(
 
     */
 
+
+
     $newLevel =
 
         $validated['level'] ?? null;
+
+
 
     $newLevelNumber =
 
@@ -1190,11 +1437,15 @@ public function update(
 
             : null;
 
+
+
     $newLevelHigh =
 
         $newLevelNumber !== null &&
 
         $newLevelNumber >= 14;
+
+
 
     /*
 
@@ -1232,6 +1483,8 @@ public function update(
 
     */
 
+
+
     if (
 
         !$isFinance &&
@@ -1246,11 +1499,15 @@ public function update(
 
             $history->category;
 
+
+
         $validated['level'] =
 
             $history->level;
 
     }
+
+
 
     elseif (
 
@@ -1264,11 +1521,15 @@ public function update(
 
             $history->category;
 
+
+
         $validated['level'] =
 
             $history->level;
 
     }
+
+
 
     /*
 
@@ -1280,49 +1541,67 @@ public function update(
 
     */
 
+
+
     if (!$canEditFinancial) {
+
+
 
         $validated['basic_salary'] =
 
             $history->basic_salary;
 
+
+
         $validated['allowance'] =
 
             $history->allowance;
 
-        if (!$canEditPtkp) {
 
-            $validated['ptkp_status'] =
 
-                $history->ptkp_status;
+        $validated['ptkp_status'] =
 
-        }
+            $history->ptkp_status;
+
+
 
         $validated['is_bpjstk_active'] =
 
             $history->is_bpjstk_active;
 
+
+
         $validated['is_bpjs_health_active'] =
 
             $history->is_bpjs_health_active;
+
+
 
         $validated['use_manual_bpjs'] =
 
             $history->use_manual_bpjs;
 
+
+
         $validated['manual_bpjs_tk_employee'] =
 
             $history->manual_bpjs_tk_employee;
 
+
+
         $validated['manual_bpjs_ks_employee'] =
 
             $history->manual_bpjs_ks_employee;
+
+
 
         $validated['manual_bpjs_company'] =
 
             $history->manual_bpjs_company;
 
     }
+
+
 
     /*
 
@@ -1350,6 +1629,8 @@ public function update(
 
     */
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -1370,6 +1651,8 @@ public function update(
 
     */
 
+
+
     if (
 
         $canEditFinancial &&
@@ -1377,6 +1660,8 @@ public function update(
         !$newLevelHigh
 
     ) {
+
+
 
         $validated['allowance'] =
 
@@ -1390,6 +1675,8 @@ public function update(
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -1400,82 +1687,67 @@ public function update(
 
     */
 
+
+
     if (!$validated['use_manual_bpjs']) {
+
+
 
         $validated['manual_bpjs_tk_employee'] = 0;
 
+
+
         $validated['manual_bpjs_ks_employee'] = 0;
+
+
 
         $validated['manual_bpjs_company'] = 0;
 
     }
 
+
+
     /*
-
     |--------------------------------------------------------------------------
-
-    | PKWT SEQUENCE
-
+    | PKWT / FREELANCE SEQUENCE
     |--------------------------------------------------------------------------
-
     */
 
-    if (
+    if ($validated['employment_type'] === 'PKWT') {
+        $validated['pkwt_sequence'] = (int) ($validated['pkwt_sequence'] ?? 0);
+        $validated['freelance_sequence'] = null;
 
-        strtoupper(
+        $duplicatePkwt = ContractHistoryOuterIsland::query()
+            ->where('contract_outer_island_id', $contract->id_contract_outer_island)
+            ->where('employment_type', 'PKWT')
+            ->where('pkwt_sequence', $validated['pkwt_sequence'])
+            ->where('id_contract_history_outer_island', '!=', $history->id_contract_history_outer_island)
+            ->exists();
 
-            $validated['employment_type']
-
-        ) === 'PKWT'
-
-    ) {
-
-        if (
-
-            strtoupper(
-
-                $history->employment_type
-
-            ) === 'PKWT'
-
-            &&
-
-            $history->pkwt_sequence
-
-        ) {
-
-            /*
-
-            | Tetap PKWT -> sequence tetap.
-
-            */
-
-            $validated['pkwt_sequence'] =
-
-                $history->pkwt_sequence;
-
-        } else {
-
-            /*
-
-            | Masuk PKWT -> sequence berikutnya.
-
-            */
-
-            $validated['pkwt_sequence'] =
-
-                $this->getNextPkwtSequence(
-
-                    $contract
-
-                );
-
+        if ($duplicatePkwt) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'pkwt_sequence' => 'Nomor PKWT tersebut sudah dipakai pada riwayat lain. Pilih nomor periode yang belum digunakan.',
+            ]);
         }
-
-    } else {
-
+    } elseif ($validated['employment_type'] === 'Freelance') {
         $validated['pkwt_sequence'] = null;
+        $validated['freelance_sequence'] = (int) $validated['freelance_sequence'];
 
+        $duplicateFreelance = ContractHistoryOuterIsland::query()
+            ->where('contract_outer_island_id', $contract->id_contract_outer_island)
+            ->where('employment_type', 'Freelance')
+            ->where('freelance_sequence', $validated['freelance_sequence'])
+            ->where('id_contract_history_outer_island', '!=', $history->id_contract_history_outer_island)
+            ->exists();
+
+        if ($duplicateFreelance) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'freelance_sequence' => 'Periode Freelance tersebut sudah dipakai pada riwayat lain. Pilih periode 1–6 yang belum digunakan.',
+            ]);
+        }
+    } else {
+        $validated['pkwt_sequence'] = null;
+        $validated['freelance_sequence'] = null;
     }
 
     /*
@@ -1488,6 +1760,8 @@ public function update(
 
     */
 
+
+
     $isTerminated =
 
         $this->isTerminatedEmploymentType(
@@ -1496,7 +1770,11 @@ public function update(
 
         );
 
+
+
     if ($isTerminated) {
+
+
 
         if (
 
@@ -1508,11 +1786,15 @@ public function update(
 
         ) {
 
+
+
             $validated['exit_date'] =
 
                 now()->format('Y-m-d');
 
         }
+
+
 
         if (
 
@@ -1524,19 +1806,29 @@ public function update(
 
         ) {
 
+
+
             $validated['exit_reason'] =
 
                 $validated['employment_type'];
 
         }
 
+
+
     } else {
 
+
+
         $validated['exit_date'] = null;
+
+
 
         $validated['exit_reason'] = null;
 
     }
+
+
 
     /*
 
@@ -1556,101 +1848,155 @@ public function update(
 
     */
 
+
+
     $historyData = [
+
+
 
         'job_title' =>
 
             $validated['job_title'],
 
+
+
         'department' =>
 
             $validated['department'] ?? null,
+
+
 
         'placement_area' =>
 
             $validated['placement_area'] ?? null,
 
+
+
         'fingerprint_pin' =>
 
             $validated['fingerprint_pin'] ?? null,
+
+
 
         'nik_fingerprint' =>
 
             $validated['nik_fingerprint'] ?? null,
 
+
+
         'category' =>
 
             $validated['category'] ?? null,
+
+
 
         'level' =>
 
             $validated['level'] ?? null,
 
+
+
         'basic_salary' =>
 
             $validated['basic_salary'],
+
+
 
         'allowance' =>
 
             $validated['allowance'],
 
+
+
         'is_bpjstk_active' =>
 
             $validated['is_bpjstk_active'],
+
+
 
         'is_bpjs_health_active' =>
 
             $validated['is_bpjs_health_active'],
 
+
+
         'ptkp_status' =>
 
             $validated['ptkp_status'],
+
+
 
         'use_manual_bpjs' =>
 
             $validated['use_manual_bpjs'],
 
+
+
         'manual_bpjs_tk_employee' =>
 
             $validated['manual_bpjs_tk_employee'],
+
+
 
         'manual_bpjs_ks_employee' =>
 
             $validated['manual_bpjs_ks_employee'],
 
+
+
         'manual_bpjs_company' =>
 
             $validated['manual_bpjs_company'],
+
+
 
         'employment_type' =>
 
             $validated['employment_type'],
 
+
+
         'pkwt_sequence' =>
 
             $validated['pkwt_sequence'],
+
+        'freelance_sequence' =>
+
+            $validated['freelance_sequence'] ?? null,
+
+
 
         'start_date' =>
 
             $validated['start_date'],
 
+
+
         'end_date' =>
 
             $validated['end_date'] ?? null,
+
+
 
         'exit_date' =>
 
             $validated['exit_date'] ?? null,
 
+
+
         'exit_reason' =>
 
             $validated['exit_reason'] ?? null,
+
+
 
         'is_active' =>
 
             !$isTerminated,
 
     ];
+
+
 
  /*
 
@@ -1661,6 +2007,8 @@ public function update(
 \|--------------------------------------------------------------------------
 
 */
+
+
 
 DB::transaction(function () use (
 
@@ -1674,6 +2022,8 @@ DB::transaction(function () use (
 
 ) {
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -1683,6 +2033,8 @@ DB::transaction(function () use (
     |--------------------------------------------------------------------------
 
     */
+
+
 
     $lockedContract = ContractOuterIsland::query()
 
@@ -1698,6 +2050,10 @@ DB::transaction(function () use (
 
         ->firstOrFail();
 
+
+
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -1708,9 +2064,13 @@ DB::transaction(function () use (
 
     */
 
+
+
     $currentHistoryId =
 
         $lockedContract->current_contract_history_id;
+
+
 
     abort_unless(
 
@@ -1719,6 +2079,10 @@ DB::transaction(function () use (
         409
 
     );
+
+
+
+
 
     /*
 
@@ -1729,6 +2093,8 @@ DB::transaction(function () use (
     |--------------------------------------------------------------------------
 
     */
+
+
 
     $lockedHistory = ContractHistoryOuterIsland::query()
 
@@ -1744,6 +2110,10 @@ DB::transaction(function () use (
 
         ->firstOrFail();
 
+
+
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -1754,6 +2124,8 @@ DB::transaction(function () use (
 
     */
 
+
+
     abort_unless(
 
         (int) $lockedContract->current_contract_history_id ===
@@ -1763,6 +2135,10 @@ DB::transaction(function () use (
         409
 
     );
+
+
+
+
 
     /*
 
@@ -1796,6 +2172,8 @@ DB::transaction(function () use (
 
     */
 
+
+
     DB::table('employee_contract_histories_outer_island')
 
         ->where(
@@ -1812,29 +2190,43 @@ DB::transaction(function () use (
 
                 $historyData['job_title'],
 
+
+
             'department' =>
 
                 $historyData['department'],
+
+
 
             'placement_area' =>
 
                 $historyData['placement_area'],
 
+
+
             'fingerprint_pin' =>
 
                 $historyData['fingerprint_pin'],
+
+
 
             'nik_fingerprint' =>
 
                 $historyData['nik_fingerprint'],
 
+
+
             'category' =>
 
                 $historyData['category'],
 
+
+
             'level' =>
 
                 $historyData['level'],
+
+
 
             /*
 
@@ -1846,41 +2238,61 @@ DB::transaction(function () use (
 
             */
 
+
+
             'basic_salary' =>
 
                 $historyData['basic_salary'],
+
+
 
             'allowance' =>
 
                 $historyData['allowance'],
 
+
+
             'is_bpjstk_active' =>
 
                 $historyData['is_bpjstk_active'],
+
+
 
             'is_bpjs_health_active' =>
 
                 $historyData['is_bpjs_health_active'],
 
+
+
             'ptkp_status' =>
 
                 $historyData['ptkp_status'],
+
+
 
             'use_manual_bpjs' =>
 
                 $historyData['use_manual_bpjs'],
 
+
+
             'manual_bpjs_tk_employee' =>
 
                 $historyData['manual_bpjs_tk_employee'],
+
+
 
             'manual_bpjs_ks_employee' =>
 
                 $historyData['manual_bpjs_ks_employee'],
 
+
+
             'manual_bpjs_company' =>
 
                 $historyData['manual_bpjs_company'],
+
+
 
             /*
 
@@ -1892,33 +2304,53 @@ DB::transaction(function () use (
 
             */
 
+
+
             'employment_type' =>
 
                 $historyData['employment_type'],
+
+
 
             'pkwt_sequence' =>
 
                 $historyData['pkwt_sequence'],
 
+            'freelance_sequence' =>
+
+                $historyData['freelance_sequence'],
+
+
+
             'start_date' =>
 
                 $historyData['start_date'],
+
+
 
             'end_date' =>
 
                 $historyData['end_date'],
 
+
+
             'exit_date' =>
 
                 $historyData['exit_date'],
+
+
 
             'exit_reason' =>
 
                 $historyData['exit_reason'],
 
+
+
             'is_active' =>
 
                 $historyData['is_active'],
+
+
 
             'updated_at' =>
 
@@ -1926,38 +2358,22 @@ DB::transaction(function () use (
 
         ]);
 
-    /*
 
-    |--------------------------------------------------------------------------
 
-    | UPDATE CONTRACT MASTER
 
-    |--------------------------------------------------------------------------
-
-    */
-
-    $lockedContract->forceFill([
-            'current_contract_history_id' => $lockedHistory->id_contract_history_outer_island,
-            'is_active' => !$isTerminated,
-        ]);
-        $lockedContract->save();
 
     /*
-
     |--------------------------------------------------------------------------
-
-    | UPDATE EMPLOYEE
-
+    | SINKRONISASI HISTORY AKTIF BERDASARKAN TANGGAL
     |--------------------------------------------------------------------------
-
+    | Jangan otomatis menjadikan row yang diedit sebagai current hanya karena
+    | form menyimpannya. Periode aktif harus mencakup tanggal hari ini.
     */
-
-    $employee->forceFill([
-            'is_active' => !$isTerminated,
-        ]);
-        $employee->save();
+    $this->syncCurrentHistory($lockedContract, $employee);
 
 });
+
+
 
     /*
 
@@ -1969,15 +2385,12 @@ DB::transaction(function () use (
 
     */
 
+
+
     // Beri tahu dengan jelas jika input finansial yang berbeda ditolak oleh batas akses.
     $financialChangeBlocked = false;
     if (!$canEditFinancial) {
         foreach ($financialInputBeforeNormalization as $field => $incoming) {
-            // PTKP yang sah diubah oleh HRD bukan perubahan finansial yang ditolak.
-            if ($field === 'ptkp_status' && $canEditPtkp) {
-                continue;
-            }
-
             $current = $history->{$field};
 
             if (in_array($field, [
@@ -2012,13 +2425,19 @@ DB::transaction(function () use (
 
         $isTerminated
 
+
+
             ? 'Contract berhasil diperbarui dan karyawan menjadi '
 
                 . $validated['employment_type']
 
                 . ' (Non-Aktif).'
 
+
+
             : 'Perubahan Contract berhasil disimpan.';
+
+
 
     return redirect()
 
@@ -2050,6 +2469,8 @@ DB::transaction(function () use (
 
     */
 
+
+
     public function createPeriod(
 
         EmployeeOuterIsland $employee
@@ -2076,6 +2497,8 @@ DB::transaction(function () use (
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -2085,6 +2508,8 @@ DB::transaction(function () use (
     |--------------------------------------------------------------------------
 
     */
+
+
 
     public function storePeriod(
 
@@ -2102,6 +2527,8 @@ DB::transaction(function () use (
 
         ]);
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2112,6 +2539,8 @@ DB::transaction(function () use (
 
         */
 
+
+
         $contract =
 
             $this->ensureContractMaster(
@@ -2119,6 +2548,8 @@ DB::transaction(function () use (
                 $employee
 
             );
+
+
 
         $contract->load([
 
@@ -2128,9 +2559,13 @@ DB::transaction(function () use (
 
         ]);
 
+
+
         $currentHistory =
 
             $contract->currentHistory;
+
+
 
         /*
 
@@ -2142,21 +2577,31 @@ DB::transaction(function () use (
 
         */
 
+
+
         $role =
 
             auth()->user()?->role;
+
+
 
         $isFinance =
 
             $this->isFinanceRole($role);
 
+
+
         $isHeadHrd =
 
             $this->isHeadHrdRole($role);
 
+
+
         $isKeuangan =
 
             $role === self::KEUANGAN_ROLE;
+
+
 
         /*
 
@@ -2168,9 +2613,13 @@ DB::transaction(function () use (
 
         */
 
+
+
         $currentLevel =
 
             $currentHistory?->level;
+
+
 
         $currentLevelNumber =
 
@@ -2180,6 +2629,8 @@ DB::transaction(function () use (
 
                 : null;
 
+
+
         $currentLevelSensitive =
 
             $currentLevelNumber === null
@@ -2187,6 +2638,8 @@ DB::transaction(function () use (
             ||
 
             $currentLevelNumber <= 13;
+
+
 
         /*
 
@@ -2198,7 +2651,11 @@ DB::transaction(function () use (
 
         */
 
+
+
         $request->merge([
+
+
 
             'basic_salary' =>
 
@@ -2212,6 +2669,8 @@ DB::transaction(function () use (
 
                 ),
 
+
+
             'allowance' =>
 
                 $this->cleanRupiah(
@@ -2223,6 +2682,8 @@ DB::transaction(function () use (
                     )
 
                 ),
+
+
 
             'manual_bpjs_tk_employee' =>
 
@@ -2236,6 +2697,8 @@ DB::transaction(function () use (
 
                 ),
 
+
+
             'manual_bpjs_ks_employee' =>
 
                 $this->cleanRupiah(
@@ -2247,6 +2710,8 @@ DB::transaction(function () use (
                     )
 
                 ),
+
+
 
             'manual_bpjs_company' =>
 
@@ -2262,6 +2727,8 @@ DB::transaction(function () use (
 
         ]);
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2272,9 +2739,13 @@ DB::transaction(function () use (
 
         */
 
+
+
         $validated =
 
             $request->validate([
+
+
 
                 'job_title' => [
 
@@ -2286,6 +2757,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'department' => [
 
                     'nullable',
@@ -2295,6 +2768,8 @@ DB::transaction(function () use (
                     'max:255',
 
                 ],
+
+
 
                 'placement_area' => [
 
@@ -2306,6 +2781,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'fingerprint_pin' => [
 
                     'nullable',
@@ -2315,6 +2792,8 @@ DB::transaction(function () use (
                     'max:255',
 
                 ],
+
+
 
                 'nik_fingerprint' => [
 
@@ -2326,6 +2805,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'category' => [
 
                     'nullable',
@@ -2335,6 +2816,8 @@ DB::transaction(function () use (
                     'max:10',
 
                 ],
+
+
 
                 'level' => [
 
@@ -2346,6 +2829,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'basic_salary' => [
 
                     'required',
@@ -2355,6 +2840,8 @@ DB::transaction(function () use (
                     'min:0',
 
                 ],
+
+
 
                 'allowance' => [
 
@@ -2366,6 +2853,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'is_bpjstk_active' => [
 
                     'nullable',
@@ -2374,6 +2863,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'is_bpjs_health_active' => [
 
                     'nullable',
@@ -2381,6 +2872,8 @@ DB::transaction(function () use (
                     'boolean',
 
                 ],
+
+
 
                 'ptkp_status' => [
 
@@ -2392,6 +2885,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'use_manual_bpjs' => [
 
                     'nullable',
@@ -2399,6 +2894,8 @@ DB::transaction(function () use (
                     'boolean',
 
                 ],
+
+
 
                 'manual_bpjs_tk_employee' => [
 
@@ -2410,6 +2907,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'manual_bpjs_ks_employee' => [
 
                     'nullable',
@@ -2419,6 +2918,8 @@ DB::transaction(function () use (
                     'min:0',
 
                 ],
+
+
 
                 'manual_bpjs_company' => [
 
@@ -2430,15 +2931,35 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'employment_type' => [
 
                     'required',
 
                     'string',
 
-                    'in:PKWT,PKWTT,Probation,Internship,PHK,Resign,Pensiun,End_Contract',
+                    'in:PKWT,Freelance,PKWTT,Probation,Internship,PHK,Resign,Pensiun,End_Contract',
 
                 ],
+
+                'pkwt_sequence' => [
+                    'required_if:employment_type,PKWT',
+                    'nullable',
+                    'integer',
+                    'min:1',
+                    'max:7',
+                ],
+
+                'freelance_sequence' => [
+                    'required_if:employment_type,Freelance',
+                    'nullable',
+                    'integer',
+                    'min:1',
+                    'max:6',
+                ],
+
+
 
                 'start_date' => [
 
@@ -2447,6 +2968,8 @@ DB::transaction(function () use (
                     'date',
 
                 ],
+
+
 
                 'end_date' => [
 
@@ -2458,6 +2981,8 @@ DB::transaction(function () use (
 
                 ],
 
+
+
                 'exit_date' => [
 
                     'nullable',
@@ -2465,6 +2990,8 @@ DB::transaction(function () use (
                     'date',
 
                 ],
+
+
 
                 'exit_reason' => [
 
@@ -2478,6 +3005,8 @@ DB::transaction(function () use (
 
             ]);
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2488,6 +3017,8 @@ DB::transaction(function () use (
 
         */
 
+
+
         $validated['is_bpjstk_active'] =
 
             $request->has(
@@ -2495,6 +3026,8 @@ DB::transaction(function () use (
                 'is_bpjstk_active'
 
             );
+
+
 
         $validated['is_bpjs_health_active'] =
 
@@ -2504,6 +3037,8 @@ DB::transaction(function () use (
 
             );
 
+
+
         $validated['use_manual_bpjs'] =
 
             $request->has(
@@ -2511,6 +3046,8 @@ DB::transaction(function () use (
                 'use_manual_bpjs'
 
             );
+
+
 
         /*
 
@@ -2522,9 +3059,13 @@ DB::transaction(function () use (
 
         */
 
+
+
         $newLevel =
 
             $validated['level'] ?? null;
+
+
 
         $newLevelNumber =
 
@@ -2534,6 +3075,8 @@ DB::transaction(function () use (
 
                 : null;
 
+
+
         $newLevelHigh =
 
             $newLevelNumber !== null
@@ -2541,6 +3084,8 @@ DB::transaction(function () use (
             &&
 
             $newLevelNumber >= 14;
+
+
 
         /*
 
@@ -2551,6 +3096,8 @@ DB::transaction(function () use (
         |--------------------------------------------------------------------------
 
         */
+
+
 
         $canEditFinancial =
 
@@ -2576,6 +3123,8 @@ DB::transaction(function () use (
 
             );
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2586,7 +3135,11 @@ DB::transaction(function () use (
 
         */
 
+
+
         if (!$currentHistory) {
+
+
 
             /*
 
@@ -2595,6 +3148,8 @@ DB::transaction(function () use (
             | data finansial sensitif level >=14.
 
             */
+
+
 
             if (
 
@@ -2606,35 +3161,55 @@ DB::transaction(function () use (
 
             ) {
 
+
+
                 $validated['basic_salary'] = 0;
 
+
+
                 $validated['allowance'] = 0;
+
+
 
                 $validated['ptkp_status'] =
 
                     'TK/0';
 
+
+
                 $validated['is_bpjstk_active'] =
 
                     false;
+
+
 
                 $validated['is_bpjs_health_active'] =
 
                     false;
 
+
+
                 $validated['use_manual_bpjs'] =
 
                     false;
 
+
+
                 $validated['manual_bpjs_tk_employee'] = 0;
 
+
+
                 $validated['manual_bpjs_ks_employee'] = 0;
+
+
 
                 $validated['manual_bpjs_company'] = 0;
 
             }
 
         }
+
+
 
         /*
 
@@ -2645,6 +3220,8 @@ DB::transaction(function () use (
         |--------------------------------------------------------------------------
 
         */
+
+
 
         if (
 
@@ -2664,51 +3241,75 @@ DB::transaction(function () use (
 
         ) {
 
+
+
             $validated['category'] =
 
                 $currentHistory->category;
+
+
 
             $validated['level'] =
 
                 $currentHistory->level;
 
+
+
             $validated['basic_salary'] =
 
                 $currentHistory->basic_salary;
+
+
 
             $validated['allowance'] =
 
                 $currentHistory->allowance;
 
+
+
             $validated['ptkp_status'] =
 
                 $currentHistory->ptkp_status;
+
+
 
             $validated['is_bpjstk_active'] =
 
                 $currentHistory->is_bpjstk_active;
 
+
+
             $validated['is_bpjs_health_active'] =
 
                 $currentHistory->is_bpjs_health_active;
+
+
 
             $validated['use_manual_bpjs'] =
 
                 $currentHistory->use_manual_bpjs;
 
+
+
             $validated['manual_bpjs_tk_employee'] =
 
                 $currentHistory->manual_bpjs_tk_employee;
 
+
+
             $validated['manual_bpjs_ks_employee'] =
 
                 $currentHistory->manual_bpjs_ks_employee;
+
+
 
             $validated['manual_bpjs_company'] =
 
                 $currentHistory->manual_bpjs_company;
 
         }
+
+
 
         /*
 
@@ -2719,6 +3320,8 @@ DB::transaction(function () use (
         |--------------------------------------------------------------------------
 
         */
+
+
 
         elseif (
 
@@ -2734,51 +3337,75 @@ DB::transaction(function () use (
 
         ) {
 
+
+
             $validated['category'] =
 
                 $currentHistory->category;
+
+
 
             $validated['level'] =
 
                 $currentHistory->level;
 
+
+
             $validated['basic_salary'] =
 
                 $currentHistory->basic_salary;
+
+
 
             $validated['allowance'] =
 
                 $currentHistory->allowance;
 
+
+
             $validated['ptkp_status'] =
 
                 $currentHistory->ptkp_status;
+
+
 
             $validated['is_bpjstk_active'] =
 
                 $currentHistory->is_bpjstk_active;
 
+
+
             $validated['is_bpjs_health_active'] =
 
                 $currentHistory->is_bpjs_health_active;
+
+
 
             $validated['use_manual_bpjs'] =
 
                 $currentHistory->use_manual_bpjs;
 
+
+
             $validated['manual_bpjs_tk_employee'] =
 
                 $currentHistory->manual_bpjs_tk_employee;
 
+
+
             $validated['manual_bpjs_ks_employee'] =
 
                 $currentHistory->manual_bpjs_ks_employee;
+
+
 
             $validated['manual_bpjs_company'] =
 
                 $currentHistory->manual_bpjs_company;
 
         }
+
+
 
         /*
 
@@ -2789,6 +3416,8 @@ DB::transaction(function () use (
         |--------------------------------------------------------------------------
 
         */
+
+
 
         if (
 
@@ -2804,43 +3433,63 @@ DB::transaction(function () use (
 
         ) {
 
+
+
             $validated['basic_salary'] =
 
                 $currentHistory->basic_salary;
+
+
 
             $validated['allowance'] =
 
                 $currentHistory->allowance;
 
+
+
             $validated['ptkp_status'] =
 
                 $currentHistory->ptkp_status;
+
+
 
             $validated['is_bpjstk_active'] =
 
                 $currentHistory->is_bpjstk_active;
 
+
+
             $validated['is_bpjs_health_active'] =
 
                 $currentHistory->is_bpjs_health_active;
+
+
 
             $validated['use_manual_bpjs'] =
 
                 $currentHistory->use_manual_bpjs;
 
+
+
             $validated['manual_bpjs_tk_employee'] =
 
                 $currentHistory->manual_bpjs_tk_employee;
 
+
+
             $validated['manual_bpjs_ks_employee'] =
 
                 $currentHistory->manual_bpjs_ks_employee;
+
+
 
             $validated['manual_bpjs_company'] =
 
                 $currentHistory->manual_bpjs_company;
 
         }
+
+
 
         /*
 
@@ -2852,6 +3501,8 @@ DB::transaction(function () use (
 
         */
 
+
+
         if (
 
             $canEditFinancial
@@ -2861,6 +3512,8 @@ DB::transaction(function () use (
             !$newLevelHigh
 
         ) {
+
+
 
             $validated['allowance'] =
 
@@ -2874,6 +3527,8 @@ DB::transaction(function () use (
 
         }
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2884,52 +3539,69 @@ DB::transaction(function () use (
 
         */
 
+
+
         if (
 
             !$validated['use_manual_bpjs']
 
         ) {
 
+
+
             $validated['manual_bpjs_tk_employee'] = 0;
 
+
+
             $validated['manual_bpjs_ks_employee'] = 0;
+
+
 
             $validated['manual_bpjs_company'] = 0;
 
         }
 
+
+
         /*
-
         |--------------------------------------------------------------------------
-
-        | PKWT SEQUENCE
-
+        | PKWT / FREELANCE SEQUENCE
         |--------------------------------------------------------------------------
-
         */
 
-        if (
+        if ($validated['employment_type'] === 'PKWT') {
+            $validated['pkwt_sequence'] = (int) ($validated['pkwt_sequence'] ?? 0);
+            $validated['freelance_sequence'] = null;
 
-            strtoupper(
+            $duplicatePkwt = ContractHistoryOuterIsland::query()
+                ->where('contract_outer_island_id', $contract->id_contract_outer_island)
+                ->where('employment_type', 'PKWT')
+                ->where('pkwt_sequence', $validated['pkwt_sequence'])
+                ->exists();
 
-                $validated['employment_type']
-
-            ) === 'PKWT'
-
-        ) {
-
-            $validated['pkwt_sequence'] =
-
-                $this->getNextPkwtSequence(
-
-                    $contract
-
-                );
-
-        } else {
-
+            if ($duplicatePkwt) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'pkwt_sequence' => 'Nomor PKWT tersebut sudah memiliki riwayat. Pilih nomor PKWT yang belum digunakan.',
+                ]);
+            }
+        } elseif ($validated['employment_type'] === 'Freelance') {
             $validated['pkwt_sequence'] = null;
+            $validated['freelance_sequence'] = (int) $validated['freelance_sequence'];
 
+            $duplicateFreelance = ContractHistoryOuterIsland::query()
+                ->where('contract_outer_island_id', $contract->id_contract_outer_island)
+                ->where('employment_type', 'Freelance')
+                ->where('freelance_sequence', $validated['freelance_sequence'])
+                ->exists();
+
+            if ($duplicateFreelance) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'freelance_sequence' => 'Periode Freelance tersebut sudah memiliki riwayat. Pilih periode 1–6 yang belum digunakan.',
+                ]);
+            }
+        } else {
+            $validated['pkwt_sequence'] = null;
+            $validated['freelance_sequence'] = null;
         }
 
         /*
@@ -2942,6 +3614,8 @@ DB::transaction(function () use (
 
         */
 
+
+
         $isTerminated =
 
             $this->isTerminatedEmploymentType(
@@ -2950,7 +3624,11 @@ DB::transaction(function () use (
 
             );
 
+
+
         if ($isTerminated) {
+
+
 
             if (
 
@@ -2962,11 +3640,15 @@ DB::transaction(function () use (
 
             ) {
 
+
+
                 $validated['exit_date'] =
 
                     now()->format('Y-m-d');
 
             }
+
+
 
             if (
 
@@ -2978,19 +3660,29 @@ DB::transaction(function () use (
 
             ) {
 
+
+
                 $validated['exit_reason'] =
 
                     $validated['employment_type'];
 
             }
 
+
+
         } else {
 
+
+
             $validated['exit_date'] = null;
+
+
 
             $validated['exit_reason'] = null;
 
         }
+
+
 
         /*
 
@@ -3001,6 +3693,11 @@ DB::transaction(function () use (
         |--------------------------------------------------------------------------
 
         */
+
+
+
+        $freelanceSequence = $validated['freelance_sequence'] ?? null;
+        unset($validated['freelance_sequence']);
 
         DB::transaction(
 
@@ -3014,82 +3711,75 @@ DB::transaction(function () use (
 
                 $validated,
 
+                $freelanceSequence,
+
                 $isTerminated
 
             ) {
 
-                /*
 
-                |----------------------------------------------------------------------
-
-                | NONAKTIFKAN HISTORY LAMA
-
-                |----------------------------------------------------------------------
-
-                */
-
-                if ($currentHistory) {
-                    $currentHistory->forceFill([
-                        'is_active' => false,
-                    ]);
-                    $currentHistory->save();
-                }
 
                 /*
-
                 |----------------------------------------------------------------------
-
                 | CREATE HISTORY BARU
-
                 |----------------------------------------------------------------------
-
+                | History lama tidak langsung dinonaktifkan. Setelah row baru dibuat,
+                | syncCurrentHistory memilih period yang benar-benar berlaku hari ini.
                 */
 
-                $newHistory = new ContractHistoryOuterIsland();
-                $newHistory->forceFill(array_merge(
-                    $validated,
-                    [
-                        'uuid' => (string) Str::uuid(),
-                        'is_active' => !$isTerminated,
-                    ]
-                ));
-                // HasMany::save menetapkan contract_outer_island_id dari relasi.
-                $contract->histories()->save($newHistory);
+
+
+                $newHistory =
+
+                    $contract
+
+                        ->histories()
+
+                        ->create(
+
+                            array_merge(
+
+                                $validated,
+
+                                [
+
+                                    'uuid' =>
+
+                                        (string) Str::uuid(),
+
+
+
+                                    'is_active' => false,
+
+                                ]
+
+                            )
+
+                        );
+
+                DB::table('employee_contract_histories_outer_island')
+                    ->where(
+                        'id_contract_history_outer_island',
+                        $newHistory->id_contract_history_outer_island
+                    )
+                    ->update([
+                        'freelance_sequence' => $freelanceSequence,
+                        'updated_at' => now(),
+                    ]);
+
 
                 /*
-
                 |----------------------------------------------------------------------
-
-                | UPDATE MASTER
-
+                | SINKRONISASI CURRENT HISTORY
                 |----------------------------------------------------------------------
-
                 */
-
-                $contract->forceFill([
-                    'current_contract_history_id' => $newHistory->id_contract_history_outer_island,
-                    'is_active' => !$isTerminated,
-                ]);
-                $contract->save();
-
-                /*
-
-                |----------------------------------------------------------------------
-
-                | UPDATE EMPLOYEE
-
-                |----------------------------------------------------------------------
-
-                */
-
-                $employee->forceFill([
-                    'is_active' => !$isTerminated,
-                ]);
-                $employee->save();
+                $this->syncCurrentHistory($contract, $employee);
 
             }
 
         );
+
+
 
         /*
 
@@ -3101,9 +3791,13 @@ DB::transaction(function () use (
 
         */
 
+
+
         $message =
 
             $isTerminated
+
+
 
                 ? 'Contract Period baru berhasil dibuat dan karyawan menjadi '
 
@@ -3111,7 +3805,11 @@ DB::transaction(function () use (
 
                     . ' (Non-Aktif).'
 
-                : 'Contract Period baru berhasil dibuat dan menjadi Current Contract.';
+
+
+                : 'Contract Period baru berhasil dibuat. Status current ditentukan otomatis berdasarkan tanggal mulai dan berakhir.';
+
+
 
         return redirect()
 
@@ -3131,6 +3829,8 @@ DB::transaction(function () use (
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -3140,6 +3840,8 @@ DB::transaction(function () use (
     |--------------------------------------------------------------------------
 
     */
+
+
 
     public function showHistory(
 
@@ -3157,9 +3859,13 @@ DB::transaction(function () use (
 
         ]);
 
+
+
         $contract =
 
             $employee->contractMaster;
+
+
 
         abort_unless(
 
@@ -3168,6 +3874,8 @@ DB::transaction(function () use (
             404
 
         );
+
+
 
         /*
 
@@ -3178,6 +3886,8 @@ DB::transaction(function () use (
         |--------------------------------------------------------------------------
 
         */
+
+
 
         abort_unless(
 
@@ -3191,6 +3901,8 @@ DB::transaction(function () use (
 
         );
 
+
+
         /*
 
         |--------------------------------------------------------------------------
@@ -3201,6 +3913,8 @@ DB::transaction(function () use (
 
         */
 
+
+
         $isCurrent =
 
             (int) $contract->current_contract_history_id
@@ -3208,6 +3922,8 @@ DB::transaction(function () use (
                 ===
 
             (int) $history->id_contract_history_outer_island;
+
+
 
         /*
 
@@ -3219,6 +3935,8 @@ DB::transaction(function () use (
 
         */
 
+
+
         $canViewSensitiveData =
 
             $this->canViewSensitiveData(
@@ -3226,6 +3944,8 @@ DB::transaction(function () use (
                 $history
 
             );
+
+
 
         return view(
 
@@ -3249,6 +3969,8 @@ DB::transaction(function () use (
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -3259,11 +3981,15 @@ DB::transaction(function () use (
 
     */
 
+
+
     private function isFinanceRole(
 
         ?string $role
 
     ): bool {
+
+
 
         return in_array(
 
@@ -3277,11 +4003,15 @@ DB::transaction(function () use (
 
     }
 
+
+
     private function isHeadHrdRole(
 
         ?string $role
 
     ): bool {
+
+
 
         return in_array(
 
@@ -3294,6 +4024,8 @@ DB::transaction(function () use (
         );
 
     }
+
+
 
     /*
 
@@ -3331,15 +4063,21 @@ DB::transaction(function () use (
 
     */
 
+
+
     private function canViewSensitiveData(
 
         ?ContractHistoryOuterIsland $history
 
     ): bool {
 
+
+
         $role =
 
             auth()->user()?->role;
+
+
 
         /*
 
@@ -3351,15 +4089,21 @@ DB::transaction(function () use (
 
         */
 
+
+
         if (
 
             $this->isFinanceRole($role)
 
         ) {
 
+
+
             return true;
 
         }
+
+
 
         /*
 
@@ -3371,11 +4115,15 @@ DB::transaction(function () use (
 
         */
 
+
+
         if (
 
             $this->isHeadHrdRole($role)
 
         ) {
+
+
 
             if (!$history) {
 
@@ -3383,19 +4131,27 @@ DB::transaction(function () use (
 
             }
 
+
+
             if (
 
                 $history->level === null
 
             ) {
 
+
+
                 return true;
 
             }
 
+
+
             return (int) $history->level <= 13;
 
         }
+
+
 
         /*
 
@@ -3407,11 +4163,15 @@ DB::transaction(function () use (
 
         */
 
+
+
         if (
 
             $role === self::KEUANGAN_ROLE
 
         ) {
+
+
 
             if (!$history) {
 
@@ -3419,23 +4179,33 @@ DB::transaction(function () use (
 
             }
 
+
+
             if (
 
                 $history->level === null
 
             ) {
 
+
+
                 return true;
 
             }
+
+
 
             return (int) $history->level <= 13;
 
         }
 
+
+
         return false;
 
     }
+
+
 
     /*
 
@@ -3447,11 +4217,15 @@ DB::transaction(function () use (
 
     */
 
+
+
     private function canEditCurrentContract(
 
         ?ContractHistoryOuterIsland $history
 
     ): bool {
+
+
 
         if (!$history) {
 
@@ -3459,9 +4233,13 @@ DB::transaction(function () use (
 
         }
 
+
+
         $role =
 
             auth()->user()?->role;
+
+
 
         /*
 
@@ -3473,15 +4251,21 @@ DB::transaction(function () use (
 
         */
 
+
+
         if (
 
             $this->isFinanceRole($role)
 
         ) {
 
+
+
             return true;
 
         }
+
+
 
         /*
 
@@ -3492,6 +4276,8 @@ DB::transaction(function () use (
         |--------------------------------------------------------------------------
 
         */
+
+
 
         return in_array(
 
@@ -3513,6 +4299,8 @@ DB::transaction(function () use (
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -3529,6 +4317,8 @@ DB::transaction(function () use (
 
     */
 
+
+
     private function calculateAllowance(
 
         $basicSalary,
@@ -3537,9 +4327,13 @@ DB::transaction(function () use (
 
     ) {
 
+
+
         $basicSalary =
 
             (float) $basicSalary;
+
+
 
         $level =
 
@@ -3548,6 +4342,8 @@ DB::transaction(function () use (
                 ? (int) $level
 
                 : 0;
+
+
 
         if (
 
@@ -3559,9 +4355,13 @@ DB::transaction(function () use (
 
         ) {
 
+
+
             return 0;
 
         }
+
+
 
         return round(
 
@@ -3575,6 +4375,8 @@ DB::transaction(function () use (
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -3585,61 +4387,57 @@ DB::transaction(function () use (
 
     */
 
-    private function cleanRupiah($value)
-    {
-        if ($value === null || $value === '') {
+
+
+    private function cleanRupiah(
+
+        $value
+
+    ) {
+
+
+
+        if (
+
+            $value === null
+
+            ||
+
+            $value === ''
+
+        ) {
+
+
+
             return 0;
+
         }
 
-        // Jangan menganggap dua digit desimal dari database (mis. 5000000.00)
-        // sebagai digit ribuan. UI mengirim Rupiah utuh seperti 5.000.000.
-        $value = trim((string) $value);
-        $value = preg_replace('/[^\d.,]/u', '', $value);
 
-        if ($value === '') {
-            return 0;
-        }
 
-        $hasDot = str_contains($value, '.');
-        $hasComma = str_contains($value, ',');
+        $clean =
 
-        // Format Indonesia dengan desimal: 5.000.000,00
-        if ($hasDot && $hasComma) {
-            if (strrpos($value, ',') > strrpos($value, '.')) {
-                $normalized = str_replace('.', '', $value);
-                $normalized = str_replace(',', '.', $normalized);
-                return is_numeric($normalized) ? round((float) $normalized, 2) : 0;
-            }
+            preg_replace(
 
-            // Format internasional: 5,000,000.00
-            $normalized = str_replace(',', '', $value);
-            return is_numeric($normalized) ? round((float) $normalized, 2) : 0;
-        }
+                '/[^0-9]/',
 
-        // Koma tunggal dengan 1-2 digit di belakangnya dapat menjadi desimal.
-        if ($hasComma) {
-            if (substr_count($value, ',') === 1 && preg_match('/,\d{1,2}$/', $value)) {
-                $normalized = str_replace(',', '.', $value);
-                return is_numeric($normalized) ? round((float) $normalized, 2) : 0;
-            }
+                '',
 
-            $value = str_replace(',', '', $value);
-        }
+                (string) $value
 
-        // Titik tunggal dengan 1-2 digit di belakangnya adalah desimal (contoh 5000000.00).
-        // Titik dengan 3 digit di belakang atau titik berulang adalah pemisah ribuan.
-        if (str_contains($value, '.')) {
-            if (substr_count($value, '.') === 1 && preg_match('/\.\d{1,2}$/', $value)) {
-                return is_numeric($value) ? round((float) $value, 2) : 0;
-            }
+            );
 
-            $value = str_replace('.', '', $value);
-        }
 
-        $digits = preg_replace('/\D/', '', $value);
 
-        return $digits === '' ? 0 : (float) $digits;
+        return $clean === ''
+
+            ? 0
+
+            : (float) $clean;
+
     }
+
+
 
     /*
 
@@ -3651,11 +4449,15 @@ DB::transaction(function () use (
 
     */
 
+
+
     private function isTerminatedEmploymentType(
 
         ?string $employmentType
 
     ): bool {
+
+
 
         return in_array(
 
@@ -3679,6 +4481,8 @@ DB::transaction(function () use (
 
     }
 
+
+
     /*
 
     |--------------------------------------------------------------------------
@@ -3689,21 +4493,31 @@ DB::transaction(function () use (
 
     */
 
+
+
     private function ensureContractMaster(
 
         EmployeeOuterIsland $employee
 
     ): ContractOuterIsland {
 
+
+
         $contract =
 
             $employee->contractMaster;
 
+
+
         if ($contract) {
+
+
 
             return $contract;
 
         }
+
+
 
         return $employee
 
@@ -3715,11 +4529,15 @@ DB::transaction(function () use (
 
                     (string) Str::uuid(),
 
+
+
                 'is_active' => true,
 
             ]);
 
     }
+
+
 
     /*
 
@@ -3731,39 +4549,84 @@ DB::transaction(function () use (
 
     */
 
+
+
     private function getNextPkwtSequence(
 
         ContractOuterIsland $contract
 
-    ): int {
+    ): ?int {
 
-        $max =
+        $used = ContractHistoryOuterIsland::query()
+            ->where('contract_outer_island_id', $contract->id_contract_outer_island)
+            ->where('employment_type', 'PKWT')
+            ->pluck('pkwt_sequence')
+            ->filter(fn ($sequence) => $sequence !== null && $sequence !== '')
+            ->map(fn ($sequence) => (int) $sequence)
+            ->all();
 
-            ContractHistoryOuterIsland::where(
+        foreach (range(1, 7) as $sequence) {
+            if (!in_array($sequence, $used, true)) {
+                return $sequence;
+            }
+        }
 
-                'contract_outer_island_id',
-
-                $contract->id_contract_outer_island
-
-            )
-
-                ->where(
-
-                    'employment_type',
-
-                    'PKWT'
-
-                )
-
-                ->max(
-
-                    'pkwt_sequence'
-
-                );
-
-        return ((int) $max) + 1;
-
+        return null;
     }
+
+
+
+    /**
+     * Sinkronkan current_contract_history_id dan semua penanda is_active
+     * berdasarkan periode yang benar-benar mencakup tanggal hari ini.
+     * Riwayat masa depan/lampau tetap tersimpan tetapi tidak jadi current.
+     */
+    private function syncCurrentHistory(
+        ContractOuterIsland $contract,
+        EmployeeOuterIsland $employee
+    ): ?ContractHistoryOuterIsland {
+        $today = Carbon::today()->toDateString();
+
+        $candidate = ContractHistoryOuterIsland::query()
+            ->where('contract_outer_island_id', $contract->id_contract_outer_island)
+            ->whereDate('start_date', '<=', $today)
+            ->where(function ($query) use ($today) {
+                $query->whereNull('end_date')
+                    ->orWhereDate('end_date', '>=', $today);
+            })
+            // Periode yang paling baru mulai dan masih mencakup hari ini menjadi current.
+            // PKWTT hanya menang sebagai tie-breaker bila tanggal mulainya sama;
+            // kontrak permanen lama tidak boleh menimpa PKWT/Freelance yang lebih baru.
+            ->orderByDesc('start_date')
+            ->orderByRaw("CASE WHEN employment_type = 'PKWTT' AND end_date IS NULL THEN 0 ELSE 1 END")
+            ->orderByDesc('id_contract_history_outer_island')
+            ->get()
+            ->first(fn ($row) => !$this->isTerminatedEmploymentType($row->employment_type));
+
+        ContractHistoryOuterIsland::query()
+            ->where('contract_outer_island_id', $contract->id_contract_outer_island)
+            ->update(['is_active' => false]);
+
+        if ($candidate) {
+            ContractHistoryOuterIsland::query()
+                ->where('id_contract_history_outer_island', $candidate->id_contract_history_outer_island)
+                ->update(['is_active' => true]);
+        }
+
+        $isActive = $candidate !== null;
+
+        $contract->forceFill([
+            'current_contract_history_id' => $candidate?->id_contract_history_outer_island,
+            'is_active' => $isActive,
+        ])->save();
+
+        $employee->forceFill([
+            'is_active' => $isActive,
+        ])->save();
+
+        return $candidate;
+    }
+
 
     private function isContractExpired(?ContractHistoryOuterIsland $history): bool
 
@@ -3775,7 +4638,9 @@ DB::transaction(function () use (
 
         }
 
-        return Carbon::today()->greaterThanOrEqualTo(
+
+
+        return Carbon::today()->greaterThan(
 
             Carbon::parse($history->end_date)
 

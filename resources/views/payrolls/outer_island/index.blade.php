@@ -47,135 +47,239 @@
         $userRole = (string) (Auth::user()->role ?? '');
 
         $isFinanceRole = in_array(
+
             $userRole,
+
             ['manager_keuangan', 'super_admin'],
+
             true
+
         );
 
         $isHeadHrd = in_array(
+
             $userRole,
+
             ['head_hrd', 'kepala_hrd'],
+
             true
+
         );
 
         $isHrd = $userRole === 'hrd';
 
         /*
+
         |--------------------------------------------------------------------------
+
         | ROLE ACCESS
+
         |--------------------------------------------------------------------------
+
         |
+
         | Finance / Super Admin: seluruh data.
+
         | Head HRD: finansial hanya untuk Level 1-13.
+
         | HRD: hanya data identitas dan kehadiran.
+
         |
+
         */
+
         $showBpjsColumns = $isFinanceRole || $isHeadHrd;
+
         $showFinancialColumns = $isFinanceRole || $isHeadHrd;
 
         $tableColumnCount =
-            3
-            + ($showBpjsColumns ? 2 : 0)
-            + ($showFinancialColumns ? 4 : 0)
-            + ($isFinanceRole ? 1 : 0);
 
-        $getEmployeeLevel = static function ($employee): ?int {
+            3
+
+            + ($showBpjsColumns ? 2 : 0)
+
+            + ($showFinancialColumns ? 4 : 0)
+
+            // Satu kolom Pilih + satu kolom Slip.
+            + ($isFinanceRole ? 2 : 0);
+
+        // Halaman ini khusus rekap Outer Island. Prioritaskan contractMaster,
+
+        // lalu gunakan relasi lain sebagai fallback bila model memilikinya.
+
+        $getEmployeeContract = static function ($employee) {
+
             if (!$employee) {
+
                 return null;
+
             }
 
-            $activeContract = $employee->activeContract;
+            return $employee->contractMaster
 
-            $level =
-                $activeContract?->level
-                ?? $activeContract?->currentHistory?->level
-                ?? $employee->contract?->currentHistory?->level;
+                ?? $employee->activeContract
 
-            return is_numeric($level) ? (int) $level : null;
+                ?? $employee->contract
+
+                ?? null;
+
+        };
+
+        // Periksa level dari semua relasi kontrak yang tersedia. Ini penting
+
+        // agar Head HRD dapat melihat nominal Level 1-13, tetapi Level 14+
+
+        // dan level yang tidak ditemukan tetap disamarkan.
+
+        $getEmployeeLevel = static function ($employee): ?int {
+
+            if (!$employee) {
+
+                return null;
+
+            }
+
+            $contracts = [
+
+                $employee->contractMaster ?? null,
+
+                $employee->activeContract ?? null,
+
+                $employee->contract ?? null,
+
+            ];
+
+            foreach ($contracts as $contract) {
+
+                if (!$contract) {
+
+                    continue;
+
+                }
+
+                $levels = [
+
+                    $contract->level ?? null,
+
+                    $contract->currentHistory?->level,
+
+                ];
+
+                foreach ($levels as $level) {
+
+                    if (is_numeric($level)) {
+
+                        return (int) $level;
+
+                    }
+
+                }
+
+            }
+
+            return null;
+
         };
 
         $canViewPayrollFinancial = static function ($payroll) use (
+
             $isFinanceRole,
+
             $isHeadHrd,
+
             $getEmployeeLevel
+
         ): bool {
+
             if ($isFinanceRole) {
+
                 return true;
+
             }
 
             if (!$isHeadHrd) {
+
                 return false;
+
             }
 
             $level = $getEmployeeLevel($payroll?->employee);
 
             // Level 13 terakhir terlihat; Level 14 ke atas disamarkan.
+
             return $level !== null && $level <= 13;
+
         };
 
         // Total ringkasan hanya menghitung payroll yang boleh terlihat.
+
         $visibleFinancialPayrolls = $payrolls
+
             ->filter(
+
                 fn ($payroll) => $canViewPayrollFinancial($payroll)
+
             )
+
             ->values();
 
         $totalGross = 0;
+
         $totalNet = 0;
+
         $totalPph = 0;
+
         $totalBpjs = 0;
 
         if ($showFinancialColumns) {
+
             $totalGross = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) => (float) ($payroll->gross_salary ?? 0)
+
             );
 
             $totalNet = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) => (float) ($payroll->net_salary ?? 0)
+
             );
 
             $totalPph = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) => (float) ($payroll->pph21_deduction ?? 0)
+
             );
 
             $totalBpjs = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) =>
+
                     (float) ($payroll->bpjs_tk_deduction ?? 0)
+
                     + (float) ($payroll->bpjs_ks_deduction ?? 0)
+
             );
+
         }
 
-        $payrollsByDepartment =
+        $payrollsByDepartment = $payrolls->groupBy(function ($payroll) use ($getEmployeeContract) {
 
-            $payrolls->groupBy(function ($payroll) {
+            $contract = $getEmployeeContract($payroll->employee);
 
-                $department =
+            $department = $contract?->department
 
-                    $payroll->employee?->activeContract?->department
+                ?? $contract?->division
 
-                    ??
+                ?? $contract?->divisi
 
-                    $payroll->employee?->activeContract?->division
+                ?? null;
 
-                    ??
+            $department = trim((string) $department);
 
-                    $payroll->employee?->activeContract?->divisi
+            return $department !== '' ? $department : 'Tanpa Department';
 
-                    ??
-
-                    null;
-
-                $department =
-
-                    trim((string) $department);
-
-                return $department !== ''
-
-                    ? $department
-
-                    : 'Tanpa Department';
-
-            });
+        });
 
         /*
 
@@ -268,21 +372,34 @@
             </p>
 
             @if($isHeadHrd)
-                <div class="role-access-note mt-3">
-                    <i class="fa-solid fa-shield-halved"></i>
-                    <span>
-                        Akses finansial Head HRD dibatasi ke karyawan
-                        <strong>Level 1–13</strong>. Level 14 ke atas disamarkan
-                        dan tidak masuk total ringkasan.
-                    </span>
-                </div>
-            @elseif($isHrd)
-                <div class="role-access-note role-access-note-muted mt-3">
-                    <i class="fa-solid fa-calendar-check"></i>
-                    <span>Mode HRD: tampilan difokuskan pada data kehadiran.</span>
-                </div>
-            @endif
 
+                <div class="role-access-note mt-3">
+
+                    <i class="fa-solid fa-shield-halved"></i>
+
+                    <span>
+
+                        Akses finansial Head HRD dibatasi ke karyawan
+
+                        <strong>Level 1–13</strong>. Level 14 ke atas disamarkan
+
+                        dan tidak masuk total ringkasan.
+
+                    </span>
+
+                </div>
+
+            @elseif($isHrd)
+
+                <div class="role-access-note role-access-note-muted mt-3">
+
+                    <i class="fa-solid fa-calendar-check"></i>
+
+                    <span>Mode HRD: tampilan difokuskan pada data kehadiran.</span>
+
+                </div>
+
+            @endif
 
         </div>
 
@@ -664,18 +781,28 @@
 
     @if($showFinancialColumns)
 
-        
             @if($isHeadHrd)
+
                 <div class="col-12">
+
                     <div class="role-access-note">
+
                         <i class="fa-solid fa-shield-halved mt-1"></i>
+
                         <span>
+
                             Ringkasan nominal hanya menghitung karyawan
+
                             <strong>Level 1–13</strong>. Data finansial Level 14 ke atas
+
                             disamarkan dan tidak ikut dijumlahkan.
+
                         </span>
+
                     </div>
+
                 </div>
+
             @endif
 
 <div class="row g-3 mb-4">
@@ -812,6 +939,46 @@
 
     {{-- ============================================================
 
+         BULK EMAIL SLIP
+
+    ============================================================= --}}
+    @if($isFinanceRole && $totalEmployeeCount > 0)
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 border rounded-4 p-3 mb-3 bg-light-subtle">
+            <div>
+                <div class="fw-semibold text-dark">
+                    <i class="fa-solid fa-envelope text-primary me-1"></i>
+                    Pengiriman Slip Gaji Massal
+                </div>
+                <div class="text-muted small mt-1">
+                    <span id="selectedPayrollEmailCount">0</span> karyawan dipilih.
+                    Email kosong atau tidak valid akan dilewati otomatis.
+                </div>
+            </div>
+
+            <form
+                id="bulkPayrollEmailForm"
+                action="{{ route('payrolls.outer_island.send-email-bulk') }}"
+                method="POST"
+                class="d-flex flex-wrap align-items-center gap-2"
+            >
+                @csrf
+                <input type="hidden" name="period" value="{{ $period }}">
+                <div id="selectedPayrollEmailInputs"></div>
+                <button
+                    type="submit"
+                    id="sendSelectedPayrollEmailsBtn"
+                    class="btn btn-primary rounded-3 fw-semibold"
+                    disabled
+                >
+                    <i class="fa-solid fa-paper-plane me-1"></i>
+                    Kirim Email Terpilih
+                </button>
+            </form>
+        </div>
+    @endif
+
+    {{-- ============================================================
+
          TABLE
 
     ============================================================= --}}
@@ -823,6 +990,21 @@
             <thead class="bg-light border-bottom">
 
                 <tr class="text-secondary small fw-bold text-uppercase">
+
+                    @if($isFinanceRole)
+                        <th class="py-3 px-2 text-center" style="width:72px;">
+                            <div class="d-flex flex-column align-items-center gap-1">
+                                <input
+                                    type="checkbox"
+                                    class="form-check-input m-0"
+                                    id="selectAllPayrollEmails"
+                                    aria-label="Pilih semua karyawan untuk email"
+                                    title="Pilih semua karyawan"
+                                >
+                                <span class="small">Pilih</span>
+                            </div>
+                        </th>
+                    @endif
 
                     <th
 
@@ -849,6 +1031,7 @@
                     </th>
 
                     @if($showBpjsColumns)
+
 <th class="py-3 px-3 text-end">
 
                         BPJS TK
@@ -860,8 +1043,8 @@
                         BPJS KS
 
                     </th>
-@endif
 
+@endif
 
                     @if($showFinancialColumns)
 
@@ -1049,21 +1232,22 @@
 
                             */
 
-                            $contract = $employee?->activeContract;
+                            $contract = $getEmployeeContract($employee);
 
-                            $level =
-                                $contract?->level
-                                ?? $contract?->currentHistory?->level
-                                ?? $employee?->contract?->currentHistory?->level;
-
-                            $level = is_numeric($level) ? (int) $level : null;
+                            $level = $getEmployeeLevel($employee);
 
                             $canViewFinancial =
+
                                 $isFinanceRole
+
                                 || (
+
                                     $isHeadHrd
+
                                     && $level !== null
+
                                     && $level <= 13
+
                                 );
 
                             $canViewBpjsNominal = $canViewFinancial;
@@ -1282,6 +1466,20 @@
 
                         <tr class="employee-row">
 
+                            @if($isFinanceRole)
+                                <td class="text-center px-2">
+                                    @if($employee && $employee->uuid)
+                                        <input
+                                            type="checkbox"
+                                            class="form-check-input payroll-email-checkbox"
+                                            value="{{ $employee->uuid }}"
+                                            data-employee-name="{{ $employee->full_name_outer ?? 'Karyawan' }}"
+                                            aria-label="Pilih slip email {{ $employee->full_name_outer ?? 'karyawan' }}"
+                                        >
+                                    @endif
+                                </td>
+                            @endif
+
                             {{-- NO --}}
 
                             <td class="text-center fw-bold text-muted px-3">
@@ -1441,6 +1639,7 @@
                             </td>
 
                             @if($showBpjsColumns)
+
 {{-- =================================================
 
                                  BPJS TK
@@ -1490,6 +1689,7 @@
                                 @endif
 
                                 @if($canViewBpjsNominal)
+
 @if($isBpjsOverride)
 
                                     <span
@@ -1527,6 +1727,7 @@
                                     </span>
 
                                 @endif
+
 @endif
 
                             </td>
@@ -1580,6 +1781,7 @@
                                 @endif
 
                                 @if($canViewBpjsNominal)
+
 @if($isBpjsOverride)
 
                                     <span
@@ -1617,12 +1819,13 @@
                                     </span>
 
                                 @endif
+
 @endif
 
                             </td>
 
-                            
 @endif
+
 {{-- =================================================
 
                                  FINANCIAL
@@ -1863,27 +2066,41 @@
 
                                                 </a>
 
-                                                <a
+<form
 
-                                                    href="{{ route('payrolls.outer_island.send-email', [
+    action="{{ route('payrolls.outer_island.send-email.post', ['uuid' => $employee->uuid]) }}"
 
-                                                        'uuid' => $employee->uuid,
+    method="POST"
 
-                                                        'period' => $period
+    class="d-inline"
 
-                                                    ]) }}"
+    onsubmit="return confirm('Kirim slip gaji periode {{ $period }} ke email karyawan ini?')"
 
-                                                    class="btn btn-light btn-sm border rounded-3 text-primary"
+>
 
-                                                    title="Kirim Email Slip Gaji"
+    @csrf
 
-                                                    onclick="return confirm('Kirim slip gaji ke email karyawan?')"
+    <input type="hidden" name="period" value="{{ $period }}">
 
-                                                >
+    <button
 
-                                                    <i class="fa-solid fa-paper-plane fs-6"></i>
+        type="submit"
 
-                                                </a>
+        class="btn btn-light btn-sm border rounded-3 text-primary"
+
+        title="Kirim Email Slip Gaji"
+
+    >
+
+        <i class="fa-solid fa-paper-plane fs-6"></i>
+
+    </button>
+
+</form>
+
+
+
+
 
                                             @else
 
@@ -2389,112 +2606,182 @@
 
     }
 
-
     /* =============================================================
+
        OUTER ISLAND PAYROLL — ADVANCED RECAP UI
+
     ============================================================= */
+
     .outer-payroll-recap-card {
+
         border-top: 4px solid #2563eb !important;
+
         background:
+
             radial-gradient(circle at top right, rgba(37, 99, 235, .045), transparent 28%),
+
             #fff !important;
+
     }
 
     .outer-payroll-recap-card .btn {
+
         transition: transform .15s ease, box-shadow .15s ease;
+
     }
 
     .outer-payroll-recap-card .btn:hover {
+
         transform: translateY(-1px);
+
         box-shadow: 0 .35rem .8rem rgba(15, 23, 42, .08);
+
     }
 
     .outer-payroll-recap-card .form-control {
+
         min-height: 38px;
+
         border-radius: .7rem;
+
     }
 
     .role-access-note {
+
         display: flex;
+
         align-items: flex-start;
+
         gap: .6rem;
+
         padding: .75rem .9rem;
+
         border: 1px solid #bfdbfe;
+
         border-radius: .85rem;
+
         color: #1e40af;
+
         background: #eff6ff;
+
         font-size: .82rem;
+
         line-height: 1.45;
+
     }
 
     .role-access-note-muted {
+
         color: #475569;
+
         border-color: #e2e8f0;
+
         background: #f8fafc;
+
     }
 
     .outer-payroll-table-wrap {
+
         max-height: 70vh;
+
         overflow: auto;
+
         background: #fff;
+
     }
 
     .outer-payroll-table {
+
         min-width: 820px;
+
         border-collapse: separate;
+
         border-spacing: 0;
+
     }
 
     .outer-payroll-table thead th {
+
         position: sticky;
+
         top: 0;
+
         z-index: 3;
+
         background-color: #f8fafc;
+
         white-space: nowrap;
+
         box-shadow: inset 0 -1px 0 rgba(15, 23, 42, .08);
+
     }
 
     .outer-payroll-table tbody td {
+
         vertical-align: middle;
+
     }
 
     .outer-payroll-table .employee-row:hover td {
+
         background-color: #f8fbff;
+
     }
 
     .outer-payroll-table .financial-masked {
+
         background: #f8fafc;
+
         color: #64748b;
+
     }
 
     .outer-payroll-table .department-row td {
+
         position: sticky;
+
         left: 0;
+
         z-index: 2;
+
     }
 
     .summary-card {
+
         box-shadow: 0 .35rem 1.2rem rgba(15, 23, 42, .045);
+
         transition: transform .18s ease, box-shadow .18s ease;
+
     }
 
     .summary-card:hover {
+
         transform: translateY(-2px);
+
         box-shadow: 0 .55rem 1.5rem rgba(15, 23, 42, .085);
+
     }
 
     @media (max-width: 768px) {
+
         .outer-payroll-recap-card {
+
             padding: 1rem !important;
+
         }
 
         .outer-payroll-table-wrap {
+
             max-height: 65vh;
+
         }
 
         .role-access-note {
+
             width: 100%;
+
         }
+
     }
 
 </style>
@@ -2629,6 +2916,88 @@ document.addEventListener('DOMContentLoaded', function () {
 
         });
 
+    // Selection controls for bulk email. Hidden inputs are generated only on submit,
+    // so existing per-row PDF and single-email forms remain independent.
+    const selectAllEmailCheckbox = document.getElementById('selectAllPayrollEmails');
+    const employeeEmailCheckboxes = Array.from(
+        document.querySelectorAll('.payroll-email-checkbox')
+    );
+    const selectedEmailCount = document.getElementById('selectedPayrollEmailCount');
+    const bulkEmailForm = document.getElementById('bulkPayrollEmailForm');
+    const bulkEmailButton = document.getElementById('sendSelectedPayrollEmailsBtn');
+    const selectedEmailInputs = document.getElementById('selectedPayrollEmailInputs');
+
+    function updateEmailSelection() {
+        const selected = employeeEmailCheckboxes.filter(function (checkbox) {
+            return checkbox.checked;
+        });
+
+        if (selectedEmailCount) {
+            selectedEmailCount.textContent = String(selected.length);
+        }
+
+        if (bulkEmailButton) {
+            bulkEmailButton.disabled = selected.length === 0;
+        }
+
+        if (selectAllEmailCheckbox) {
+            selectAllEmailCheckbox.checked =
+                employeeEmailCheckboxes.length > 0 &&
+                selected.length === employeeEmailCheckboxes.length;
+            selectAllEmailCheckbox.indeterminate =
+                selected.length > 0 &&
+                selected.length < employeeEmailCheckboxes.length;
+        }
+    }
+
+    if (selectAllEmailCheckbox) {
+        selectAllEmailCheckbox.addEventListener('change', function () {
+            employeeEmailCheckboxes.forEach(function (checkbox) {
+                checkbox.checked = selectAllEmailCheckbox.checked;
+            });
+            updateEmailSelection();
+        });
+    }
+
+    employeeEmailCheckboxes.forEach(function (checkbox) {
+        checkbox.addEventListener('change', updateEmailSelection);
+    });
+
+    if (bulkEmailForm) {
+        bulkEmailForm.addEventListener('submit', function (event) {
+            const selected = employeeEmailCheckboxes.filter(function (checkbox) {
+                return checkbox.checked;
+            });
+
+            if (selected.length === 0) {
+                event.preventDefault();
+                alert('Pilih minimal satu karyawan terlebih dahulu.');
+                return;
+            }
+
+            const confirmed = confirm(
+                'Masukkan ' + selected.length +
+                ' slip gaji periode {{ $period }} ke antrean email? ' +
+                'Karyawan tanpa email valid akan dilewati.'
+            );
+
+            if (!confirmed) {
+                event.preventDefault();
+                return;
+            }
+
+            selectedEmailInputs.replaceChildren();
+            selected.forEach(function (checkbox) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'employee_uuids[]';
+                input.value = checkbox.value;
+                selectedEmailInputs.appendChild(input);
+            });
+        });
+    }
+
+    updateEmailSelection();
 });
 
 </script>

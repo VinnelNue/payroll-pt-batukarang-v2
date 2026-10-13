@@ -1342,7 +1342,7 @@ class EmployeeOuterIslandController extends Controller
 
                 'file',
 
-                'mimes:xlsx,xls,csv,txt',
+                'mimes:xlsx,xls,ods,csv,txt',
 
                 'max:5120',
 
@@ -1616,473 +1616,76 @@ class EmployeeOuterIslandController extends Controller
 
         |--------------------------------------------------------------------------
 
-        | 7A. CSV / TXT
+        | 7A. CSV / TXT HRIS
 
         |--------------------------------------------------------------------------
 
+        |
+
+        | CSV hasil ekspor HRIS memiliki urutan kolom berbeda dari template CSV
+        | karyawan lama. Gunakan parser HRIS yang sama dengan import Excel agar
+        | header tidak pernah disimpan sebagai data, dan agar semua periode
+        | Freelance/PKWT ikut diproses.
+
+        |
+
         */
 
-
-
-        if (
-
-            $extension === 'csv' ||
-
-            $extension === 'txt'
-
-        ) {
-
+        if ($extension === 'csv' || $extension === 'txt') {
             DB::beginTransaction();
 
-
-
             try {
+                $outerIslandImport = new EmployeeOuterIslandImport();
+                $outerIslandImport->importCsvFile($file->getRealPath());
 
-                $filePath = $file->getRealPath();
-
-
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | Deteksi delimiter
-
-                |--------------------------------------------------------------------------
-
-                */
-
-
-
-                $firstLine = file_get_contents(
-
-                    $filePath,
-
-                    false,
-
-                    null,
-
-                    0,
-
-                    1000
-
-                );
-
-
-
-                $delimiter =
-
-                    substr_count(
-
-                        $firstLine,
-
-                        ';'
-
-                    ) >
-
-                    substr_count(
-
-                        $firstLine,
-
-                        ','
-
-                    )
-
-                        ? ';'
-
-                        : ',';
-
-
-
-                $handle = fopen(
-
-                    $filePath,
-
-                    'r'
-
-                );
-
-
-
-                if (!$handle) {
-
-                    throw new \RuntimeException(
-
-                        'File CSV tidak dapat dibuka.'
-
-                    );
-
+                // Pastikan employee existing yang belum memiliki master tetap memiliki satu master.
+                $employeesWithoutMaster = EmployeeOuterIsland::whereDoesntHave('contractMaster')->get();
+                foreach ($employeesWithoutMaster as $employee) {
+                    $this->ensureContractMaster($employee);
                 }
-
-
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | Skip Header
-
-                |--------------------------------------------------------------------------
-
-                */
-
-
-
-                fgetcsv(
-
-                    $handle,
-
-                    2000,
-
-                    $delimiter
-
-                );
-
-
-
-                $successCount = 0;
-
-
-
-                while (
-
-                    (
-
-                        $row = fgetcsv(
-
-                            $handle,
-
-                            2000,
-
-                            $delimiter
-
-                        )
-
-                    ) !== false
-
-                ) {
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | Skip baris kosong
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-
-
-                    if (!array_filter($row)) {
-
-                        continue;
-
-                    }
-
-
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | NIK
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-
-
-                    $nikKtp = $cleanNumber(
-
-                        $row[0] ?? ''
-
-                    );
-
-
-
-                    if (empty($nikKtp)) {
-
-                        continue;
-
-                    }
-
-
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | Skip jika NIK sudah ada
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-
-
-                    if (
-
-                        EmployeeOuterIsland::where(
-
-                            'nik_ktp_outer',
-
-                            $nikKtp
-
-                        )->exists()
-
-                    ) {
-
-                        continue;
-
-                    }
-
-
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | CREATE EMPLOYEE
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-
-
-                    $employee = EmployeeOuterIsland::create([
-
-                        'uuid' =>
-
-                            (string) Str::uuid(),
-
-
-
-                        'nik_ktp_outer' =>
-
-                            $nikKtp,
-
-
-
-                        'no_kk_outer' =>
-
-                            $cleanNumber(
-
-                                $row[1] ?? null
-
-                            ),
-
-
-
-                        'full_name_outer' =>
-
-                            trim(
-
-                                $row[2] ?? ''
-
-                            ),
-
-
-
-                        'gender_outer' =>
-
-                            strtoupper(
-
-                                trim(
-
-                                    $row[3] ?? 'L'
-
-                                )
-
-                            ),
-
-
-
-                        'birth_place_outer' =>
-
-                            $row[4] ?? '-',
-
-
-
-                        'birth_date_outer' =>
-
-                            $parseDate(
-
-                                $row[5] ?? null
-
-                            ),
-
-
-
-                        'religion_outer' =>
-
-                            $row[6] ?? null,
-
-
-
-                        'marital_status_outer' =>
-
-                            strtolower(
-
-                                trim(
-
-                                    $row[7] ??
-
-                                    'single'
-
-                                )
-
-                            ),
-
-
-
-                        'phone_number_outer' =>
-
-                            $cleanNumber(
-
-                                $row[8] ?? null
-
-                            ),
-
-
-
-                        'email_outer' =>
-
-                            $row[9] ?? null,
-
-
-
-                        'address_ktp_outer' =>
-
-                            $row[10] ?? '-',
-
-
-
-                        'address_domicile_outer' =>
-
-                            $row[11] ?? null,
-
-
-
-                        'npwp_number_outer' =>
-
-                            $cleanNumber(
-
-                                $row[12] ?? null
-
-                            ),
-
-
-
-                        'bank_name_outer' =>
-
-                            $row[13] ?? null,
-
-
-
-                        'bank_account_number_outer' =>
-
-                            $cleanNumber(
-
-                                $row[14] ?? null
-
-                            ),
-
-
-
-                        'bank_account_holder_outer' =>
-
-                            $row[15] ?? null,
-
-
-
-                        'is_active' => true,
-
-                    ]);
-
-
-
-                    /*
-
-                    |--------------------------------------------------------------------------
-
-                    | CREATE CONTRACT MASTER
-
-                    |--------------------------------------------------------------------------
-
-                    */
-
-
-
-                    $this->ensureContractMaster(
-
-                        $employee
-
-                    );
-
-
-
-                    $successCount++;
-
-                }
-
-
-
-                fclose($handle);
-
-
 
                 DB::commit();
+                $report = $outerIslandImport->report;
+                $summary = sprintf(
+                    'Import HRIS CSV selesai: %d employee baru, %d employee diperbarui, %d employee dipulihkan via NIK internal, %d master kontrak baru, %d history dibuat, %d history disinkronkan, %d duplikat history dibersihkan, %d periode lama yang kosong di HRIS dihapus, %d baris dilewati.',
+                    $report['employees_created'] ?? 0,
+                    $report['employees_updated'] ?? 0,
+                    $report['employees_relinked_by_internal_nik'] ?? 0,
+                    $report['masters_created'] ?? 0,
+                    $report['histories_created'] ?? 0,
+                    $report['histories_updated_from_hris'] ?? 0,
+                    $report['histories_duplicates_removed'] ?? 0,
+                    $report['stale_period_histories_removed'] ?? 0,
+                    $report['rows_skipped'] ?? 0
+                );
 
-
+                $warnings = array_slice($report['errors'] ?? [], 0, 5);
+                if ($warnings !== []) {
+                    $summary .= ' Catatan: ' . implode(' | ', $warnings);
+                    if (count($report['errors']) > count($warnings)) {
+                        $summary .= sprintf(
+                            ' | dan %d catatan tambahan dicatat di log Laravel.',
+                            count($report['errors']) - count($warnings)
+                        );
+                    }
+                }
 
                 return redirect()
-
-                    ->route(
-
-                        'employees.outer_island.index'
-
-                    )
-
-                    ->with(
-
-                        'success',
-
-                        "Berhasil mengimpor {$successCount} data karyawan luar pulau!"
-
-                    );
-
+                    ->route('employees.outer_island.index')
+                    ->with('success', $summary);
             } catch (\Throwable $e) {
-
                 DB::rollBack();
 
-
-
                 return redirect()
-
                     ->back()
-
-                    ->with(
-
-                        'error',
-
-                        'Gagal memproses file CSV: ' .
-
-                        $e->getMessage()
-
-                    )
-
+                    ->with('error', 'Gagal memproses CSV HRIS: ' . $e->getMessage())
                     ->withInput();
-
             }
-
         }
 
 
 
-        /*
+                /*
 
         |--------------------------------------------------------------------------
 
@@ -2114,9 +1717,11 @@ class EmployeeOuterIslandController extends Controller
 
         try {
 
+            $outerIslandImport = new EmployeeOuterIslandImport();
+
             Excel::import(
 
-                new EmployeeOuterIslandImport,
+                $outerIslandImport,
 
                 $file
 
@@ -2170,23 +1775,31 @@ class EmployeeOuterIslandController extends Controller
 
             DB::commit();
 
+            $report = $outerIslandImport->report;
+            $summary = sprintf(
+                'Import selesai: %d employee baru, %d employee diperbarui, %d employee dipulihkan via NIK internal, %d master kontrak baru, %d history dibuat, %d history disinkronkan dari HRIS, %d duplikat history dibersihkan, %d periode lama yang kosong di HRIS dihapus, %d baris dilewati.',
+                $report['employees_created'] ?? 0,
+                $report['employees_updated'] ?? 0,
+                $report['employees_relinked_by_internal_nik'] ?? 0,
+                $report['masters_created'] ?? 0,
+                $report['histories_created'] ?? 0,
+                $report['histories_updated_from_hris'] ?? 0,
+                $report['histories_duplicates_removed'] ?? 0,
+                $report['stale_period_histories_removed'] ?? 0,
+                $report['rows_skipped'] ?? 0
+            );
 
+            $warnings = array_slice($report['errors'] ?? [], 0, 4);
+            if ($warnings !== []) {
+                $summary .= ' Catatan: ' . implode(' | ', $warnings);
+                if (count($report['errors']) > count($warnings)) {
+                    $summary .= sprintf(' | dan %d catatan lainnya (detail juga dicatat di log Laravel).', count($report['errors']) - count($warnings));
+                }
+            }
 
             return redirect()
-
-                ->route(
-
-                    'employees.outer_island.index'
-
-                )
-
-                ->with(
-
-                    'success',
-
-                    'Data karyawan luar pulau berhasil diimpor!'
-
-                );
+                ->route('employees.outer_island.index')
+                ->with('success', $summary);
 
         } catch (\Throwable $e) {
 

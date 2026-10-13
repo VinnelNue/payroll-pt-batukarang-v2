@@ -9,6 +9,10 @@ use App\Models\ContractOuterIsland;
 use App\Models\ContractHistoryOuterIsland;
 use App\Models\AttendanceRecordOuterIsland;
 use App\Models\Holiday;
+use App\Mail\OuterIslandSalarySlipMail;
+use Illuminate\Support\Facades\Mail;
+use App\Jobs\SendOuterIslandSalarySlipEmail;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -3088,7 +3092,7 @@ public function generateAttendance(
             )
             ->with(
                 'success',
-                "Payroll Outer Island periode {$period} berhasil dihitung."
+                "Payroll Luar Pulau periode {$period} berhasil dihitung."
             );
     }
 
@@ -3956,7 +3960,7 @@ public function generateAttendance(
                 )
                 ->with(
                     'error',
-                    "Tidak ada payroll Outer Island untuk periode {$period}. "
+                    "Tidak ada payroll Luar Pulau untuk periode {$period}. "
                     . "Simpan/generate payroll terlebih dahulu."
                 );
         }
@@ -4399,4 +4403,195 @@ public function generateAttendance(
             . '.pdf'
         );
     }
+
+    /**
+ * Kirim satu slip gaji Outer Island ke email karyawan.
+ * Menggunakan view PDF yang sama dengan tombol Cetak Slip PDF.
+ * Pengiriman masih sinkron untuk pengujian satu penerima; antrean bulk dibuat tahap berikutnya.
+ */
+public function sendEmail(Request $request, string $uuid)
+{
+    $role = strtolower(trim((string) $request->user()?->role));
+
+    abort_unless(
+        in_array($role, ['super_admin', 'manager_keuangan'], true),
+        403
+    );
+
+    $validated = $request->validate([
+        'period' => ['required', 'date_format:Y-m'],
+    ]);
+
+    $period = (string) $validated['period'];
+
+    $employee = EmployeeOuterIsland::query()
+        ->with(['contractMaster.currentHistory'])
+        ->where('uuid', $uuid)
+        ->firstOrFail();
+
+    $payroll = PayrollOuterIsland::query()
+        ->where('employee_outer_island_id', $employee->id_employee_outer_island)
+        ->where('period_month', $period)
+        ->firstOrFail();
+
+    $emailDestination = trim((string) ($employee->email_outer ?? ''));
+
+    if (!filter_var($emailDestination, FILTER_VALIDATE_EMAIL)) {
+        return redirect()->back()->with(
+            'error',
+            'Email karyawan ' . ($employee->full_name_outer ?: 'ini') . ' belum diisi atau tidak valid.'
+        );
+    }
+
+    try {
+        $contract = $employee->contractMaster?->currentHistory;
+
+        // PDF view membaca $payroll->employee di bagian judul, jadi pastikan relasinya tepat.
+        $payroll->setRelation('employee', $employee);
+
+        // Pertahankan template PDF yang sudah dipakai tombol Cetak Slip PDF.
+        $pdfBinary = Pdf::loadView(
+            'payrolls.outer_island.pdf_slip',
+            [
+                'employee' => $employee,
+                'payroll' => $payroll,
+                'contract' => $contract,
+                'period' => $period,
+            ]
+        )
+            ->setPaper('A4', 'portrait')
+            ->output();
+
+        $safeName = preg_replace(
+            '/[^A-Za-z0-9_-]+/',
+            '_',
+            (string) ($employee->full_name_outer ?: 'Karyawan')
+        ) ?: 'Karyawan';
+
+        Mail::to($emailDestination)->send(
+            new OuterIslandSalarySlipMail(
+                (string) ($employee->full_name_outer ?: 'Karyawan'),
+                $period,
+                $pdfBinary,
+                "Slip_Gaji_Outer_Island_{$safeName}_{$period}.pdf"
+            )
+        );
+    } catch (\Throwable $exception) {
+        report($exception);
+
+        return redirect()->back()->with(
+            'error',
+            'Email slip belum berhasil dikirim. Periksa SMTP dan storage/logs/laravel.log.'
+        );
+    }
+
+    return redirect()->back()->with(
+        'success',
+        'Slip gaji periode ' . $period . ' berhasil dikirim ke Mailpit/mail server untuk ' . $emailDestination . '.'
+    );
+}
+/**
+ * Queue email slip gaji Outer Island untuk satu atau banyak karyawan.
+ * Hanya Finance dan Super Admin yang dapat memulai pengiriman.
+ */
+public function sendEmailBulk(Request $request)
+{
+    abort_unless($this->isFinanceRole(), 403);
+
+    $validated = $request->validate([
+        'period' => ['required', 'date_format:Y-m'],
+        'employee_uuids' => ['required', 'array', 'min:1', 'max:500'],
+        'employee_uuids.*' => ['required', 'string', 'uuid', 'distinct'],
+    ]);
+
+    $period = (string) $validated['period'];
+    $employeeUuids = array_values(array_unique($validated['employee_uuids']));
+
+    $employees = EmployeeOuterIsland::query()
+        ->whereIn('uuid', $employeeUuids)
+        ->get()
+        ->keyBy('uuid');
+
+    $payrolls = PayrollOuterIsland::query()
+        ->where('period_month', $period)
+        ->whereIn(
+            'employee_outer_island_id',
+            $employees->pluck('id_employee_outer_island')->all()
+        )
+        ->get()
+        ->keyBy('employee_outer_island_id');
+
+    $batchUuid = (string) Str::uuid();
+    $queued = 0;
+    $skipped = 0;
+    $alreadyQueued = 0;
+
+    foreach ($employeeUuids as $employeeUuid) {
+        $employee = $employees->get($employeeUuid);
+
+        // UUID bisa sudah tidak ada atau pilihan berasal dari halaman yang lama.
+        if (!$employee) {
+            $skipped++;
+            continue;
+        }
+
+        $employeeId = (int) $employee->id_employee_outer_island;
+        $payroll = $payrolls->get($employeeId);
+        $email = trim((string) ($employee->email_outer ?? ''));
+        $status = 'queued';
+        $errorMessage = null;
+
+        if (!$payroll) {
+            $status = 'skipped';
+            $errorMessage = "Tidak ditemukan payroll periode {$period}.";
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $status = 'skipped';
+            $email = '';
+            $errorMessage = 'Alamat email karyawan belum diisi atau tidak valid.';
+        } else {
+            $hasPendingEmail = DB::table('payroll_slip_email_logs')
+                ->where('employee_outer_island_id', $employeeId)
+                ->where('period_month', $period)
+                ->whereIn('status', ['queued', 'sending'])
+                ->exists();
+
+            if ($hasPendingEmail) {
+                $alreadyQueued++;
+                continue;
+            }
+        }
+
+        $logId = DB::table('payroll_slip_email_logs')->insertGetId([
+            'batch_uuid' => $batchUuid,
+            'employee_outer_island_id' => $employeeId,
+            'period_month' => $period,
+            'employee_name' => (string) ($employee->full_name_outer ?? 'Karyawan'),
+            'recipient_email' => $email !== '' ? $email : null,
+            'status' => $status,
+            'attempts' => 0,
+            'error_message' => $errorMessage,
+            'sent_at' => null,
+            'requested_by' => Auth::id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        if ($status === 'queued') {
+            SendOuterIslandSalarySlipEmail::dispatch((int) $logId);
+            $queued++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    $message = "Periode {$period}: {$queued} slip dimasukkan ke antrean email, {$skipped} dilewati, {$alreadyQueued} sudah dalam antrean.";
+
+    if ($queued > 0) {
+        return redirect()->back()->with('success', $message);
+    }
+
+    return redirect()->back()->with('warning', $message);
+}
+
+
 }
