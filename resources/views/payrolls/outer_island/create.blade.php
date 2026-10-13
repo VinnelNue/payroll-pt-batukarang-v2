@@ -416,7 +416,7 @@ $tableColspan =
                     <i class="fa-solid fa-plane-departure text-primary"></i>
 
                     <span>
-                        Input Absensi & Payroll Outer Island
+                        Input Absensi Luar Pulau
                     </span>
 
                 </h5>

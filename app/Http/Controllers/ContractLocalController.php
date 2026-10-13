@@ -1,10 +1,6 @@
 <?php
 
-
-
 namespace App\Http\Controllers;
-
-
 
 use App\Models\Employee;
 
@@ -20,8 +16,6 @@ use Illuminate\Support\Str;
 
 use Carbon\Carbon;
 
-
-
 class ContractLocalController extends Controller
 
 {
@@ -36,8 +30,6 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private const FINANCE_ROLES = [
 
         'manager_keuangan',
@@ -45,8 +37,6 @@ class ContractLocalController extends Controller
         'super_admin',
 
     ];
-
-
 
     private const HEAD_HRD_ROLES = [
 
@@ -56,15 +46,9 @@ class ContractLocalController extends Controller
 
     ];
 
-
-
     private const KEUANGAN_ROLE = 'keuangan';
 
-
-
     private const HRD_ROLE = 'hrd';
-
-
 
     /*
 
@@ -76,11 +60,10 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     public function index(Request $request)
 
     {
+
         $this->authorizeContractAccess();
 
         $search = trim(
@@ -88,8 +71,6 @@ class ContractLocalController extends Controller
             $request->get('search', '')
 
         );
-
-
 
         $employees = Employee::with([
 
@@ -103,11 +84,7 @@ class ContractLocalController extends Controller
 
                 function ($query) use ($search) {
 
-
-
                     $query->where(function ($q) use ($search) {
-
-
 
                         $q->where(
 
@@ -119,8 +96,6 @@ class ContractLocalController extends Controller
 
                         )
 
-
-
                         ->orWhere(
 
                             'nik_ktp',
@@ -131,15 +106,11 @@ class ContractLocalController extends Controller
 
                         )
 
-
-
                         ->orWhereHas(
 
                             'contract.currentHistory',
 
                             function ($history) use ($search) {
-
-
 
                                 $history
 
@@ -153,8 +124,6 @@ class ContractLocalController extends Controller
 
                                     )
 
-
-
                                     ->orWhere(
 
                                         'department',
@@ -164,8 +133,6 @@ class ContractLocalController extends Controller
                                         "%{$search}%"
 
                                     )
-
-
 
                                     ->orWhere(
 
@@ -193,8 +160,6 @@ class ContractLocalController extends Controller
 
             ->withQueryString();
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -205,13 +170,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $employees->getCollection()->transform(
 
             function ($employee) {
-
-
 
                 $history =
 
@@ -221,31 +182,21 @@ class ContractLocalController extends Controller
 
                         ?->currentHistory;
 
-
-
                 $employee->current_contract_history =
 
                     $history;
-
-
 
                 $employee->current_contract_level =
 
                     $history?->level;
 
-
-
                 $employee->has_contract_master =
 
                     $employee->contract !== null;
 
-
-
                 $employee->has_current_contract =
 
                     $history !== null;
-
-
 
                 $employee->can_view_sensitive_data =
 
@@ -255,15 +206,11 @@ class ContractLocalController extends Controller
 
                     );
 
-
-
                 return $employee;
 
             }
 
         );
-
-
 
         return view(
 
@@ -281,8 +228,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -293,11 +238,10 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     public function edit(Employee $employee)
 
     {
+
         $this->authorizeContractAccess();
 
         $employee->load([
@@ -308,25 +252,17 @@ class ContractLocalController extends Controller
 
         ]);
 
-
-
         $contract =
 
             $employee->contract;
-
-
 
         $history =
 
             $contract?->currentHistory;
 
-
-
         $histories =
 
             $contract?->histories ?? collect();
-
-
 
         /*
 
@@ -338,8 +274,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $histories = $histories
 
             ->sortByDesc(
@@ -349,8 +283,6 @@ class ContractLocalController extends Controller
             )
 
             ->values();
-
-
 
         /*
 
@@ -362,8 +294,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $canViewSensitiveData =
 
             $this->canViewSensitiveData(
@@ -372,8 +302,6 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         $canEditCurrent =
 
             $this->canEditCurrentContract(
@@ -381,8 +309,6 @@ class ContractLocalController extends Controller
                 $history
 
             );
-
-
 
         /*
 
@@ -394,8 +320,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $nextPkwtSequence =
 
             $contract
@@ -403,8 +327,6 @@ class ContractLocalController extends Controller
                 ? $this->getNextPkwtSequence($contract)
 
                 : 1;
-
-
 
         /*
 
@@ -416,13 +338,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $contractLevel =
 
             $history?->level;
-
-
 
         $levelNumber =
 
@@ -432,15 +350,11 @@ class ContractLocalController extends Controller
 
                 : null;
 
-
-
         $isHighLevel =
 
             $levelNumber !== null &&
 
             $levelNumber >= 14;
-
-
 
         /*
 
@@ -452,13 +366,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $userRole =
 
             auth()->user()?->role;
-
-
 
         $isManagerKeuangan =
 
@@ -468,8 +378,6 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         $isHeadHrd =
 
             $this->isHeadHrdRole(
@@ -478,19 +386,13 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         $isKeuangan =
 
             $userRole === self::KEUANGAN_ROLE;
 
-
-
         $isHrd =
 
             $userRole === self::HRD_ROLE;
-
-
 
         /*
 
@@ -501,8 +403,6 @@ class ContractLocalController extends Controller
         |--------------------------------------------------------------------------
 
         */
-
-
 
         $canSeeLevelCategory =
 
@@ -540,8 +440,6 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         $maskLevelCategory =
 
             !$isManagerKeuangan
@@ -566,8 +464,6 @@ class ContractLocalController extends Controller
 
             $isHighLevel;
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -578,29 +474,19 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $canSeeSalary =
 
             $canViewSensitiveData;
-
-
 
         $maskFinancial =
 
             !$canSeeSalary;
 
-
-
         $employmentStatusOptions =
 
             $this->employmentStatusOptions();
 
-
-
         $terOptions = ['A', 'B', 'C'];
-
-
 
         /*
 
@@ -612,19 +498,13 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $hasContractMaster =
 
             $contract !== null;
 
-
-
         $hasCurrentHistory =
 
             $history !== null;
-
-
 
         return view(
 
@@ -684,8 +564,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -706,8 +584,6 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     public function update(
 
         Request $request,
@@ -715,6 +591,7 @@ class ContractLocalController extends Controller
         Employee $employee
 
     ) {
+
         $this->authorizeContractAccess();
 
         /*
@@ -727,25 +604,17 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $employee->load([
 
             'contract.currentHistory',
 
         ]);
 
-
-
         $contract =
 
             $employee->contract;
 
-
-
         if (!$contract) {
-
-
 
             return redirect()
 
@@ -761,17 +630,11 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         $history =
 
             $contract->currentHistory;
 
-
-
         if (!$history) {
-
-
 
             return redirect()
 
@@ -787,8 +650,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -799,37 +660,25 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $role =
 
             auth()->user()?->role;
-
-
 
         $isFinance =
 
             $this->isFinanceRole($role);
 
-
-
         $isHeadHrd =
 
             $this->isHeadHrdRole($role);
-
-
 
         $isKeuangan =
 
             $role === self::KEUANGAN_ROLE;
 
-
-
         $isHrd =
 
             $role === self::HRD_ROLE;
-
-
 
         /*
 
@@ -840,8 +689,6 @@ class ContractLocalController extends Controller
         |--------------------------------------------------------------------------
 
         */
-
-
 
         abort_unless(
 
@@ -857,8 +704,6 @@ class ContractLocalController extends Controller
 
         );
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -868,8 +713,6 @@ class ContractLocalController extends Controller
         |--------------------------------------------------------------------------
 
         */
-
-
 
         abort_unless(
 
@@ -881,8 +724,6 @@ class ContractLocalController extends Controller
 
         );
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -893,8 +734,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $oldLevelNumber =
 
             is_numeric($history->level)
@@ -902,8 +741,6 @@ class ContractLocalController extends Controller
                 ? (int) $history->level
 
                 : null;
-
-
 
         /*
 
@@ -915,27 +752,19 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $oldBasicSalary =
 
             $history->basic_salary ?? 0;
 
-
-
         $oldAllowance =
 
             $history->allowance ?? 0;
-
-
 
         $oldPtkpStatus =
 
             $this->normalizePtkpCode($history->ptkp_status ?? null)
 
                 ?? 'TK0';
-
-
 
         $oldTerCategory =
 
@@ -945,43 +774,29 @@ class ContractLocalController extends Controller
 
                 : null;
 
-
-
         $oldUseManualBpjs =
 
             $history->use_manual_bpjs ?? false;
-
-
 
         $oldManualBpjsTkEmployee =
 
             $history->manual_bpjs_tk_employee ?? 0;
 
-
-
         $oldManualBpjsKsEmployee =
 
             $history->manual_bpjs_ks_employee ?? 0;
-
-
 
         $oldManualBpjsCompany =
 
             $history->manual_bpjs_company ?? 0;
 
-
-
         $oldLevel =
 
             $history->level;
 
-
-
         $oldCategory =
 
             $history->category;
-
-
 
         /*
 
@@ -1003,8 +818,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             $role === 'head_hrd'
@@ -1019,65 +832,43 @@ class ContractLocalController extends Controller
 
         ) {
 
-
-
             $request->merge([
-
-
 
                 'category' =>
 
                     $oldCategory,
 
-
-
                 'level' =>
 
                     $oldLevel,
-
-
 
                 'basic_salary' =>
 
                     $oldBasicSalary,
 
-
-
                 'allowance' =>
 
                     $oldAllowance,
-
-
 
                 'ptkp_status' =>
 
                     $oldPtkpStatus,
 
-
-
                 'ter_category' =>
 
                     $oldTerCategory,
-
-
 
                 'use_manual_bpjs' =>
 
                     $oldUseManualBpjs,
 
-
-
                 'manual_bpjs_tk_employee' =>
 
                     $oldManualBpjsTkEmployee,
 
-
-
                 'manual_bpjs_ks_employee' =>
 
                     $oldManualBpjsKsEmployee,
-
-
 
                 'manual_bpjs_company' =>
 
@@ -1086,8 +877,6 @@ class ContractLocalController extends Controller
             ]);
 
         }
-
-
 
         /*
 
@@ -1105,69 +894,45 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if ($role === self::HRD_ROLE) {
-
-
+            // HRD boleh mengubah PTKP hanya untuk level 13 ke bawah.
+            if ($oldLevelNumber === null || $oldLevelNumber > 13) {
+                $request->merge(['ptkp_status' => $oldPtkpStatus]);
+            }
 
             $request->merge([
-
-
 
                 'basic_salary' =>
 
                     $oldBasicSalary,
 
-
-
                 'allowance' =>
 
                     $oldAllowance,
-
-
-
-                'ptkp_status' =>
-
-                    $oldPtkpStatus,
-
-
 
                 'ter_category' =>
 
                     $oldTerCategory,
 
-
-
                 'level' =>
 
                     $oldLevel,
-
-
 
                 'category' =>
 
                     $oldCategory,
 
-
-
                 'manual_bpjs_tk_employee' =>
 
                     $oldManualBpjsTkEmployee,
-
-
 
                 'manual_bpjs_ks_employee' =>
 
                     $oldManualBpjsKsEmployee,
 
-
-
                 'manual_bpjs_company' =>
 
                     $oldManualBpjsCompany,
-
-
 
                 'use_manual_bpjs' =>
 
@@ -1176,8 +941,6 @@ class ContractLocalController extends Controller
             ]);
 
         }
-
-
 
         /*
 
@@ -1189,11 +952,7 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $request->merge([
-
-
 
             'basic_salary' =>
 
@@ -1203,8 +962,6 @@ class ContractLocalController extends Controller
 
                 ),
 
-
-
             'allowance' =>
 
                 $this->cleanRupiah(
@@ -1212,8 +969,6 @@ class ContractLocalController extends Controller
                     $request->input('allowance')
 
                 ),
-
-
 
             'manual_bpjs_tk_employee' =>
 
@@ -1227,8 +982,6 @@ class ContractLocalController extends Controller
 
                 ),
 
-
-
             'manual_bpjs_ks_employee' =>
 
                 $this->cleanRupiah(
@@ -1240,8 +993,6 @@ class ContractLocalController extends Controller
                     )
 
                 ),
-
-
 
             'manual_bpjs_company' =>
 
@@ -1257,8 +1008,6 @@ class ContractLocalController extends Controller
 
         ]);
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -1269,143 +1018,95 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $validated = $request->validate([
-
-
 
             'nik_fingerprint' =>
 
                 'nullable|string|max:255',
 
-
-
             'fingerprint_pin' =>
 
                 'nullable|string|max:255',
-
-
 
             'job_title' =>
 
                 'required|string|max:255',
 
-
-
             'department' =>
 
                 'nullable|string|max:255',
-
-
 
             'placement_area' =>
 
                 'nullable|string|max:255',
 
-
-
             'category' =>
 
                 'nullable|string|max:10',
-
-
 
             'level' =>
 
                 'nullable|integer|min:1',
 
-
-
             'basic_salary' =>
 
                 'required|numeric|min:0',
-
-
 
             'allowance' =>
 
                 'required|numeric|min:0',
 
-
-
             'is_bpjstk_active' =>
 
                 'nullable|boolean',
-
-
 
             'is_bpjs_health_active' =>
 
                 'nullable|boolean',
 
-
-
             'ptkp_status' =>
 
                 'required|string|max:10',
-
-
 
             'ter_category' =>
 
                 'nullable|string|in:A,B,C',
 
-
-
             'use_manual_bpjs' =>
 
                 'nullable|boolean',
-
-
 
             'manual_bpjs_tk_employee' =>
 
                 'nullable|numeric|min:0',
 
-
-
             'manual_bpjs_ks_employee' =>
 
                 'nullable|numeric|min:0',
-
-
 
             'manual_bpjs_company' =>
 
                 'nullable|numeric|min:0',
 
-
-
             'employment_type' =>
 
                 'required|string|in:PKWT,PKWTT,Probation,Internship,PHK,Resign,Pensiun,End_Contract',
-
-
 
             'pkwt_sequence' =>
 
                 'nullable|integer|min:1|max:7',
 
-
-
             'start_date' =>
 
                 'required|date',
-
-
 
             'end_date' =>
 
                 'nullable|date|after_or_equal:start_date',
 
-
-
             'exit_date' =>
 
                 'nullable|date',
-
-
 
             'exit_reason' =>
 
@@ -1413,13 +1114,9 @@ class ContractLocalController extends Controller
 
         ]);
 
-
-
         $validated['ptkp_status'] =
 
             $this->normalizePtkpCode($validated['ptkp_status'] ?? null);
-
-
 
         if ($validated['ptkp_status'] === null) {
 
@@ -1437,8 +1134,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         $validated['ter_category'] =
 
             in_array(strtoupper(trim((string) ($validated['ter_category'] ?? ''))), ['A', 'B', 'C'], true)
@@ -1446,8 +1141,6 @@ class ContractLocalController extends Controller
                 ? strtoupper(trim((string) $validated['ter_category']))
 
                 : null;
-
-
 
         /*
 
@@ -1459,8 +1152,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $validated['is_bpjstk_active'] =
 
             $request->boolean(
@@ -1468,8 +1159,6 @@ class ContractLocalController extends Controller
                 'is_bpjstk_active'
 
             );
-
-
 
         $validated['is_bpjs_health_active'] =
 
@@ -1479,8 +1168,6 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         $validated['use_manual_bpjs'] =
 
             $request->boolean(
@@ -1488,8 +1175,6 @@ class ContractLocalController extends Controller
                 'use_manual_bpjs'
 
             );
-
-
 
         /*
 
@@ -1501,13 +1186,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $newLevel =
 
             $validated['level'] ?? null;
-
-
 
         /*
 
@@ -1535,8 +1216,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $headHrdSavingAbove13 =
 
             $role === 'head_hrd'
@@ -1549,55 +1228,33 @@ class ContractLocalController extends Controller
 
             $newLevel > 13;
 
-
-
         if ($headHrdSavingAbove13) {
-
-
 
             $validated['basic_salary'] =
 
                 $oldBasicSalary;
 
-
-
             $validated['allowance'] =
 
                 $oldAllowance;
-
-
-
-            $validated['ptkp_status'] =
-
-                $oldPtkpStatus;
-
-
 
             $validated['manual_bpjs_tk_employee'] =
 
                 $oldManualBpjsTkEmployee;
 
-
-
             $validated['manual_bpjs_ks_employee'] =
 
                 $oldManualBpjsKsEmployee;
 
-
-
             $validated['manual_bpjs_company'] =
 
                 $oldManualBpjsCompany;
-
-
 
             $validated['use_manual_bpjs'] =
 
                 $oldUseManualBpjs;
 
         }
-
-
 
         /*
 
@@ -1615,11 +1272,7 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (!$headHrdSavingAbove13) {
-
-
 
             if (
 
@@ -1647,8 +1300,6 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 $validated['allowance'] =
 
                     $this->calculateAllowance(
@@ -1663,8 +1314,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -1675,15 +1324,11 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             !$validated['use_manual_bpjs']
 
         ) {
-
-
 
             $validated[
 
@@ -1691,15 +1336,11 @@ class ContractLocalController extends Controller
 
             ] = 0;
 
-
-
             $validated[
 
                 'manual_bpjs_ks_employee'
 
             ] = 0;
-
-
 
             $validated[
 
@@ -1708,8 +1349,6 @@ class ContractLocalController extends Controller
             ] = 0;
 
         }
-
-
 
         /*
 
@@ -1729,8 +1368,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             strtoupper(
@@ -1749,8 +1386,6 @@ class ContractLocalController extends Controller
 
                     : ($history->pkwt_sequence ?? $this->getNextPkwtSequence($contract));
 
-
-
             $duplicateSequence = ContractHistoryLocal::query()
 
                 ->where('contract_id', $contract->id_contract)
@@ -1762,8 +1397,6 @@ class ContractLocalController extends Controller
                 ->where('pkwt_sequence', $validated['pkwt_sequence'])
 
                 ->exists();
-
-
 
             if ($duplicateSequence) {
 
@@ -1787,8 +1420,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -1799,8 +1430,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $isTerminated =
 
             $this->isTerminatedEmploymentType(
@@ -1809,11 +1438,7 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         if ($isTerminated) {
-
-
 
             if (
 
@@ -1825,15 +1450,11 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 $validated['exit_date'] =
 
                     now()->format('Y-m-d');
 
             }
-
-
 
             if (
 
@@ -1845,29 +1466,19 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 $validated['exit_reason'] =
 
                     $validated['employment_type'];
 
             }
 
-
-
         } else {
 
-
-
             $validated['exit_date'] = null;
-
-
 
             $validated['exit_reason'] = null;
 
         }
-
-
 
         /*
 
@@ -1879,13 +1490,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $validated['is_active'] =
 
             !$isTerminated;
-
-
 
         /*
 
@@ -1896,8 +1503,6 @@ class ContractLocalController extends Controller
         |--------------------------------------------------------------------------
 
         */
-
-
 
         DB::transaction(
 
@@ -1915,33 +1520,23 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 $history->update(
 
                     $validated
 
                 );
 
-
-
                 $contract->update([
-
-
 
                     'current_contract_history_id' =>
 
                         $history->id_contract_history,
-
-
 
                     'is_active' =>
 
                         !$isTerminated,
 
                 ]);
-
-
 
                 $employee->update([
 
@@ -1955,8 +1550,6 @@ class ContractLocalController extends Controller
 
         );
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -1967,13 +1560,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $message =
 
             $isTerminated
-
-
 
                 ? 'Contract berhasil diperbarui dan karyawan menjadi '
 
@@ -1981,11 +1570,7 @@ class ContractLocalController extends Controller
 
                     . ' (Non-Aktif).'
 
-
-
                 : 'Perubahan Contract berhasil disimpan.';
-
-
 
         return redirect()
 
@@ -2005,8 +1590,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -2017,13 +1600,12 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     public function createPeriod(
 
         Employee $employee
 
     ) {
+
         $this->authorizeContractAccess();
 
         return redirect()
@@ -2046,8 +1628,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -2058,8 +1638,6 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     public function storePeriod(
 
         Request $request,
@@ -2067,6 +1645,7 @@ class ContractLocalController extends Controller
         Employee $employee
 
     ) {
+
         $this->authorizeContractAccess();
 
         $employee->load([
@@ -2076,8 +1655,6 @@ class ContractLocalController extends Controller
             'contract.histories',
 
         ]);
-
-
 
         /*
 
@@ -2089,8 +1666,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $contract =
 
             $this->ensureContractMaster(
@@ -2098,8 +1673,6 @@ class ContractLocalController extends Controller
                 $employee
 
             );
-
-
 
         $contract->load([
 
@@ -2109,13 +1682,9 @@ class ContractLocalController extends Controller
 
         ]);
 
-
-
         $currentHistory =
 
             $contract->currentHistory;
-
-
 
         /*
 
@@ -2127,37 +1696,25 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $role =
 
             auth()->user()?->role;
-
-
 
         $isFinance =
 
             $this->isFinanceRole($role);
 
-
-
         $isHeadHrd =
 
             $this->isHeadHrdRole($role);
-
-
 
         $isKeuangan =
 
             $role === self::KEUANGAN_ROLE;
 
-
-
         $isHrd =
 
             $role === self::HRD_ROLE;
-
-
 
         abort_unless(
 
@@ -2173,8 +1730,6 @@ class ContractLocalController extends Controller
 
         );
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -2185,13 +1740,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $currentLevel =
 
             $currentHistory?->level;
-
-
 
         $currentLevelNumber =
 
@@ -2200,8 +1751,6 @@ class ContractLocalController extends Controller
                 ? (int) $currentLevel
 
                 : null;
-
-
 
         /*
 
@@ -2213,27 +1762,19 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $oldBasicSalary =
 
             $currentHistory?->basic_salary ?? 0;
 
-
-
         $oldAllowance =
 
             $currentHistory?->allowance ?? 0;
-
-
 
         $oldPtkpStatus =
 
             $this->normalizePtkpCode($currentHistory?->ptkp_status ?? null)
 
                 ?? 'TK0';
-
-
 
         $oldTerCategory =
 
@@ -2243,43 +1784,29 @@ class ContractLocalController extends Controller
 
                 : null;
 
-
-
         $oldUseManualBpjs =
 
             $currentHistory?->use_manual_bpjs ?? false;
-
-
 
         $oldManualBpjsTkEmployee =
 
             $currentHistory?->manual_bpjs_tk_employee ?? 0;
 
-
-
         $oldManualBpjsKsEmployee =
 
             $currentHistory?->manual_bpjs_ks_employee ?? 0;
-
-
 
         $oldManualBpjsCompany =
 
             $currentHistory?->manual_bpjs_company ?? 0;
 
-
-
         $oldCategory =
 
             $currentHistory?->category;
 
-
-
         $oldLevel =
 
             $currentHistory?->level;
-
-
 
         /*
 
@@ -2291,11 +1818,7 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $request->merge([
-
-
 
             'basic_salary' =>
 
@@ -2305,8 +1828,6 @@ class ContractLocalController extends Controller
 
                 ),
 
-
-
             'allowance' =>
 
                 $this->cleanRupiah(
@@ -2314,8 +1835,6 @@ class ContractLocalController extends Controller
                     $request->input('allowance')
 
                 ),
-
-
 
             'manual_bpjs_tk_employee' =>
 
@@ -2329,8 +1848,6 @@ class ContractLocalController extends Controller
 
                 ),
 
-
-
             'manual_bpjs_ks_employee' =>
 
                 $this->cleanRupiah(
@@ -2342,8 +1859,6 @@ class ContractLocalController extends Controller
                     )
 
                 ),
-
-
 
             'manual_bpjs_company' =>
 
@@ -2359,8 +1874,6 @@ class ContractLocalController extends Controller
 
         ]);
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -2371,143 +1884,95 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $validated = $request->validate([
-
-
 
             'nik_fingerprint' =>
 
                 'nullable|string|max:255',
 
-
-
             'fingerprint_pin' =>
 
                 'nullable|string|max:255',
-
-
 
             'job_title' =>
 
                 'required|string|max:255',
 
-
-
             'department' =>
 
                 'nullable|string|max:255',
-
-
 
             'placement_area' =>
 
                 'nullable|string|max:255',
 
-
-
             'category' =>
 
                 'nullable|string|max:10',
-
-
 
             'level' =>
 
                 'nullable|integer|min:1',
 
-
-
             'basic_salary' =>
 
                 'required|numeric|min:0',
-
-
 
             'allowance' =>
 
                 'required|numeric|min:0',
 
-
-
             'is_bpjstk_active' =>
 
                 'nullable|boolean',
-
-
 
             'is_bpjs_health_active' =>
 
                 'nullable|boolean',
 
-
-
             'ptkp_status' =>
 
                 'required|string|max:10',
-
-
 
             'ter_category' =>
 
                 'nullable|string|in:A,B,C',
 
-
-
             'use_manual_bpjs' =>
 
                 'nullable|boolean',
-
-
 
             'manual_bpjs_tk_employee' =>
 
                 'nullable|numeric|min:0',
 
-
-
             'manual_bpjs_ks_employee' =>
 
                 'nullable|numeric|min:0',
-
-
 
             'manual_bpjs_company' =>
 
                 'nullable|numeric|min:0',
 
-
-
             'employment_type' =>
 
                 'required|string|in:PKWT,PKWTT,Probation,Internship,PHK,Resign,Pensiun,End_Contract',
-
-
 
             'pkwt_sequence' =>
 
                 'nullable|integer|min:1|max:7',
 
-
-
             'start_date' =>
 
                 'required|date',
-
-
 
             'end_date' =>
 
                 'nullable|date|after_or_equal:start_date',
 
-
-
             'exit_date' =>
 
                 'nullable|date',
-
-
 
             'exit_reason' =>
 
@@ -2515,13 +1980,9 @@ class ContractLocalController extends Controller
 
         ]);
 
-
-
         $validated['ptkp_status'] =
 
             $this->normalizePtkpCode($validated['ptkp_status'] ?? null);
-
-
 
         if ($validated['ptkp_status'] === null) {
 
@@ -2539,8 +2000,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         $validated['ter_category'] =
 
             in_array(strtoupper(trim((string) ($validated['ter_category'] ?? ''))), ['A', 'B', 'C'], true)
@@ -2548,8 +2007,6 @@ class ContractLocalController extends Controller
                 ? strtoupper(trim((string) $validated['ter_category']))
 
                 : null;
-
-
 
         /*
 
@@ -2561,8 +2018,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $validated['is_bpjstk_active'] =
 
             $request->boolean(
@@ -2570,8 +2025,6 @@ class ContractLocalController extends Controller
                 'is_bpjstk_active'
 
             );
-
-
 
         $validated['is_bpjs_health_active'] =
 
@@ -2581,8 +2034,6 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         $validated['use_manual_bpjs'] =
 
             $request->boolean(
@@ -2590,8 +2041,6 @@ class ContractLocalController extends Controller
                 'use_manual_bpjs'
 
             );
-
-
 
         /*
 
@@ -2603,13 +2052,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $newLevel =
 
             $validated['level'] ?? null;
-
-
 
         /*
 
@@ -2629,8 +2074,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $headHrdSavingAbove13 =
 
             $role === 'head_hrd'
@@ -2643,55 +2086,37 @@ class ContractLocalController extends Controller
 
             $newLevel > 13;
 
-
-
         if ($headHrdSavingAbove13) {
-
-
 
             $validated['basic_salary'] =
 
                 $oldBasicSalary;
 
-
-
             $validated['allowance'] =
 
                 $oldAllowance;
-
-
 
             $validated['ptkp_status'] =
 
                 $oldPtkpStatus;
 
-
-
             $validated['manual_bpjs_tk_employee'] =
 
                 $oldManualBpjsTkEmployee;
-
-
 
             $validated['manual_bpjs_ks_employee'] =
 
                 $oldManualBpjsKsEmployee;
 
-
-
             $validated['manual_bpjs_company'] =
 
                 $oldManualBpjsCompany;
-
-
 
             $validated['use_manual_bpjs'] =
 
                 $oldUseManualBpjs;
 
         }
-
-
 
         /*
 
@@ -2703,67 +2128,45 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if ($isHrd) {
-
-
+            // HRD hanya dapat mengubah PTKP untuk level 13 ke bawah.
+            if (!is_numeric($oldLevel) || (int) $oldLevel > 13) {
+                $validated['ptkp_status'] = $oldPtkpStatus;
+            }
 
             $validated['basic_salary'] =
 
                 $oldBasicSalary;
 
-
-
             $validated['allowance'] =
 
                 $oldAllowance;
-
-
-
-            $validated['ptkp_status'] =
-
-                $oldPtkpStatus;
-
-
 
             $validated['level'] =
 
                 $oldLevel;
 
-
-
             $validated['category'] =
 
                 $oldCategory;
-
-
 
             $validated['manual_bpjs_tk_employee'] =
 
                 $oldManualBpjsTkEmployee;
 
-
-
             $validated['manual_bpjs_ks_employee'] =
 
                 $oldManualBpjsKsEmployee;
 
-
-
             $validated['manual_bpjs_company'] =
 
                 $oldManualBpjsCompany;
-
-
 
             $validated['use_manual_bpjs'] =
 
                 $oldUseManualBpjs;
 
         }
-
-
 
         /*
 
@@ -2775,11 +2178,7 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (!$headHrdSavingAbove13) {
-
-
 
             if (
 
@@ -2811,8 +2210,6 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 $validated['allowance'] =
 
                     $this->calculateAllowance(
@@ -2827,8 +2224,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -2839,15 +2234,11 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             !$validated['use_manual_bpjs']
 
         ) {
-
-
 
             $validated[
 
@@ -2855,15 +2246,11 @@ class ContractLocalController extends Controller
 
             ] = 0;
 
-
-
             $validated[
 
                 'manual_bpjs_ks_employee'
 
             ] = 0;
-
-
 
             $validated[
 
@@ -2872,8 +2259,6 @@ class ContractLocalController extends Controller
             ] = 0;
 
         }
-
-
 
         /*
 
@@ -2893,8 +2278,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             strtoupper(
@@ -2913,8 +2296,6 @@ class ContractLocalController extends Controller
 
                     : $this->getNextPkwtSequence($contract);
 
-
-
             $duplicateSequence = ContractHistoryLocal::query()
 
                 ->where('contract_id', $contract->id_contract)
@@ -2924,8 +2305,6 @@ class ContractLocalController extends Controller
                 ->where('pkwt_sequence', $validated['pkwt_sequence'])
 
                 ->exists();
-
-
 
             if ($duplicateSequence) {
 
@@ -2949,8 +2328,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -2961,8 +2338,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $isTerminated =
 
             $this->isTerminatedEmploymentType(
@@ -2971,11 +2346,7 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         if ($isTerminated) {
-
-
 
             if (
 
@@ -2987,15 +2358,11 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 $validated['exit_date'] =
 
                     now()->format('Y-m-d');
 
             }
-
-
 
             if (
 
@@ -3007,29 +2374,19 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 $validated['exit_reason'] =
 
                     $validated['employment_type'];
 
             }
 
-
-
         } else {
 
-
-
             $validated['exit_date'] = null;
-
-
 
             $validated['exit_reason'] = null;
 
         }
-
-
 
         /*
 
@@ -3040,8 +2397,6 @@ class ContractLocalController extends Controller
         |--------------------------------------------------------------------------
 
         */
-
-
 
         DB::transaction(
 
@@ -3059,8 +2414,6 @@ class ContractLocalController extends Controller
 
             ) {
 
-
-
                 /*
 
                 |--------------------------------------------------------------------------
@@ -3071,11 +2424,7 @@ class ContractLocalController extends Controller
 
                 */
 
-
-
                 if ($currentHistory) {
-
-
 
                     $currentHistory->update([
 
@@ -3084,8 +2433,6 @@ class ContractLocalController extends Controller
                     ]);
 
                 }
-
-
 
                 /*
 
@@ -3096,8 +2443,6 @@ class ContractLocalController extends Controller
                 |--------------------------------------------------------------------------
 
                 */
-
-
 
                 $newHistory =
 
@@ -3117,8 +2462,6 @@ class ContractLocalController extends Controller
 
                                         (string) Str::uuid(),
 
-
-
                                     'is_active' =>
 
                                         !$isTerminated,
@@ -3128,8 +2471,6 @@ class ContractLocalController extends Controller
                             )
 
                         );
-
-
 
                 /*
 
@@ -3141,25 +2482,17 @@ class ContractLocalController extends Controller
 
                 */
 
-
-
                 $contract->update([
-
-
 
                     'current_contract_history_id' =>
 
                         $newHistory->id_contract_history,
-
-
 
                     'is_active' =>
 
                         !$isTerminated,
 
                 ]);
-
-
 
                 /*
 
@@ -3170,8 +2503,6 @@ class ContractLocalController extends Controller
                 |--------------------------------------------------------------------------
 
                 */
-
-
 
                 $employee->update([
 
@@ -3185,8 +2516,6 @@ class ContractLocalController extends Controller
 
         );
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -3197,13 +2526,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $message =
 
             $isTerminated
-
-
 
                 ? 'Contract Period baru berhasil dibuat dan karyawan menjadi '
 
@@ -3211,11 +2536,7 @@ class ContractLocalController extends Controller
 
                     . ' (Non-Aktif).'
 
-
-
                 : 'Contract Period baru berhasil dibuat dan menjadi Current Contract.';
-
-
 
         return redirect()
 
@@ -3235,8 +2556,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -3247,8 +2566,6 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     public function showHistory(
 
         Employee $employee,
@@ -3256,6 +2573,7 @@ class ContractLocalController extends Controller
         ContractHistoryLocal $history
 
     ) {
+
         $this->authorizeContractAccess();
 
         $employee->load([
@@ -3266,13 +2584,9 @@ class ContractLocalController extends Controller
 
         ]);
 
-
-
         $contract =
 
             $employee->contract;
-
-
 
         abort_unless(
 
@@ -3281,8 +2595,6 @@ class ContractLocalController extends Controller
             404
 
         );
-
-
 
         /*
 
@@ -3294,8 +2606,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         abort_unless(
 
             (int) $history->contract_id ===
@@ -3305,8 +2615,6 @@ class ContractLocalController extends Controller
             404
 
         );
-
-
 
         /*
 
@@ -3318,15 +2626,11 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $isCurrent =
 
             (int) $contract->current_contract_history_id ===
 
             (int) $history->id_contract_history;
-
-
 
         /*
 
@@ -3338,8 +2642,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         $canViewSensitiveData =
 
             $this->canViewSensitiveData(
@@ -3347,8 +2649,6 @@ class ContractLocalController extends Controller
                 $history
 
             );
-
-
 
         return view(
 
@@ -3372,8 +2672,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -3384,22 +2682,30 @@ class ContractLocalController extends Controller
 
     */
 
-
-
-
     private function authorizeContractAccess(): void
+
     {
+
         $role = auth()->user()?->role;
 
         abort_unless(
+
             in_array($role, [
+
                 ...self::FINANCE_ROLES,
+
                 ...self::HEAD_HRD_ROLES,
+
                 self::KEUANGAN_ROLE,
+
                 self::HRD_ROLE,
+
             ], true),
+
             403
+
         );
+
     }
 
     private function isFinanceRole(
@@ -3420,8 +2726,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     private function isHeadHrdRole(
 
         ?string $role
@@ -3439,8 +2743,6 @@ class ContractLocalController extends Controller
         );
 
     }
-
-
 
     /*
 
@@ -3478,21 +2780,15 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function canViewSensitiveData(
 
         ?ContractHistoryLocal $history
 
     ): bool {
 
-
-
         $role =
 
             auth()->user()?->role;
-
-
 
         /*
 
@@ -3504,8 +2800,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             $this->isFinanceRole($role)
@@ -3515,8 +2809,6 @@ class ContractLocalController extends Controller
             return true;
 
         }
-
-
 
         /*
 
@@ -3528,23 +2820,17 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             $this->isHeadHrdRole($role)
 
         ) {
 
-
-
             if (!$history) {
 
                 return true;
 
             }
-
-
 
             if (
 
@@ -3556,13 +2842,9 @@ class ContractLocalController extends Controller
 
             }
 
-
-
             return (int) $history->level <= 13;
 
         }
-
-
 
         /*
 
@@ -3574,23 +2856,17 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             $role === self::KEUANGAN_ROLE
 
         ) {
 
-
-
             if (!$history) {
 
                 return true;
 
             }
-
-
 
             if (
 
@@ -3602,13 +2878,9 @@ class ContractLocalController extends Controller
 
             }
 
-
-
             return (int) $history->level <= 13;
 
         }
-
-
 
         /*
 
@@ -3620,13 +2892,9 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         return false;
 
     }
-
-
 
     /*
 
@@ -3638,15 +2906,11 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function canEditCurrentContract(
 
         ?ContractHistoryLocal $history
 
     ): bool {
-
-
 
         if (!$history) {
 
@@ -3654,13 +2918,9 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         $role =
 
             auth()->user()?->role;
-
-
 
         /*
 
@@ -3672,8 +2932,6 @@ class ContractLocalController extends Controller
 
         */
 
-
-
         if (
 
             $this->isFinanceRole($role)
@@ -3684,8 +2942,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         /*
 
         |--------------------------------------------------------------------------
@@ -3695,8 +2951,6 @@ class ContractLocalController extends Controller
         |--------------------------------------------------------------------------
 
         */
-
-
 
         return in_array(
 
@@ -3718,8 +2972,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -3736,8 +2988,6 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function calculateAllowance(
 
         $basicSalary,
@@ -3746,13 +2996,9 @@ class ContractLocalController extends Controller
 
     ) {
 
-
-
         $basicSalary =
 
             (float) $basicSalary;
-
-
 
         $level =
 
@@ -3761,8 +3007,6 @@ class ContractLocalController extends Controller
                 ? (int) $level
 
                 : 0;
-
-
 
         if (
 
@@ -3778,8 +3022,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         return round(
 
             $basicSalary *
@@ -3792,8 +3034,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -3804,15 +3044,11 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function cleanRupiah(
 
         $value
 
     ) {
-
-
 
         if (
 
@@ -3828,8 +3064,6 @@ class ContractLocalController extends Controller
 
         }
 
-
-
         $clean =
 
             preg_replace(
@@ -3842,8 +3076,6 @@ class ContractLocalController extends Controller
 
             );
 
-
-
         return $clean === ''
 
             ? 0
@@ -3851,8 +3083,6 @@ class ContractLocalController extends Controller
             : (float) $clean;
 
     }
-
-
 
     /*
 
@@ -3864,89 +3094,143 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function normalizePtkpCode(mixed $value): ?string
+
     {
+
         $raw = strtoupper(trim((string) ($value ?? '')));
 
         // Bersihkan spasi biasa dan non-breaking space dari input/browser.
+
         $raw = str_replace(["\xC2\xA0", "\xE2\x80\xAF"], ' ', $raw);
+
         $raw = preg_replace('/\s+/u', ' ', $raw) ?? $raw;
+
         $raw = trim($raw);
 
         if ($raw === '' || $raw === '0') {
+
             return 'TK0';
+
         }
 
         /*
+
         |--------------------------------------------------------------------------
+
         | Format PTKP yang diterima
+
         |--------------------------------------------------------------------------
+
         |
+
         | TK0, TK1, TK2, TK3, TK4
+
         | TK01, TK02, TK03, TK04
+
         | TK/0, TK/1, TK/2, TK/3, TK/4
+
         |
+
         | K0, K1, K2, K3
+
         | K01, K02, K03, K04
+
         | K/0, K/1, K/2, K/3
+
         |
+
         | Penyimpanan:
+
         | TK0 -> TK0
+
         | TK1 -> TK01
+
         | TK2 -> TK02
+
         | TK3 -> TK03
+
         | TK4 -> TK04
+
         |
+
         | K0 -> K01
+
         | K1 -> K02
+
         | K2 -> K03
+
         | K3 -> K04
+
         |
+
         | K01-K04 dipertahankan apa adanya.
+
         |--------------------------------------------------------------------------
+
         */
 
         if (!preg_match(
+
             '/^(TK|K)\s*(?:[\/\-_]\s*)?(0[0-4]|[0-4])$/u',
+
             $raw,
+
             $match
+
         )) {
+
             return null;
+
         }
 
         $prefix = $match[1];
+
         $numberRaw = $match[2];
+
         $number = (int) $numberRaw;
 
         if ($prefix === 'TK') {
+
             if ($number < 0 || $number > 4) {
+
                 return null;
+
             }
 
             return $number === 0
+
                 ? 'TK0'
+
                 : 'TK' . str_pad((string) $number, 2, '0', STR_PAD_LEFT);
+
         }
 
         // K01-K04 sudah merupakan format final.
+
         if (strlen($numberRaw) === 2) {
+
             return ($number >= 1 && $number <= 4)
+
                 ? 'K' . str_pad((string) $number, 2, '0', STR_PAD_LEFT)
+
                 : null;
+
         }
 
         // Format Excel K0/K1/K2/K3 berarti K/0/K/1/K/2/K/3.
+
         // Database menggunakan K01/K02/K03/K04.
+
         if ($number >= 0 && $number <= 3) {
+
             return 'K' . str_pad((string) ($number + 1), 2, '0', STR_PAD_LEFT);
+
         }
 
         return null;
+
     }
-
-
 
     private function employmentStatusOptions(): array
 
@@ -3974,8 +3258,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -3986,15 +3268,11 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function isTerminatedEmploymentType(
 
         ?string $employmentType
 
     ): bool {
-
-
 
         return in_array(
 
@@ -4018,8 +3296,6 @@ class ContractLocalController extends Controller
 
     }
 
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -4030,29 +3306,21 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function ensureContractMaster(
 
         Employee $employee
 
     ): ContractLocal {
 
-
-
         $contract =
 
             $employee->contract;
-
-
 
         if ($contract) {
 
             return $contract;
 
         }
-
-
 
         return $employee
 
@@ -4064,8 +3332,6 @@ class ContractLocalController extends Controller
 
                     (string) Str::uuid(),
 
-
-
                 'is_active' =>
 
                     true,
@@ -4073,8 +3339,6 @@ class ContractLocalController extends Controller
             ]);
 
     }
-
-
 
     /*
 
@@ -4086,15 +3350,11 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function getNextPkwtSequence(
 
         ContractLocal $contract
 
     ): int {
-
-
 
         $max =
 
@@ -4120,13 +3380,9 @@ class ContractLocalController extends Controller
 
                 );
 
-
-
         return ((int) $max) + 1;
 
     }
-
-
 
     /*
 
@@ -4138,15 +3394,11 @@ class ContractLocalController extends Controller
 
     */
 
-
-
     private function isContractExpired(
 
         ?ContractHistoryLocal $history
 
     ): bool {
-
-
 
         if (
 
@@ -4159,8 +3411,6 @@ class ContractLocalController extends Controller
             return false;
 
         }
-
-
 
         return Carbon::today()->greaterThanOrEqualTo(
 

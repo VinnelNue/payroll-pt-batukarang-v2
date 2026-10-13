@@ -5,6 +5,32 @@
 @section('content')
 
 @php
+    /*
+    |--------------------------------------------------------------------------
+    | Hak akses edit PTKP
+    |--------------------------------------------------------------------------
+    | Sesuaikan nama kolom dan nilai role jika struktur users
+    | di aplikasi Anda berbeda.
+    */
+
+    $userRole = strtolower(
+        (string) (auth()->user()->role ?? '')
+    );
+
+    $canEditPtkp = in_array(
+        $userRole,
+        [
+            'hrd',
+            'head_hrd',
+            'kepala_hrd',
+            'manager_keuangan',
+            'super_admin',
+        ],
+        true
+    );
+@endphp
+
+@php
 
 /*
 |--------------------------------------------------------------------------
@@ -71,6 +97,14 @@ $isHighLevel =
     $levelNumber !== null &&
     $levelNumber >= 14;
 
+$canEditPtkpForLevel =
+    $canEditPtkp &&
+    (
+        !in_array($userRole, ['hrd', 'head_hrd', 'kepala_hrd'], true) ||
+        $levelNumber !== null &&
+        $levelNumber <= 13
+    );
+
 
 /*
 |--------------------------------------------------------------------------
@@ -94,14 +128,14 @@ $canSeeSalary =
     $isManagerKeuangan ||
     (
         ($isHeadHrd || $isKeuangan) &&
-        ($levelNumber === null || $levelNumber <= 13)
+        ($levelNumber !== null && $levelNumber <= 13)
     );
 
 $canSeeLevelCategory =
     $isManagerKeuangan ||
     (
         ($isHeadHrd || $isHrd || $isKeuangan) &&
-        ($levelNumber === null || $levelNumber <= 13)
+        ($levelNumber !== null && $levelNumber <= 13)
     );
 
 $maskLevelCategory = !$canSeeLevelCategory;
@@ -1256,7 +1290,7 @@ if ($endDate) {
 
                     <div class="mb-3">
 
-                        <label class="form-label fw-semibold">
+                        <label for="employment_status_ui" class="form-label fw-semibold">
                             Status Karyawan
                         </label>
 
@@ -1823,56 +1857,55 @@ if ($endDate) {
 
 
                     {{-- =================================================
-                         PTKP
+                        PTKP / PPh21
                     ================================================== --}}
 
                     <div class="mb-4">
-
-                        <label class="form-label fw-semibold">
-                            PTKP / PPh21
+                        <label
+                            for="ptkp_status"
+                            class="form-label fw-semibold"
+                        >
+                            Status PTKP / PPh21
                         </label>
 
-                        @if($canSeeSalary)
+                        @if($canEditPtkpForLevel)
 
                             <select
                                 name="ptkp_status"
-                                class="form-select">
-
+                                id="ptkp_status"
+                                class="form-select"
+                                required
+                            >
                                 @foreach($ptkpOptions as $item)
-
                                     <option
                                         value="{{ $item }}"
                                         @selected(
-                                            old(
-                                                'ptkp_status',
-                                                $ptkp
-                                            ) === $item
-                                        )>
-
+                                            old('ptkp_status', $ptkp ?? 'TK0')
+                                            === $item
+                                        )
+                                    >
                                         {{ $item }}
-
                                     </option>
-
                                 @endforeach
-
                             </select>
+
+                            <small class="text-muted">
+                                Pilih status PTKP sesuai kondisi wajib pajak karyawan.
+                            </small>
 
                         @else
 
                             <input
                                 type="text"
-                                class="form-control bg-light text-muted fw-bold"
+                                class="form-control bg-light"
                                 value="*****"
-                                readonly>
-
-                            <input
-                                type="hidden"
-                                name="ptkp_status"
-                                value="{{ $ptkp }}">
+                                readonly
+                                disabled
+                            >
 
                         @endif
-
                     </div>
+
 
 
                     {{-- SAVE --}}
@@ -2013,8 +2046,8 @@ if ($endDate) {
 
                     <div class="col-md-8">
 
-                        <label class="form-label fw-semibold">
-                            Status Karyawan
+                        <label for="new_employment_status_ui" class="form-label fw-semibold">
+                            Status Karyawan (Periode Baru)
                         </label>
 
                         <select
@@ -2318,31 +2351,55 @@ if ($endDate) {
                         </div>
 
 
-                        {{-- PTKP --}}
+                        {{-- PTKP PERIOD BARU --}}
 
                         <div class="col-md-4">
 
-                            <label class="form-label fw-semibold">
-                                PTKP / PPh21
+                            <label
+                                for="new_ptkp_status"
+                                class="form-label fw-semibold">
+                                Status PTKP / PPh21
                             </label>
 
-                            <select
-                                name="ptkp_status"
-                                class="form-select">
+                            @if($canEditPtkpForLevel)
 
-                                @foreach($ptkpOptions as $item)
+                                <select
+                                    name="ptkp_status"
+                                    id="new_ptkp_status"
+                                    class="form-select"
+                                    required>
 
-                                    <option
-                                        value="{{ $item }}"
-                                        @selected(old('ptkp_status', $ptkp) === $item)>
+                                    @foreach($ptkpOptions as $item)
 
-                                        {{ $item }}
+                                        <option
+                                            value="{{ $item }}"
+                                            @selected(old('ptkp_status', $ptkp) === $item)>
+                                            {{ $item }}
+                                        </option>
 
-                                    </option>
+                                    @endforeach
 
-                                @endforeach
+                                </select>
 
-                            </select>
+                                <small class="text-muted">
+                                    HRD dan Head HRD dapat mengubah status PTKP.
+                                </small>
+
+                            @else
+
+                                <input
+                                    type="text"
+                                    id="new_ptkp_status_display"
+                                    class="form-control bg-light"
+                                    value="*****"
+                                    readonly
+                                    disabled>
+
+                                <small class="text-muted">
+                                    Anda hanya dapat melihat status PTKP.
+                                </small>
+
+                            @endif
 
                         </div>
 

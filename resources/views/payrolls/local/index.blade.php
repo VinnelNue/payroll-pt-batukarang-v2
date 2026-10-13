@@ -2,7 +2,7 @@
 
 @section('title', 'Rekap Process Payroll')
 
-@section('page_title', 'Rekap Hasil Penggajian Bulanan')
+@section('page_title', 'Rekap Hasil Penggajian Malang')
 
 @section('content')
 
@@ -218,7 +218,7 @@
 
                 <h4 class="fw-bold text-dark m-0">
 
-                    Rekap Penggajian Bulanan
+                    Rekap Penggajian Bulanan Malang
 
                 </h4>
 

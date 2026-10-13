@@ -38,7 +38,6 @@ $isHeadHrd = in_array(
 
 $isHrd = $userRole === 'hrd';
 
-
 /*
 |--------------------------------------------------------------------------
 | CURRENT CONTRACT / HISTORY
@@ -49,7 +48,6 @@ $currentContract = $contract ?? null;
 $currentHistory  = $history ?? null;
 
 $histories = $histories ?? collect();
-
 
 /*
 |--------------------------------------------------------------------------
@@ -69,7 +67,6 @@ $levelNumber = is_numeric($contractLevel)
 $isHighLevel =
     $levelNumber !== null &&
     $levelNumber >= 14;
-
 
 /*
 |--------------------------------------------------------------------------
@@ -106,6 +103,12 @@ $canSeeLevelCategory =
 $maskLevelCategory = !$canSeeLevelCategory;
 $maskFinancial     = !$canSeeSalary;
 
+// HRD boleh mengubah PTKP untuk kontrak dengan level maksimal 13,
+// tanpa membuka akses ke gaji, tunjangan, atau BPJS.
+$canEditPtkp = $canSeeSalary || (
+    $isHrd &&
+    ($levelNumber === null || $levelNumber <= 13)
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -117,7 +120,6 @@ $currentHistoryId =
     $currentContract?->current_contract_history_id
     ?? $currentHistory?->id_contract_history_outer_island
     ?? null;
-
 
 /*
 |--------------------------------------------------------------------------
@@ -138,7 +140,6 @@ $formatRupiah = function ($value) {
         '.'
     );
 };
-
 
 /*
 |--------------------------------------------------------------------------
@@ -164,7 +165,6 @@ $formatDate = function ($value) {
     }
 
 };
-
 
 /*
 |--------------------------------------------------------------------------
@@ -227,7 +227,6 @@ $nikFingerprint =
     ?? $currentContract?->nik_fingerprint
     ?? '';
 
-
 /*
 |--------------------------------------------------------------------------
 | DATE VALUES
@@ -253,7 +252,6 @@ $exitReason =
     $currentHistory?->exit_reason
     ?? $currentContract?->exit_reason
     ?? '';
-
 
 /*
 |--------------------------------------------------------------------------
@@ -283,7 +281,6 @@ $useManualBpjs = (bool) (
     ?? false
 );
 
-
 /*
 |--------------------------------------------------------------------------
 | MANUAL BPJS
@@ -308,7 +305,6 @@ $manualBpjsCompany =
     $currentHistory?->manual_bpjs_company
     ?? $currentContract?->manual_bpjs_company
     ?? 0;
-
 
 /*
 |--------------------------------------------------------------------------
@@ -350,7 +346,6 @@ if (
 
 }
 
-
 /*
 |--------------------------------------------------------------------------
 | TERMINATION
@@ -369,7 +364,6 @@ $isTermination = in_array(
     array_keys($terminationTypes),
     true
 );
-
 
 /*
 |--------------------------------------------------------------------------
@@ -391,7 +385,6 @@ $addPeriodUrl = route(
     $employee->uuid
 );
 
-
 /*
 |--------------------------------------------------------------------------
 | NEXT PKWT
@@ -408,7 +401,6 @@ if ($nextPkwtSequence > 4) {
 if ($nextPkwtSequence < 1) {
     $nextPkwtSequence = 1;
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -442,7 +434,6 @@ if ($endDate) {
 }
 
 @endphp
-
 
 <style>
 
@@ -495,7 +486,6 @@ if ($endDate) {
     font-size: 13px;
     color: #6c757d;
 }
-
 
 /* -----------------------------------------------------------------
    CONTRACT FORM VISUAL REFRESH — scoped to this page only
@@ -809,9 +799,7 @@ if ($endDate) {
 
 </style>
 
-
 <div class="container-fluid py-4 contract-setup-page">
-
 
 {{-- ==============================================================
      FLASH
@@ -835,7 +823,6 @@ if ($endDate) {
 
 @endif
 
-
 @if(session('error'))
 
     <div class="alert alert-danger alert-dismissible fade show shadow-sm">
@@ -853,7 +840,6 @@ if ($endDate) {
     </div>
 
 @endif
-
 
 @if($errors->any())
 
@@ -880,7 +866,6 @@ if ($endDate) {
     </div>
 
 @endif
-
 
 {{-- ==============================================================
      HEADER
@@ -915,7 +900,6 @@ if ($endDate) {
 
     </div>
 
-
     <div class="mt-3 mt-md-0">
 
         <a
@@ -931,7 +915,6 @@ if ($endDate) {
     </div>
 
 </div>
-
 
 {{-- ==============================================================
      ACCESS INFORMATION
@@ -966,7 +949,6 @@ if ($endDate) {
 
 @endif
 
-
 {{-- ==============================================================
      CURRENT CONTRACT
 ============================================================== --}}
@@ -988,9 +970,7 @@ if ($endDate) {
 
     @method('PUT')
 
-
     <div class="row g-4">
-
 
         {{-- ======================================================
              LEFT
@@ -1010,7 +990,6 @@ if ($endDate) {
                         Informasi jabatan dan periode contract aktif
                     </small>
 
-
                     {{-- JOB TITLE --}}
 
                     <div class="mb-3">
@@ -1028,7 +1007,6 @@ if ($endDate) {
 
                     </div>
 
-
                     {{-- DEPARTMENT --}}
 
                     <div class="mb-3">
@@ -1044,7 +1022,6 @@ if ($endDate) {
                             value="{{ old('department', $department) }}">
 
                     </div>
-
 
                     {{-- PLACEMENT --}}
 
@@ -1062,7 +1039,6 @@ if ($endDate) {
                             placeholder="Contoh: Site Kalimantan">
 
                     </div>
-
 
                     {{-- FINGERPRINT --}}
 
@@ -1082,7 +1058,6 @@ if ($endDate) {
 
                         </div>
 
-
                         <div class="col-md-6">
 
                             <label class="form-label fw-semibold">
@@ -1099,9 +1074,7 @@ if ($endDate) {
 
                     </div>
 
-
                     <hr class="my-4">
-
 
                     {{-- CATEGORY --}}
 
@@ -1137,7 +1110,6 @@ if ($endDate) {
                         @endif
 
                     </div>
-
 
                     {{-- LEVEL --}}
 
@@ -1176,7 +1148,6 @@ if ($endDate) {
 
                     </div>
 
-
                     @if($isHighLevel && !$isManagerKeuangan)
 
                         <div class="alert alert-warning small">
@@ -1192,9 +1163,7 @@ if ($endDate) {
 
                     @endif
 
-
                     <hr class="my-4">
-
 
                     {{-- EMPLOYMENT TYPE --}}
 
@@ -1235,7 +1204,6 @@ if ($endDate) {
 
                             </optgroup>
 
-
                             <optgroup label="Status Penghentian Kerja">
 
                                 @foreach($terminationTypes as $value => $label)
@@ -1260,7 +1228,6 @@ if ($endDate) {
                         </select>
 
                     </div>
-
 
                     {{-- PKWT --}}
 
@@ -1302,7 +1269,6 @@ if ($endDate) {
 
                     </div>
 
-
                     {{-- DATE --}}
 
                     <div class="row g-3">
@@ -1323,7 +1289,6 @@ if ($endDate) {
 
                         </div>
 
-
                         <div class="col-md-6">
 
                             <label class="form-label fw-semibold">
@@ -1340,7 +1305,6 @@ if ($endDate) {
                         </div>
 
                     </div>
-
 
                     {{-- TERMINATION --}}
 
@@ -1359,7 +1323,6 @@ if ($endDate) {
 
                             </div>
 
-
                             <div class="mb-3">
 
                                 <label class="form-label fw-semibold">
@@ -1373,7 +1336,6 @@ if ($endDate) {
                                     value="{{ old('exit_date', $exitDate) }}">
 
                             </div>
-
 
                             <div>
 
@@ -1398,7 +1360,6 @@ if ($endDate) {
 
         </div>
 
-
         {{-- ======================================================
              RIGHT
         ======================================================= --}}
@@ -1416,7 +1377,6 @@ if ($endDate) {
                     <small class="text-muted d-block mb-4">
                         Data yang digunakan sebagai dasar payroll
                     </small>
-
 
                     {{-- =================================================
                          BASIC SALARY
@@ -1470,7 +1430,6 @@ if ($endDate) {
                         @endif
 
                     </div>
-
 
                     {{-- ALLOWANCE --}}
 
@@ -1527,7 +1486,6 @@ if ($endDate) {
 
                     <hr class="my-4">
 
-
                     {{-- =================================================
                          BPJS
                     ================================================== --}}
@@ -1535,7 +1493,6 @@ if ($endDate) {
                     <h6 class="fw-bold mb-3">
                         BPJS
                     </h6>
-
 
                     @if($canSeeSalary)
 
@@ -1582,7 +1539,6 @@ if ($endDate) {
 
                         </div>
 
-
                         {{-- BPJS HEALTH --}}
 
                         <div class="mb-4">
@@ -1625,7 +1581,6 @@ if ($endDate) {
                             </div>
 
                         </div>
-
 
                         {{-- MANUAL BPJS --}}
 
@@ -1672,7 +1627,6 @@ if ($endDate) {
 
                             </div>
 
-
                             <div
                                 id="manualBpjsBox"
                                 style="{{ $useManualBpjs ? '' : 'display:none;' }}">
@@ -1704,7 +1658,6 @@ if ($endDate) {
 
                                 </div>
 
-
                                 {{-- KS --}}
 
                                 <div class="mb-3">
@@ -1731,7 +1684,6 @@ if ($endDate) {
                                     </div>
 
                                 </div>
-
 
                                 {{-- COMPANY --}}
 
@@ -1786,7 +1738,6 @@ if ($endDate) {
 
                     @endif
 
-
                     {{-- =================================================
                          PTKP
                     ================================================== --}}
@@ -1797,7 +1748,7 @@ if ($endDate) {
                             PTKP / PPh21
                         </label>
 
-                        @if($canSeeSalary)
+                        @if($canEditPtkp)
 
                             <select
                                 name="ptkp_status"
@@ -1838,7 +1789,6 @@ if ($endDate) {
                         @endif
 
                     </div>
-
 
                     {{-- SAVE --}}
 
@@ -1882,7 +1832,6 @@ if ($endDate) {
 
 @endif
 
-
 {{-- ==============================================================
      CONTRACT HISTORY
 ============================================================== --}}
@@ -1909,7 +1858,6 @@ if ($endDate) {
 
             </div>
 
-
             <button
                 type="button"
                 id="btnAddContractPeriod"
@@ -1922,7 +1870,6 @@ if ($endDate) {
             </button>
 
         </div>
-
 
         {{-- =========================================================
              NEW PERIOD
@@ -1949,7 +1896,6 @@ if ($endDate) {
 
                 </div>
 
-
                 <button
                     type="button"
                     class="btn btn-sm btn-outline-secondary js-cancel-new-period">
@@ -1960,7 +1906,6 @@ if ($endDate) {
 
             </div>
 
-
             <form
                 action="{{ $addPeriodUrl }}"
                 method="POST"
@@ -1968,11 +1913,9 @@ if ($endDate) {
 
                 @csrf
 
-
                 {{-- BASIC INFORMATION --}}
 
                 <div class="row g-3">
-
 
                     {{-- PKWT --}}
 
@@ -2002,7 +1945,6 @@ if ($endDate) {
                         </select>
 
                     </div>
-
 
                     {{-- STATUS --}}
 
@@ -2038,7 +1980,6 @@ if ($endDate) {
 
                     </div>
 
-
                     {{-- JOB --}}
 
                     <div class="col-md-4">
@@ -2056,7 +1997,6 @@ if ($endDate) {
 
                     </div>
 
-
                     {{-- DEPARTMENT --}}
 
                     <div class="col-md-4">
@@ -2072,7 +2012,6 @@ if ($endDate) {
                             value="{{ $department }}">
 
                     </div>
-
 
                     {{-- PLACEMENT --}}
 
@@ -2090,7 +2029,6 @@ if ($endDate) {
 
                     </div>
 
-
                     {{-- FINGERPRINT PIN --}}
 
                     <div class="col-md-4">
@@ -2107,7 +2045,6 @@ if ($endDate) {
 
                     </div>
 
-
                     {{-- NIK FINGERPRINT --}}
 
                     <div class="col-md-4">
@@ -2123,7 +2060,6 @@ if ($endDate) {
                             value="{{ $nikFingerprint }}">
 
                     </div>
-
 
                     {{-- CATEGORY --}}
 
@@ -2157,7 +2093,6 @@ if ($endDate) {
                         @endif
 
                     </div>
-
 
                     {{-- LEVEL --}}
 
@@ -2194,7 +2129,6 @@ if ($endDate) {
 
                     </div>
 
-
                     {{-- START DATE --}}
 
                     <div class="col-md-4">
@@ -2211,7 +2145,6 @@ if ($endDate) {
                             required>
 
                     </div>
-
 
                     {{-- END DATE --}}
 
@@ -2231,9 +2164,7 @@ if ($endDate) {
 
                 </div>
 
-
                 <hr class="my-4">
-
 
                 {{-- FINANCIAL --}}
 
@@ -2241,11 +2172,9 @@ if ($endDate) {
                     Financial, BPJS & Pajak
                 </h6>
 
-
                 @if($canSeeSalary)
 
                     <div class="row g-3">
-
 
                         {{-- SALARY --}}
 
@@ -2271,7 +2200,6 @@ if ($endDate) {
                             </div>
 
                         </div>
-
 
                         {{-- ALLOWANCE --}}
 
@@ -2305,7 +2233,6 @@ if ($endDate) {
 
                         </div>
 
-
                         {{-- PTKP --}}
 
                         <div class="col-md-4">
@@ -2314,35 +2241,50 @@ if ($endDate) {
                                 PTKP / PPh21
                             </label>
 
-                            <select
-                                name="ptkp_status"
-                                class="form-select">
+                            @if($canEditPtkp)
 
-                                @foreach($ptkpOptions as $item)
+                                <select
+                                    name="ptkp_status"
+                                    class="form-select">
 
-                                    <option
-                                        value="{{ $item }}"
-                                        @selected($ptkp === $item)>
+                                    @foreach($ptkpOptions as $item)
 
-                                        {{ $item }}
+                                        <option
+                                            value="{{ $item }}"
+                                            @selected($ptkp === $item)>
 
-                                    </option>
+                                            {{ $item }}
 
-                                @endforeach
+                                        </option>
 
-                            </select>
+                                    @endforeach
+
+                                </select>
+
+                            @else
+
+                                <input
+                                    type="text"
+                                    class="form-control bg-light text-muted fw-bold"
+                                    value="*****"
+                                    readonly>
+
+                                <input
+                                    type="hidden"
+                                    name="ptkp_status"
+                                    value="{{ $ptkp }}">
+
+                            @endif
 
                         </div>
 
                     </div>
-
 
                     {{-- =================================================
                          NEW PERIOD BPJS
                     ================================================== --}}
 
                     <div class="mt-4">
-
 
                         {{-- BPJS TK --}}
 
@@ -2387,7 +2329,6 @@ if ($endDate) {
 
                         </div>
 
-
                         {{-- BPJS HEALTH --}}
 
                         <div class="mb-4">
@@ -2431,7 +2372,6 @@ if ($endDate) {
 
                         </div>
 
-
                         {{-- MANUAL BPJS --}}
 
                         <div class="border rounded p-3 mt-3">
@@ -2473,13 +2413,11 @@ if ($endDate) {
 
                             </div>
 
-
                             <div
                                 id="newManualBpjsBox"
                                 style="{{ $useManualBpjs ? '' : 'display:none;' }}">
 
                                 <div class="row g-3">
-
 
                                     {{-- TK --}}
 
@@ -2505,7 +2443,6 @@ if ($endDate) {
 
                                     </div>
 
-
                                     {{-- KS --}}
 
                                     <div class="col-md-4">
@@ -2529,7 +2466,6 @@ if ($endDate) {
                                         </div>
 
                                     </div>
-
 
                                     {{-- COMPANY --}}
 
@@ -2577,7 +2513,6 @@ if ($endDate) {
 
                 @endif
 
-
                 {{-- BUTTON --}}
 
                 <div class="d-flex justify-content-end gap-2 mt-4">
@@ -2589,7 +2524,6 @@ if ($endDate) {
                         Batal
 
                     </button>
-
 
                     <button
                         type="submit"
@@ -2606,7 +2540,6 @@ if ($endDate) {
             </form>
 
         </div>
-
 
         {{-- =========================================================
              HISTORY TABLE
@@ -2644,7 +2577,6 @@ if ($endDate) {
 
                 </thead>
 
-
                 <tbody>
 
                     @forelse($histories as $item)
@@ -2672,9 +2604,7 @@ if ($endDate) {
 
                         @endphp
 
-
                         <tr>
-
 
                             {{-- CONTRACT --}}
 
@@ -2695,7 +2625,6 @@ if ($endDate) {
 
                                 </div>
 
-
                                 <small class="text-muted">
 
                                     Level:
@@ -2713,7 +2642,6 @@ if ($endDate) {
                                 </small>
 
                             </td>
-
 
                             {{-- PERIOD --}}
 
@@ -2741,7 +2669,6 @@ if ($endDate) {
 
                             </td>
 
-
                             {{-- JOB --}}
 
                             <td>
@@ -2755,7 +2682,6 @@ if ($endDate) {
                                 </small>
 
                             </td>
-
 
                             {{-- STATUS --}}
 
@@ -2784,7 +2710,6 @@ if ($endDate) {
                                 @endif
 
                             </td>
-
 
                             {{-- ACTION --}}
 
@@ -2870,7 +2795,6 @@ if ($endDate) {
 
 </div>
 
-
 {{-- =================================================================
 JAVASCRIPT
 ================================================================== --}}
@@ -2880,7 +2804,6 @@ JAVASCRIPT
 <script>
 
 document.addEventListener('DOMContentLoaded', function () {
-
 
     /*
     |--------------------------------------------------------------------------
@@ -2894,7 +2817,6 @@ document.addEventListener('DOMContentLoaded', function () {
             .replace(/[^\d]/g, '');
 
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -2914,7 +2836,6 @@ document.addEventListener('DOMContentLoaded', function () {
             .format(Number(number));
 
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -2937,7 +2858,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         });
 
-
         input.addEventListener('blur', function () {
 
             if (this.value) {
@@ -2950,7 +2870,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
     });
-
 
     /*
     |--------------------------------------------------------------------------
@@ -2985,7 +2904,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-
         const form =
             button.closest('form');
 
@@ -2993,14 +2911,12 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-
         let input =
             form.querySelector(
                 'input[data-toggle-hidden="' +
                 field +
                 '"]'
             );
-
 
         if (state) {
 
@@ -3038,7 +2954,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     }
 
-
     function updateToggleVisual(
         button,
         state
@@ -3050,10 +2965,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const label =
             button.querySelector('.toggle-label');
 
-
         button.dataset.toggleState =
             state ? '1' : '0';
-
 
         button.classList.toggle(
             'toggle-on',
@@ -3065,7 +2978,6 @@ document.addEventListener('DOMContentLoaded', function () {
             !state
         );
 
-
         if (icon) {
 
             icon.className =
@@ -3074,7 +2986,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     : 'fas fa-toggle-off';
 
         }
-
 
         if (label) {
 
@@ -3085,14 +2996,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         }
 
-
         const description =
             button
                 .closest('.rhuekamp-toggle-wrapper')
                 ?.querySelector(
                     '.rhuekamp-toggle-description'
                 );
-
 
         if (description) {
 
@@ -3108,7 +3017,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
             }
 
-
             if (
                 button.dataset.toggleField ===
                 'is_bpjs_health_active'
@@ -3120,7 +3028,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         : 'BPJS Kesehatan tidak dihitung dalam payroll.';
 
             }
-
 
             if (
                 button.dataset.toggleField ===
@@ -3138,12 +3045,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     }
 
-
     function initializeToggle(button) {
 
         const state =
             button.dataset.toggleState === '1';
-
 
         /*
         |--------------------------------------------------------------
@@ -3156,12 +3061,10 @@ document.addEventListener('DOMContentLoaded', function () {
             state
         );
 
-
         updateToggleVisual(
             button,
             state
         );
-
 
         button.addEventListener(
             'click',
@@ -3173,18 +3076,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 const newState =
                     !currentState;
 
-
                 createToggleInput(
                     this,
                     newState
                 );
 
-
                 updateToggleVisual(
                     this,
                     newState
                 );
-
 
                 /*
                 |----------------------------------------------------------
@@ -3204,10 +3104,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         return;
                     }
 
-
                     const isNewPeriod =
                         form.id === 'newPeriodForm';
-
 
                     const box =
                         form.querySelector(
@@ -3215,7 +3113,6 @@ document.addEventListener('DOMContentLoaded', function () {
                                 ? '#newManualBpjsBox'
                                 : '#manualBpjsBox'
                         );
-
 
                     if (box) {
 
@@ -3233,7 +3130,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     }
 
-
     document
         .querySelectorAll(
             '.rhuekamp-toggle'
@@ -3243,7 +3139,6 @@ document.addEventListener('DOMContentLoaded', function () {
             initializeToggle(button);
 
         });
-
 
     /*
     |--------------------------------------------------------------------------
@@ -3266,13 +3161,11 @@ document.addEventListener('DOMContentLoaded', function () {
             'terminationBox'
         );
 
-
     function toggleCurrentEmployment() {
 
         if (!employmentType) {
             return;
         }
-
 
         if (pkwtSequenceBox) {
 
@@ -3282,7 +3175,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     : 'none';
 
         }
-
 
         if (terminationBox) {
 
@@ -3304,14 +3196,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     }
 
-
     employmentType?.addEventListener(
         'change',
         toggleCurrentEmployment
     );
 
     toggleCurrentEmployment();
-
 
     /*
     |--------------------------------------------------------------------------
@@ -3338,7 +3228,6 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById(
             'level'
         );
-
 
     function syncCurrentAllowance() {
 
@@ -3375,7 +3264,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     }
 
-
     /*
     |--------------------------------------------------------------------------
     | BASIC SALARY INPUT
@@ -3387,18 +3275,15 @@ document.addEventListener('DOMContentLoaded', function () {
         syncCurrentAllowance
     );
 
-
     basicSalary?.addEventListener(
         'blur',
         syncCurrentAllowance
     );
 
-
     level?.addEventListener(
         'input',
         syncCurrentAllowance
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -3426,16 +3311,13 @@ document.addEventListener('DOMContentLoaded', function () {
             'newPeriodWrapper'
         );
 
-
     function showNewPeriod() {
 
         if (!newPeriodWrapper) {
             return;
         }
 
-
         newPeriodWrapper.style.display = '';
-
 
         newPeriodWrapper.scrollIntoView({
             behavior: 'smooth',
@@ -3444,25 +3326,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
     }
 
-
     function hideNewPeriod() {
 
         if (!newPeriodWrapper) {
             return;
         }
 
-
         newPeriodWrapper.style.display =
             'none';
 
     }
 
-
     btnAddContractPeriod?.addEventListener(
         'click',
         showNewPeriod
     );
-
 
     document.querySelectorAll(
         '.js-cancel-new-period'
@@ -3474,7 +3352,6 @@ document.addEventListener('DOMContentLoaded', function () {
         );
 
     });
-
 
     /*
     |--------------------------------------------------------------------------
@@ -3497,7 +3374,6 @@ document.addEventListener('DOMContentLoaded', function () {
             'new_level'
         );
 
-
     function calculateNewAllowance() {
 
         if (
@@ -3508,7 +3384,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-
         const salary =
             Number(
                 cleanNumber(
@@ -3516,17 +3391,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 )
             ) || 0;
 
-
         const levelValue =
             Number(
                 newLevel.value
             ) || 0;
 
-
         const result =
             salary *
             (levelValue * 0.02);
-
 
         newAllowance.value =
             result > 0
@@ -3535,18 +3407,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     }
 
-
     newSalary?.addEventListener(
         'input',
         calculateNewAllowance
     );
 
-
     newLevel?.addEventListener(
         'input',
         calculateNewAllowance
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -3559,7 +3428,6 @@ document.addEventListener('DOMContentLoaded', function () {
             window.location.search
         );
 
-
     if (
         urlParams.get('open_new_period') === 'true' ||
         urlParams.get('open_new_period') === '1'
@@ -3568,7 +3436,6 @@ document.addEventListener('DOMContentLoaded', function () {
         showNewPeriod();
 
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -3584,7 +3451,6 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById(
             'currentContractForm'
         );
-
 
     currentForm?.addEventListener(
         'submit',
@@ -3604,7 +3470,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     );
 
-
     /*
     |--------------------------------------------------------------------------
     | SUBMIT NEW PERIOD
@@ -3615,7 +3480,6 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById(
             'newPeriodForm'
         );
-
 
     newPeriodForm?.addEventListener(
         'submit',
@@ -3632,7 +3496,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         }
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -3653,11 +3516,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         'button[type="submit"]'
                     );
 
-
                 if (!submitButton) {
                     return;
                 }
-
 
                 if (
                     submitButton.dataset.submitting === '1'
@@ -3667,10 +3528,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 }
 
-
                 submitButton.dataset.submitting =
                     '1';
-
 
                 setTimeout(function () {
 
