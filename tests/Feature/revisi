@@ -1,114 +1,28 @@
+revisi
+role head hrd dan hrd bisa input tanggal merah 
+PTKP bisa di input hrd dan head_hrd
+S tidak di bayar kecuali skd
+Optimasi percepat fitur export import
+Sigma absen adalah tolak ukur hari di bayar 26/27 
+Head_hrd Bisa cutoff
+generate sisa tanggal cut off formalitas 
+setelah itu di import pakai tanggal asli baru masuk db 
+hari minggu bisa absensi tapi manual 
+Hari minggu staff karyawan jika lembur hari minggu itu gaji gaji per hari 7 jam x2 kasus khusus 7 jam 
+minggu lembur khusus kurang dari 7 jam gaji perhari di bagi 7 x jumlah jam masuk nya di kali 2
 
+gantungan periode berjalan di hapus 
+penambahan absensi security 
+penghasilan tambahan = lembur jika karyawan biasa 
+kalau security kebijakan 1 kesejahteraan 
 
-employe 
-nomor kk add
-nama panggilan hapus 
-DIVISI
+Tanggal berakhir adalah tanggal terakhir kerja 
+26 close berarti 25 yang tidak bisa di edit 26 ikut draf
 
-role HRD 
-add form penyesuaian nominal bpjs 
-Tanggungan karyawan 
-TK dan Kesehatan 
-role hrd tidak muncul TER
-role keu TER tampilkan by order 
+gaji cm itu cair saat sudah melahirkan + ada surat keterangan melahirkan yang di berikan ke hrd 
+semisal mulai ijin di tanggal 17 berarti tanggal 1-16 di gaji kan pada akhir bulan 
+history contract sebelumnya saat punishment maksud nya adalah pergantian level di tengah berjalannya contract maka gaji 0.5 bulan akan di keep 
+dan di tambahkan gaji setelah update contract luar pulau dan dalam pulau 
+pengoptimalan cuti melahirkan
 
-dalam satu bulan 26 hari 
-missal dalam 21 hari itu tetep 26 hari dan 
-sama kalau 27 hari gaji tetap 26
-intinya gaji kotor dalam sebulan itu tidak peduli 21 atau 27 hari masuk kerja 
-gaji itu satu bulan
-hari libur besar di bayar 
-kecuali minggu
-
-slip gaji catatan pindah ke Bawah 
-A gaji tetap terdiri 
-b lembur hari minggu 
-C lain lain - potongan 
-
-
-role keuangan x role hrd 
-dipisah keuangan dan absensi 
-
-kekaryawan hrd	
-keuangan itu nominal 
-
-
-BPJS nominal 
-
-
-Level 
-
-TER hanya A dan B
-Financial role 
-Absensi tambah kan normative 
-Kategori manual all role 
-
-Area Malang 
-Primary Key 
-
-
-
-
-Level itu 
-
-
-gaji lembur ada rumus di excel 
-gapok + TJ /173
-GAPOK + Tunjangan/26 x 2 
-GP - TJ / 26 Perhari Alpha 
-
-cuti melahirkan 
-bonus input manual 
-
-add kolom thr 
-
-Absensi HRD Surat Dokter DI bayar atau di hitung kerja 
-Kalau 0 Alpha
-Luar Pulau Area Nama Jabatan KaEgori Level 
-
-form input absensi tambah bpjs normative
-
-finger print di nik jadi nip
-
-
-
-9.9.26
-ROLE
-HRD Kepala Administrasi 1 hrd 1 dan 2 ini kepala dan hanya bisa melihat bpjs berdasarkan level 13 ke bawah 
-HRD lain nya = biasa 
-
-total cuti melahirkan itu 78 itu di bagi menjadi 1.5 bulan sebelum melahirkan dan 1.5 setelah melahirkan 
-bukti surat keterangan lahir (copy) 
-KONDISI >
-kasus nya itu berarti itu semisal 1.5 bulan sebelum melahirkan itu bayi sudah lahr di hari ke 10 maka di bayar di bayar 10 hari
-dan jika lebih lama maksimal itu 39 hari 
-
-kondisi nya itu
-
-pengecualian saat hamil dalam hamil
-
-perbedaan umk ganti tahun 
-
-dan shift untuk 
-
-absensi hrd ternyata yang di hiden hanya level dan kategori aja tergantung jabatan kepala dan manager 
-tanggal merah di absensi 
-penambahan jika pkwt itu di tambahkan info pkwt ke berapa 
-absensi penambahan potongan gantungan 
-tanggal penutupan(cut off di tentukan manager keuangan )
-
-Check list
-BPJS Override belum masuk database (Done)
-Pemberian status PKTW ke Berapa (Done)
-absensi tambah dropdown i (Donne)
-Perlu di tannya kan apakah cuti melahirkan akan tetap dapat gaji bulann an atau beda 
-Sistem untuk Tanggal merah atau hari libur all karyawan itu bisa auto HB atau hari besar dannnn tetap di bayar karenna masuk libur di bayar (Done)
-Menambahkan form untuk sistem shift security 
-Slip gaji perlu di benar kan 
-Kasbon belum bisa masuk database 
-Fitur send Slip email
-perbaik an ui milik role hrd dan manager keuangan 
-
-
-Check list terbaru 
-Exports outer island, bca, and feature send email 
+cm/normatif ganti jadi cm aja
