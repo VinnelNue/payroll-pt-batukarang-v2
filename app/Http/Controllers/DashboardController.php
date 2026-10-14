@@ -251,7 +251,11 @@ class DashboardController extends Controller
                 'id' => $id,
                 'region' => $region,
                 'region_label' => $region === 'local' ? 'Local' : 'Outer Island',
-                'name' => (string) ($employee->full_name ?? $employee->name ?? 'Nama tidak tersedia'),
+                'name' => (string) (
+                    $region === 'local'
+                        ? ($employee->full_name ?: $employee->name ?: 'Nama tidak tersedia')
+                        : ($employee->full_name_outer ?: $employee->full_name ?: $employee->name ?: 'Nama tidak tersedia')
+                ),
                 'active' => (bool) ($employee->is_active ?? false),
                 'has_contract' => $history !== null,
                 'contract_active' => (bool) ($contract?->is_active ?? false)

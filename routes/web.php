@@ -1,28 +1,32 @@
 <?php
 
-
-
 use Illuminate\Support\Facades\Route;
 
-
-
 use App\Http\Controllers\Auth\LoginController;
+
 use App\Http\Controllers\DashboardController;
+
 use App\Http\Controllers\EmployeeController;
+
 use App\Http\Controllers\EmployeeOuterIslandController;
+
 use App\Http\Controllers\EmployeeContractController;
+
 use App\Http\Controllers\PayrollController;
+
 use App\Http\Controllers\PayrollLocalBcaExportController;
+
 use App\Http\Controllers\PayrollOuterIslandController;
+
 use App\Http\Controllers\ProfileController;
+
 use App\Http\Controllers\UserController;
+
 use App\Http\Controllers\ContractLocalController;
+
 use App\Http\Controllers\ContractOuterIslandController;
+
 use App\Http\Controllers\HolidayController;
-
-
-
-
 
 /*
 
@@ -34,8 +38,6 @@ use App\Http\Controllers\HolidayController;
 
 */
 
-
-
 Route::get('/login', [
 
     LoginController::class,
@@ -43,8 +45,6 @@ Route::get('/login', [
     'showLoginForm'
 
 ])->name('login');
-
-
 
 Route::post('/login', [
 
@@ -54,8 +54,6 @@ Route::post('/login', [
 
 ])->name('login.perform');
 
-
-
 Route::post('/logout', [
 
     LoginController::class,
@@ -63,10 +61,6 @@ Route::post('/logout', [
     'logout'
 
 ])->name('logout');
-
-
-
-
 
 /*
 
@@ -78,13 +72,7 @@ Route::post('/logout', [
 
 */
 
-
-
 Route::middleware(['auth'])->group(function () {
-
-
-
-
 
     /*
 
@@ -96,8 +84,6 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::get('/', [
 
         DashboardController::class,
@@ -105,10 +91,6 @@ Route::middleware(['auth'])->group(function () {
         'index'
 
     ])->name('dashboard');
-
-
-
-
 
     /*
 
@@ -120,15 +102,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('employees/local')
 
         ->name('employees.local.')
 
         ->group(function () {
-
-
 
             Route::get('export', [
 
@@ -138,8 +116,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('export');
 
-
-
             Route::post('import', [
 
                 EmployeeController::class,
@@ -147,8 +123,6 @@ Route::middleware(['auth'])->group(function () {
                 'import'
 
             ])->name('import');
-
-
 
             Route::get('download-template', [
 
@@ -159,10 +133,6 @@ Route::middleware(['auth'])->group(function () {
             ])->name('download-template');
 
         });
-
-
-
-
 
     Route::resource(
 
@@ -180,10 +150,6 @@ Route::middleware(['auth'])->group(function () {
 
     );
 
-
-
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -194,15 +160,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('employees/outer_island')
 
         ->name('employees.outer_island.')
 
         ->group(function () {
-
-
 
             Route::get('export', [
 
@@ -212,8 +174,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('export');
 
-
-
             Route::post('import', [
 
                 EmployeeOuterIslandController::class,
@@ -221,8 +181,6 @@ Route::middleware(['auth'])->group(function () {
                 'import'
 
             ])->name('import');
-
-
 
             Route::get('download-template', [
 
@@ -233,10 +191,6 @@ Route::middleware(['auth'])->group(function () {
             ])->name('download-template');
 
         });
-
-
-
-
 
     Route::resource(
 
@@ -250,10 +204,6 @@ Route::middleware(['auth'])->group(function () {
 
     );
 
-
-
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -264,15 +214,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('api')
 
         ->name('api.')
 
         ->group(function () {
-
-
 
             Route::get('cities', [
 
@@ -282,8 +228,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('cities');
 
-
-
             Route::get('districts', [
 
                 EmployeeController::class,
@@ -291,8 +235,6 @@ Route::middleware(['auth'])->group(function () {
                 'getDistricts'
 
             ])->name('districts');
-
-
 
             Route::get('villages', [
 
@@ -304,10 +246,6 @@ Route::middleware(['auth'])->group(function () {
 
         });
 
-
-
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -317,8 +255,6 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
 
     */
-
-
 
     Route::post(
 
@@ -335,10 +271,6 @@ Route::middleware(['auth'])->group(function () {
     )
 
         ->name('payrolls.local.cutoff.update');
-
-
-
-
 
     /*
 
@@ -388,17 +320,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('contracts/local')
 
         ->name('contracts.local.')
 
         ->group(function () {
-
-
-
-
 
             /*
 
@@ -416,8 +342,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('/', [
 
                 ContractLocalController::class,
@@ -425,10 +349,6 @@ Route::middleware(['auth'])->group(function () {
                 'index'
 
             ])->name('index');
-
-
-
-
 
             /*
 
@@ -454,8 +374,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{employee}/edit', [
 
                 ContractLocalController::class,
@@ -463,10 +381,6 @@ Route::middleware(['auth'])->group(function () {
                 'edit'
 
             ])->name('edit');
-
-
-
-
 
             /*
 
@@ -484,8 +398,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::put('{employee}', [
 
                 ContractLocalController::class,
@@ -493,10 +405,6 @@ Route::middleware(['auth'])->group(function () {
                 'update'
 
             ])->name('update');
-
-
-
-
 
             /*
 
@@ -514,8 +422,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{employee}/period/create', [
 
                 ContractLocalController::class,
@@ -523,10 +429,6 @@ Route::middleware(['auth'])->group(function () {
                 'createPeriod'
 
             ])->name('period.create');
-
-
-
-
 
             /*
 
@@ -560,8 +462,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('{employee}/period', [
 
                 ContractLocalController::class,
@@ -569,10 +469,6 @@ Route::middleware(['auth'])->group(function () {
                 'storePeriod'
 
             ])->name('period.store');
-
-
-
-
 
             /*
 
@@ -590,8 +486,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{employee}/period/{history}', [
 
                 ContractLocalController::class,
@@ -600,13 +494,7 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('period.show');
 
-
-
         });
-
-
-
-
 
     /*
 
@@ -638,17 +526,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('contracts/outer_island')
 
         ->name('contracts.outer_island.')
 
         ->group(function () {
-
-
-
-
 
             /*
 
@@ -660,8 +542,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('/', [
 
                 ContractOuterIslandController::class,
@@ -669,10 +549,6 @@ Route::middleware(['auth'])->group(function () {
                 'index'
 
             ])->name('index');
-
-
-
-
 
             /*
 
@@ -684,8 +560,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{employee}/edit', [
 
                 ContractOuterIslandController::class,
@@ -693,10 +567,6 @@ Route::middleware(['auth'])->group(function () {
                 'edit'
 
             ])->name('edit');
-
-
-
-
 
             /*
 
@@ -708,8 +578,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::put('{employee}', [
 
                 ContractOuterIslandController::class,
@@ -717,10 +585,6 @@ Route::middleware(['auth'])->group(function () {
                 'update'
 
             ])->name('update');
-
-
-
-
 
             /*
 
@@ -732,8 +596,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{employee}/period/create', [
 
                 ContractOuterIslandController::class,
@@ -741,10 +603,6 @@ Route::middleware(['auth'])->group(function () {
                 'createPeriod'
 
             ])->name('period.create');
-
-
-
-
 
             /*
 
@@ -756,8 +614,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('{employee}/period', [
 
                 ContractOuterIslandController::class,
@@ -765,10 +621,6 @@ Route::middleware(['auth'])->group(function () {
                 'storePeriod'
 
             ])->name('period.store');
-
-
-
-
 
             /*
 
@@ -780,8 +632,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{employee}/period/{history}', [
 
                 ContractOuterIslandController::class,
@@ -790,13 +640,7 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('period.show');
 
-
-
         });
-
-
-
-
 
     /*
 
@@ -808,17 +652,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('payrolls/local')
 
         ->name('payrolls.local.')
 
         ->group(function () {
-
-
-
-
 
             /*
 
@@ -830,8 +668,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('/', [
 
                 PayrollController::class,
@@ -839,10 +675,6 @@ Route::middleware(['auth'])->group(function () {
                 'index'
 
             ])->name('index');
-
-
-
-
 
             /*
 
@@ -854,8 +686,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('create', [
 
                 PayrollController::class,
@@ -863,10 +693,6 @@ Route::middleware(['auth'])->group(function () {
                 'create'
 
             ])->name('create');
-
-
-
-
 
             /*
 
@@ -878,8 +704,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('store', [
 
                 PayrollController::class,
@@ -887,10 +711,6 @@ Route::middleware(['auth'])->group(function () {
                 'store'
 
             ])->name('store');
-
-
-
-
 
             /*
 
@@ -902,8 +722,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('import', [
 
                 PayrollController::class,
@@ -911,10 +729,6 @@ Route::middleware(['auth'])->group(function () {
                 'import'
 
             ])->name('import');
-
-
-
-
 
             /*
 
@@ -927,23 +741,36 @@ Route::middleware(['auth'])->group(function () {
             */
 
             Route::get('export-bca', [
+
                 PayrollLocalBcaExportController::class,
+
                 'exportBca',
+
             ])->name('export-bca');
+
             /*
+
             |--------------------------------------------------------------------------
+
             | EXPORT EXCEL
+
             |--------------------------------------------------------------------------
+
             */
 
             Route::get(
-                'export-excel',
-                [
-                    PayrollController::class,
-                    'exportExcel'
-                ]
-            )->name('export-excel');
 
+                'export-excel',
+
+                [
+
+                    PayrollController::class,
+
+                    'exportExcel'
+
+                ]
+
+            )->name('export-excel');
 
             /*
 
@@ -955,8 +782,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('lock', [
 
                 PayrollController::class,
@@ -964,10 +789,6 @@ Route::middleware(['auth'])->group(function () {
                 'lockCalculation'
 
             ])->name('lock');
-
-
-
-
 
             Route::post('request-unlock', [
 
@@ -977,10 +798,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('requestUnlock');
 
-
-
-
-
             Route::post('unlock', [
 
                 PayrollController::class,
@@ -989,10 +806,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('unlock');
 
-
-
-
-
             Route::post('reject-unlock', [
 
                 PayrollController::class,
@@ -1000,10 +813,6 @@ Route::middleware(['auth'])->group(function () {
                 'rejectUnlock'
 
             ])->name('rejectUnlock');
-
-
-
-
 
             /*
 
@@ -1015,8 +824,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{uuid}/print-pdf', [
 
                 PayrollController::class,
@@ -1024,10 +831,6 @@ Route::middleware(['auth'])->group(function () {
                 'printPdf'
 
             ])->name('print-pdf');
-
-
-
-
 
             Route::get('{uuid}/send-email', [
 
@@ -1037,13 +840,17 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('send-email');
 
-
+            /*
+            |--------------------------------------------------------------------------
+            | EMAIL SLIP GAJI TERPILIH (LOCAL)
+            |--------------------------------------------------------------------------
+            */
+            Route::post('send-email-bulk', [
+                PayrollController::class,
+                'sendEmailBulk',
+            ])->name('send-email-bulk');
 
         });
-
-
-
-
 
     /*
 
@@ -1055,17 +862,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('payrolls/outer_island')
 
         ->name('payrolls.outer_island.')
 
         ->group(function () {
-
-
-
-
 
             /*
 
@@ -1077,8 +878,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('/', [
 
                 PayrollOuterIslandController::class,
@@ -1086,10 +885,6 @@ Route::middleware(['auth'])->group(function () {
                 'index'
 
             ])->name('index');
-
-
-
-
 
             /*
 
@@ -1101,8 +896,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('create', [
 
                 PayrollOuterIslandController::class,
@@ -1110,10 +903,6 @@ Route::middleware(['auth'])->group(function () {
                 'create'
 
             ])->name('create');
-
-
-
-
 
             /*
 
@@ -1125,8 +914,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('store', [
 
                 PayrollOuterIslandController::class,
@@ -1134,10 +921,6 @@ Route::middleware(['auth'])->group(function () {
                 'store'
 
             ])->name('store');
-
-
-
-
 
             /*
 
@@ -1149,8 +932,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('export-bca', [
 
                 PayrollOuterIslandController::class,
@@ -1158,10 +939,6 @@ Route::middleware(['auth'])->group(function () {
                 'exportBca'
 
             ])->name('export-bca');
-
-
-
-
 
             /*
 
@@ -1173,8 +950,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('lock', [
 
                 PayrollOuterIslandController::class,
@@ -1182,10 +957,6 @@ Route::middleware(['auth'])->group(function () {
                 'lockCalculation'
 
             ])->name('lock');
-
-
-
-
 
             Route::post('request-unlock', [
 
@@ -1195,10 +966,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('requestUnlock');
 
-
-
-
-
             Route::post('unlock', [
 
                 PayrollOuterIslandController::class,
@@ -1207,10 +974,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('unlock');
 
-
-
-
-
             Route::post('reject-unlock', [
 
                 PayrollOuterIslandController::class,
@@ -1218,10 +981,6 @@ Route::middleware(['auth'])->group(function () {
                 'rejectUnlock'
 
             ])->name('rejectUnlock');
-
-
-
-
 
             /*
 
@@ -1233,8 +992,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::get('{uuid}/print-pdf', [
 
                 PayrollOuterIslandController::class,
@@ -1243,10 +1000,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('print-pdf');
 
-
-
-
-
             Route::get('{uuid}/send-email', [
 
                 PayrollOuterIslandController::class,
@@ -1254,10 +1007,6 @@ Route::middleware(['auth'])->group(function () {
                 'sendEmail'
 
             ])->name('send-email');
-
-
-
-
 
             /*
 
@@ -1269,8 +1018,6 @@ Route::middleware(['auth'])->group(function () {
 
             */
 
-
-
             Route::post('cutoff-day', [
 
                 PayrollOuterIslandController::class,
@@ -1278,10 +1025,6 @@ Route::middleware(['auth'])->group(function () {
                 'updateCutoffDay'
 
             ])->name('cutoff.update');
-
-
-
-
 
             /*
 
@@ -1292,8 +1035,6 @@ Route::middleware(['auth'])->group(function () {
             |--------------------------------------------------------------------------
 
             */
-
-
 
             Route::post(
 
@@ -1309,13 +1050,7 @@ Route::middleware(['auth'])->group(function () {
 
             )->name('generate_attendance');
 
-
-
         });
-
-
-
-
 
     /*
 
@@ -1326,8 +1061,6 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
 
     */
-
-
 
     Route::get(
 
@@ -1343,10 +1076,6 @@ Route::middleware(['auth'])->group(function () {
 
     )->name('tax-bpjs.index');
 
-
-
-
-
     Route::post(
 
         '/tax-bpjs-master/update-bpjs',
@@ -1361,10 +1090,6 @@ Route::middleware(['auth'])->group(function () {
 
     )->name('tax-bpjs.update-bpjs');
 
-
-
-
-
     /*
 
     |--------------------------------------------------------------------------
@@ -1375,15 +1100,11 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::prefix('holidays')
 
         ->name('holidays.')
 
         ->group(function () {
-
-
 
             Route::get('/', [
 
@@ -1393,8 +1114,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('index');
 
-
-
             Route::get('/create', [
 
                 HolidayController::class,
@@ -1402,8 +1121,6 @@ Route::middleware(['auth'])->group(function () {
                 'create'
 
             ])->name('create');
-
-
 
             Route::post('/', [
 
@@ -1413,8 +1130,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('store');
 
-
-
             Route::get('/{holiday}/edit', [
 
                 HolidayController::class,
@@ -1422,8 +1137,6 @@ Route::middleware(['auth'])->group(function () {
                 'edit'
 
             ])->name('edit');
-
-
 
             Route::put('/{holiday}', [
 
@@ -1433,8 +1146,6 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('update');
 
-
-
             Route::delete('/{holiday}', [
 
                 HolidayController::class,
@@ -1442,8 +1153,6 @@ Route::middleware(['auth'])->group(function () {
                 'destroy'
 
             ])->name('destroy');
-
-
 
             Route::patch('/{holiday}/toggle-status', [
 
@@ -1453,13 +1162,7 @@ Route::middleware(['auth'])->group(function () {
 
             ])->name('toggleStatus');
 
-
-
         });
-
-
-
-
 
     /*
 
@@ -1471,8 +1174,6 @@ Route::middleware(['auth'])->group(function () {
 
     */
 
-
-
     Route::get('/profile', [
 
         ProfileController::class,
@@ -1481,10 +1182,6 @@ Route::middleware(['auth'])->group(function () {
 
     ])->name('profile.edit');
 
-
-
-
-
     Route::put('/profile', [
 
         ProfileController::class,
@@ -1492,10 +1189,6 @@ Route::middleware(['auth'])->group(function () {
         'update'
 
     ])->name('profile.update');
-
-
-
-
 
     /*
 
@@ -1506,8 +1199,6 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
 
     */
-
-
 
     Route::resource(
 
@@ -1526,19 +1217,34 @@ Route::middleware(['auth'])->group(function () {
     ]);
 
     // Tambahkan ke routes/web.php.
+
     // Route POST boleh memakai path yang sama dengan route GET lama karena HTTP method-nya berbeda.
+
     // Nama route baru sengaja berbeda agar tidak bentrok dengan route GET lama.
+
     Route::post(
+
         '/payrolls/outer-island/{uuid}/send-email',
+
         [\App\Http\Controllers\PayrollOuterIslandController::class, 'sendEmail']
+
     )->middleware('auth')->name('payrolls.outer_island.send-email.post');
 
     // Tambahkan sekali di routes/web.php, bersama route payroll Outer Island lainnya.
+
     Route::post(
+
         '/payrolls/outer-island/send-email-bulk',
+
         [\App\Http\Controllers\PayrollOuterIslandController::class, 'sendEmailBulk']
+
     )->middleware('auth')->name('payrolls.outer_island.send-email-bulk');
 
+    // Tambahkan di routes/web.php di dalam group middleware auth yang sama dengan route payroll Outer Island.
 
+    // Jika import controller belum ada, tambahkan di bagian atas: use App\Http\Controllers\PayrollOuterIslandController;
 
+    Route::get('/payrolls/outer-island/export-excel', [PayrollOuterIslandController::class, 'exportExcel'])
+
+        ->name('payrolls.outer_island.export-excel');
 });

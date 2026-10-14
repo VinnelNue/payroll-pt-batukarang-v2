@@ -41,133 +41,221 @@
         $userRole = (string) (Auth::user()->role ?? '');
 
         $isExecutive = in_array(
+
             $userRole,
+
             ['manager_keuangan', 'super_admin'],
+
             true
+
         );
 
         $isHeadHrd = in_array(
+
             $userRole,
+
             ['head_hrd', 'kepala_hrd'],
+
             true
+
         );
 
         $isHrd = $userRole === 'hrd';
 
         /*
+
         |--------------------------------------------------------------------------
+
         | ROLE-BASED COLUMNS
+
         |--------------------------------------------------------------------------
+
         |
+
         | Finance / Super Admin: semua nominal semua level.
+
         | Head HRD: nominal hanya untuk level 1-13.
+
         | HRD: absensi saja, tanpa kolom BPJS/finansial.
+
         |
+
         */
+
         $showBpjsColumns = $isExecutive || $isHeadHrd;
+
         $showFinancialColumns = $isExecutive || $isHeadHrd;
 
         $tableColspan =
+
             3
+
             + ($showBpjsColumns ? 2 : 0)
+
             + ($showFinancialColumns ? 5 : 0);
 
         /*
+
         |--------------------------------------------------------------------------
+
         | CONTRACT / LEVEL RESOLVER
+
         |--------------------------------------------------------------------------
+
         */
+
         $getContractHistory = static function ($employee) {
+
             if (!$employee) {
+
                 return null;
+
             }
 
             $activeContract = $employee->activeContract;
 
             return $activeContract?->currentHistory
+
                 ?? $activeContract
+
                 ?? $employee->contract?->currentHistory;
+
         };
 
         $getEmployeeLevel = static function ($employee) use (
+
             $getContractHistory
+
         ): ?int {
+
             $history = $getContractHistory($employee);
 
             $level =
+
                 $history?->level
+
                 ?? $employee?->contract?->currentHistory?->level;
 
             return is_numeric($level)
+
                 ? (int) $level
+
                 : null;
+
         };
 
         /*
+
         |--------------------------------------------------------------------------
+
         | FINANCIAL ACCESS PER PAYROLL ROW
+
         |--------------------------------------------------------------------------
+
         */
+
         $canViewPayrollFinancial = static function ($payroll) use (
+
             $isExecutive,
+
             $isHeadHrd,
+
             $getEmployeeLevel
+
         ): bool {
+
             if ($isExecutive) {
+
                 return true;
+
             }
 
             if (!$isHeadHrd) {
+
                 return false;
+
             }
 
             $level = $getEmployeeLevel(
+
                 $payroll?->employee
+
             );
 
             // Level 13 terakhir yang boleh terlihat. Level 14+ disembunyikan.
+
             return $level !== null && $level <= 13;
+
         };
 
         /*
+
         |--------------------------------------------------------------------------
+
         | FINANCIAL TOTALS
+
         |--------------------------------------------------------------------------
+
         |
+
         | Head HRD hanya melihat penjumlahan payroll yang levelnya <= 13.
+
         | Nominal level 14+ tidak ikut dihitung ke KPI agar tidak bocor lewat
+
         | total agregat.
+
         |
+
         */
+
         $visibleFinancialPayrolls = $payrolls
+
             ->filter(
+
                 fn ($payroll) => $canViewPayrollFinancial($payroll)
+
             )
+
             ->values();
 
         $totalGross = 0;
+
         $totalNet = 0;
+
         $totalPph = 0;
+
         $totalBpjs = 0;
 
         if ($isExecutive || $isHeadHrd) {
+
             $totalGross = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) => (float) ($payroll->gross_salary ?? 0)
+
             );
 
             $totalNet = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) => (float) ($payroll->net_salary ?? 0)
+
             );
 
             $totalPph = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) => (float) ($payroll->pph21_deduction ?? 0)
+
             );
 
             $totalBpjs = $visibleFinancialPayrolls->sum(
+
                 fn ($payroll) =>
+
                     (float) ($payroll->bpjs_tk_deduction ?? 0)
+
                     + (float) ($payroll->bpjs_ks_deduction ?? 0)
+
             );
+
         }
 
         $payrollsByDepartment = $payrolls->groupBy(function ($payroll) {
@@ -257,20 +345,35 @@
             </div>
 
             <p class="text-muted small m-0 mt-1">
+
             @if($isHeadHrd)
+
                 <div class="role-access-note mt-3">
+
                     <i class="fa-solid fa-shield-halved me-2"></i>
+
                     <span>
+
                         Akses finansial Head HRD dibatasi ke karyawan
+
                         <strong>Level 1–13</strong>. Data finansial Level 14 ke atas
+
                         disamarkan dan tidak masuk total ringkasan.
+
                     </span>
+
                 </div>
+
             @elseif($isHrd)
+
                 <div class="role-access-note role-access-note-muted mt-3">
+
                     <i class="fa-solid fa-calendar-check me-2"></i>
+
                     <span>Mode HRD: tampilan difokuskan pada kehadiran karyawan.</span>
+
                 </div>
+
             @endif
 
         </div>
@@ -307,7 +410,30 @@
 
             </form>
 
-            {{-- EXPORT BCA --}}
+                        {{-- EMAIL SLIP GAJI TERPILIH --}}
+            @if($isExecutive && $payrolls->count() > 0)
+                <form
+                    id="localBulkEmailForm"
+                    action="{{ route('payrolls.local.send-email-bulk') }}"
+                    method="POST"
+                    class="d-inline-flex align-items-center gap-2"
+                >
+                    @csrf
+                    <input type="hidden" name="period" value="{{ $period }}">
+                    <button
+                        type="submit"
+                        id="localBulkEmailSubmit"
+                        class="btn btn-primary btn-sm px-3 py-2 rounded-3 fw-semibold"
+                        disabled
+                        onclick="return confirm('Kirim slip gaji periode {{ $period }} ke karyawan yang dipilih?')"
+                    >
+                        <i class="fa-solid fa-paper-plane me-1"></i>
+                        Kirim Email Terpilih (<span id="localBulkEmailCount">0</span>)
+                    </button>
+                </form>
+            @endif
+
+{{-- EXPORT BCA --}}
 
             @if($payrolls->count() > 0 && $isExecutive)
 
@@ -613,18 +739,28 @@
 
     @if($showFinancialColumns)
 
-        
             @if($isHeadHrd)
+
                 <div class="col-12">
+
                     <div class="alert alert-info d-flex align-items-start gap-2 rounded-3 py-2 mb-0 small">
+
                         <i class="fa-solid fa-circle-info mt-1"></i>
+
                         <div>
+
                             Ringkasan nominal hanya menghitung payroll karyawan
+
                             Level 1–13 yang boleh dilihat. Data Level 14 ke atas tidak
+
                             ditampilkan dan tidak ikut dijumlahkan.
+
                         </div>
+
                     </div>
+
                 </div>
+
             @endif
 
 <div class="row g-3 mb-4">
@@ -806,6 +942,7 @@
                     </th>
 
                     @if($showBpjsColumns)
+
 <th class="py-3 px-3 text-end">
 
                         BPJS TK
@@ -817,6 +954,7 @@
                         BPJS KS
 
                     </th>
+
 @endif
 
                     @if($showFinancialColumns)
@@ -857,7 +995,14 @@
 
                         >
 
-                            Slip
+                            @if($isExecutive)
+                                <label class="d-inline-flex align-items-center gap-1 mb-0" title="Pilih semua slip pada halaman ini">
+                                    <input type="checkbox" id="localSelectAllSlips" class="form-check-input m-0">
+                                    <span>Slip</span>
+                                </label>
+                            @else
+                                Slip
+                            @endif
 
                         </th>
 
@@ -1020,9 +1165,11 @@
                             $level = $getEmployeeLevel($employee);
 
                             $canViewPayrollRow =
+
                                 $canViewPayrollFinancial($pay);
 
                             $canViewBpjsNominal =
+
                                 $canViewPayrollRow;
 
                             $bpjsTkDisplay =
@@ -1222,6 +1369,7 @@
                             </td>
 
                             @if($showBpjsColumns)
+
 {{-- =================================================
 
                                  BPJS TK
@@ -1253,6 +1401,7 @@
                                 @endif
 
                                 @if($canViewBpjsNominal)
+
 @if($isBpjsOverride)
 
                                     <span
@@ -1290,6 +1439,7 @@
                                     </span>
 
                                 @endif
+
 @endif
 
                             </td>
@@ -1325,6 +1475,7 @@
                                 @endif
 
                                 @if($canViewBpjsNominal)
+
 @if($isBpjsOverride)
 
                                     <span
@@ -1362,12 +1513,13 @@
                                     </span>
 
                                 @endif
+
 @endif
 
                             </td>
 
-                            
 @endif
+
 {{-- =================================================
 
                                  FINANCIAL
@@ -1375,8 +1527,8 @@
                             ================================================== --}}
 
                             @if($showFinancialColumns)
-                            @if($canViewPayrollRow)
 
+                            @if($canViewPayrollRow)
 
                                 {{-- GROSS --}}
 
@@ -1488,10 +1640,21 @@
 
                                     <div class="d-flex justify-content-center gap-1">
 
+                                        {{-- PILIH EMAIL SLIP: hanya Finance/Super Admin --}}
+                                        @if($isExecutive && $employee)
+                                            <input
+                                                type="checkbox"
+                                                class="form-check-input local-email-select"
+                                                name="employee_uuids[]"
+                                                value="{{ $employee->uuid }}"
+                                                form="localBulkEmailForm"
+                                                aria-label="Pilih slip {{ $employee->full_name }}"
+                                                title="Pilih slip {{ $employee->full_name }} untuk email massal"
+                                            >
+                                        @endif
+
                                         {{-- PDF --}}
-
                                         @if($employee)
-
                                             <a
 
                                                 href="{{ route('payrolls.local.print-pdf', [
@@ -1553,32 +1716,59 @@
                                 </td>
 
                             @else
+
                                 <td class="text-end financial-masked px-3">
+
                                     <span class="restricted-value">
+
                                         <i class="fa-solid fa-lock me-1"></i> ***
+
                                     </span>
+
                                 </td>
+
                                 <td class="text-end financial-masked px-3">
+
                                     <span class="restricted-value">
+
                                         <i class="fa-solid fa-lock me-1"></i> ***
+
                                     </span>
+
                                 </td>
+
                                 <td class="text-end financial-masked px-3">
+
                                     <span class="restricted-value">
+
                                         <i class="fa-solid fa-lock me-1"></i> ***
+
                                     </span>
+
                                 </td>
+
                                 <td class="text-end financial-masked px-3">
+
                                     <span class="restricted-value">
+
                                         <i class="fa-solid fa-lock me-1"></i> ***
+
                                     </span>
+
                                 </td>
+
                                 <td class="text-center financial-masked px-3">
+
                                     <span class="small text-muted">
+
                                         <i class="fa-solid fa-lock me-1"></i> Dibatasi
+
                                     </span>
+
                                 </td>
+
                             @endif
+
                         @endif
 
                         </tr>
@@ -1661,7 +1851,7 @@
 
      MODAL REQUEST UNLOCK
 
-================================================================ --}}
+\================================================================ --}}
 
 @if($isLocked && !$isExecutive)
 
@@ -1825,7 +2015,7 @@
 
      STYLE
 
-================================================================ --}}
+\================================================================ --}}
 
 @push('styles')
 
@@ -2095,121 +2285,198 @@
 
     }
 
-
     /* =============================================================
+
        PAYROLL RECAP — ADVANCED UI
+
     ============================================================= */
+
     .payroll-recap-card {
+
         border-top: 4px solid #2563eb !important;
+
         background:
+
             radial-gradient(circle at top right, rgba(37, 99, 235, .045), transparent 28%),
+
             #fff !important;
+
     }
 
     .payroll-recap-card .form-control {
+
         min-height: 38px;
+
         border-radius: .7rem;
+
     }
 
     .payroll-recap-card .btn {
+
         transition: transform .15s ease, box-shadow .15s ease;
+
     }
 
     .payroll-recap-card .btn:hover {
+
         transform: translateY(-1px);
+
         box-shadow: 0 .35rem .8rem rgba(15, 23, 42, .08);
+
     }
 
     .role-access-note {
+
         display: flex;
+
         align-items: flex-start;
+
         gap: .5rem;
+
         max-width: 900px;
+
         padding: .7rem .85rem;
+
         color: #1e40af;
+
         background: #eff6ff;
+
         border: 1px solid #bfdbfe;
+
         border-radius: .85rem;
+
         font-size: .82rem;
+
         line-height: 1.45;
+
     }
 
     .role-access-note-muted {
+
         color: #475569;
+
         background: #f8fafc;
+
         border-color: #e2e8f0;
+
     }
 
     .payroll-recap-table-wrap {
+
         max-height: 70vh;
+
         overflow: auto;
+
         background: #fff;
+
     }
 
     .payroll-recap-table {
+
         min-width: 900px;
+
         border-collapse: separate;
+
         border-spacing: 0;
+
     }
 
     .payroll-recap-table thead th {
+
         position: sticky;
+
         top: 0;
+
         z-index: 3;
+
         background: #f8fafc;
+
         box-shadow: inset 0 -1px 0 rgba(15, 23, 42, .08);
+
         white-space: nowrap;
+
     }
 
     .payroll-recap-table tbody td {
+
         vertical-align: middle;
+
     }
 
     .payroll-recap-table .employee-row:hover td {
+
         background-color: #f8fbff;
+
     }
 
     .payroll-recap-table .financial-masked {
+
         min-width: 95px;
+
         background: #f8fafc;
+
         color: #64748b;
+
     }
 
     .payroll-recap-table .restricted-value {
+
         font-size: .78rem;
+
         font-weight: 800;
+
         letter-spacing: .04em;
+
         color: #64748b;
+
     }
 
     .payroll-recap-table .department-row td {
+
         position: sticky;
+
         left: 0;
+
         z-index: 2;
+
     }
 
     .summary-card {
+
         box-shadow: 0 .35rem 1.2rem rgba(15, 23, 42, .045);
+
         transition: transform .18s ease, box-shadow .18s ease;
+
     }
 
     .summary-card:hover {
+
         transform: translateY(-2px);
+
         box-shadow: 0 .55rem 1.5rem rgba(15, 23, 42, .085);
+
     }
 
     @media (max-width: 768px) {
+
         .payroll-recap-card {
+
             padding: 1rem !important;
+
         }
 
         .payroll-recap-table-wrap {
+
             max-height: 65vh;
+
         }
 
         .role-access-note {
+
             width: 100%;
+
         }
+
     }
 
 </style>
@@ -2220,13 +2487,49 @@
 
      JAVASCRIPT DEPARTMENT COLLAPSE
 
-================================================================ --}}
+\================================================================ --}}
 
 @push('scripts')
 
 <script>
 
 document.addEventListener('DOMContentLoaded', function () {
+
+    // Seleksi slip gaji Local untuk pengiriman massal.
+    const localEmailBoxes = Array.from(document.querySelectorAll('.local-email-select'));
+    const localSelectAll = document.getElementById('localSelectAllSlips');
+    const localBulkSubmit = document.getElementById('localBulkEmailSubmit');
+    const localBulkCount = document.getElementById('localBulkEmailCount');
+
+    function updateLocalEmailSelection() {
+        const selected = localEmailBoxes.filter((box) => box.checked).length;
+        if (localBulkCount) localBulkCount.textContent = String(selected);
+        if (localBulkSubmit) localBulkSubmit.disabled = selected === 0;
+        if (localSelectAll) {
+            localSelectAll.checked = localEmailBoxes.length > 0 && selected === localEmailBoxes.length;
+            localSelectAll.indeterminate = selected > 0 && selected < localEmailBoxes.length;
+        }
+    }
+
+    localEmailBoxes.forEach((box) => box.addEventListener('change', updateLocalEmailSelection));
+    if (localSelectAll) {
+        localSelectAll.addEventListener('change', function () {
+            localEmailBoxes.forEach((box) => { box.checked = localSelectAll.checked; });
+            updateLocalEmailSelection();
+        });
+    }
+    const localBulkForm = document.getElementById('localBulkEmailForm');
+    if (localBulkForm) {
+        localBulkForm.addEventListener('submit', function (event) {
+            if (!localEmailBoxes.some((box) => box.checked)) {
+                event.preventDefault();
+                alert('Pilih minimal satu karyawan terlebih dahulu.');
+            }
+        });
+    }
+    updateLocalEmailSelection();
+
+
 
     function toggleDepartment(button) {
 

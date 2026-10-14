@@ -12,6 +12,7 @@ use App\Models\AttendanceRecord;
 use App\Models\Holiday;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
+use App\Jobs\SendLocalSalarySlipEmail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -4541,5 +4542,98 @@ class PayrollController extends Controller
             "Rekap_Payroll_Local_{$period}.xlsx"
         );
     }
+    
+    /**
+ * Kirim slip gaji Local untuk karyawan yang dipilih.
+ * Hanya Finance/Super Admin yang dapat menjalankan pengiriman massal.
+ */
+public function sendEmailBulk(Request $request)
+{
+    abort_unless($this->isFinanceRole(), 403);
+
+    $validated = $request->validate([
+        'period' => ['required', 'date_format:Y-m'],
+        'employee_uuids' => ['required', 'array', 'min:1', 'max:500'],
+        'employee_uuids.*' => ['required', 'string', 'uuid', 'distinct'],
+    ]);
+
+    $period = (string) $validated['period'];
+    $employeeUuids = array_values(array_unique($validated['employee_uuids']));
+
+    $employees = Employee::query()
+        ->whereIn('uuid', $employeeUuids)
+        ->get()
+        ->keyBy('uuid');
+
+    $payrolls = Payroll::query()
+        ->where('period_month', $period)
+        ->whereIn('employee_id', $employees->pluck('id_employee')->all())
+        ->get()
+        ->keyBy('employee_id');
+
+    $batchUuid = (string) Str::uuid();
+    $queued = 0;
+    $skipped = 0;
+    $alreadyQueued = 0;
+
+    foreach ($employeeUuids as $employeeUuid) {
+        $employee = $employees->get($employeeUuid);
+        if (!$employee) {
+            $skipped++;
+            continue;
+        }
+
+        $employeeId = (int) $employee->id_employee;
+        $payroll = $payrolls->get($employeeId);
+        $email = trim((string) ($employee->email ?? ''));
+        $status = 'queued';
+        $errorMessage = null;
+
+        if (!$payroll) {
+            $status = 'skipped';
+            $errorMessage = "Payroll periode {$period} tidak ditemukan.";
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $status = 'skipped';
+            $email = '';
+            $errorMessage = 'Email karyawan belum diisi atau tidak valid.';
+        } else {
+            $hasPendingEmail = DB::table('payroll_local_slip_email_logs')
+                ->where('employee_id', $employeeId)
+                ->where('period_month', $period)
+                ->whereIn('status', ['queued', 'sending'])
+                ->exists();
+
+            if ($hasPendingEmail) {
+                $alreadyQueued++;
+                continue;
+            }
+        }
+
+        $logId = DB::table('payroll_local_slip_email_logs')->insertGetId([
+            'batch_uuid' => $batchUuid,
+            'employee_id' => $employeeId,
+            'period_month' => $period,
+            'employee_name' => (string) ($employee->full_name ?: 'Karyawan'),
+            'recipient_email' => $email !== '' ? $email : null,
+            'status' => $status,
+            'attempts' => 0,
+            'error_message' => $errorMessage,
+            'sent_at' => null,
+            'requested_by' => Auth::id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        if ($status === 'queued') {
+            SendLocalSalarySlipEmail::dispatch((int) $logId);
+            $queued++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    $message = "Periode {$period}: {$queued} slip masuk antrean, {$skipped} dilewati, {$alreadyQueued} sudah berada dalam antrean.";
+    return redirect()->back()->with($queued > 0 ? 'success' : 'warning', $message);
+}
 
 }

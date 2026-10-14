@@ -464,6 +464,18 @@ $tableColspan =
                 @endif
 
 
+                {{-- EXPORT EXCEL: REKAP ABSENSI + DETAIL LENGKAP --}}
+                @if($isFinanceRole || $isHeadHrd || $isHrd)
+                    <a
+                        href="{{ route('payrolls.outer_island.export-excel', ['period' => $period ?? date('Y-m')]) }}"
+                        class="btn btn-outline-primary btn-sm px-3 py-2 rounded-3 fw-semibold"
+                    >
+                        <i class="fa-solid fa-file-excel me-1"></i>
+                        Export Excel
+                    </a>
+                @endif
+
+
                 <a
                     href="{{ route(
                         'payrolls.outer_island.index'

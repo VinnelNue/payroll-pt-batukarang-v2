@@ -18,6 +18,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Exports\OuterIsland\OuterIslandPayrollExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class PayrollOuterIslandController extends Controller
 {
@@ -4280,6 +4282,88 @@ public function generateAttendance(
                 'Permintaan unlock ditolak.'
             );
     }
+    /**
+     * Export workbook Excel Outer Island dengan dua worksheet:
+     * Rekap Absensi dan Detail Lengkap. Hak akses kolom ditangani oleh template.
+     */
+    public function exportExcel(Request $request)
+    {
+        abort_unless(
+            in_array(
+                $this->userRole(),
+                array_merge(self::FINANCE_ROLES, self::HEAD_HRD_ROLES, [self::HRD_ROLE]),
+                true
+            ),
+            403
+        );
+
+        $validated = $request->validate([
+            'period' => ['required', 'date_format:Y-m'],
+        ]);
+
+        $period = (string) $validated['period'];
+        $periodStart = Carbon::createFromFormat('Y-m', $period)->startOfMonth();
+        $periodEnd = $periodStart->copy()->endOfMonth();
+
+        $cutoffDay = (int) CompanySetting::where('key', 'attendance_cutoff_day')->value('value');
+        if ($cutoffDay < self::MIN_CUTOFF_DAY || $cutoffDay > self::MAX_CUTOFF_DAY) {
+            $cutoffDay = self::DEFAULT_CUTOFF_DAY;
+        }
+
+        $employees = EmployeeOuterIsland::query()
+            ->where('is_active', true)
+            ->with(['contractMaster.currentHistory'])
+            ->orderBy('id_employee_outer_island', 'asc')
+            ->get();
+
+        $employeeIds = $employees->pluck('id_employee_outer_island')->all();
+
+        $payrollsByEmployee = PayrollOuterIsland::query()
+            ->where('period_month', $period)
+            ->whereIn('employee_outer_island_id', $employeeIds)
+            ->get()
+            ->keyBy('employee_outer_island_id');
+
+        $attendanceByEmployee = AttendanceRecordOuterIsland::query()
+            ->whereBetween('attendance_date', [
+                $periodStart->toDateString(),
+                $periodEnd->toDateString(),
+            ])
+            ->whereIn('employee_outer_island_id', $employeeIds)
+            ->get()
+            ->groupBy('employee_outer_island_id');
+
+        foreach ($employees as $employee) {
+            $employee->setRelation(
+                'attendanceRecords',
+                $attendanceByEmployee->get(
+                    $employee->id_employee_outer_island,
+                    collect()
+                )
+            );
+        }
+
+        $holidays = Holiday::query()
+            ->whereBetween('holiday_date', [
+                $periodStart->toDateString(),
+                $periodEnd->toDateString(),
+            ])
+            ->get()
+            ->keyBy(static fn ($holiday) => Carbon::parse($holiday->holiday_date)->format('Y-m-d'));
+
+        return Excel::download(
+            new OuterIslandPayrollExport(
+                $employees,
+                $payrollsByEmployee,
+                $holidays,
+                $period,
+                $this->userRole(),
+                $cutoffDay
+            ),
+            'Payroll_Outer_Island_' . $period . '.xlsx'
+        );
+    }
+
     /**
      * ============================================================
      * PRINT PDF SLIP GAJI OUTER ISLAND
