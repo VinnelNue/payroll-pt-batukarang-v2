@@ -75,7 +75,82 @@ $isKeuangan = $userRole === 'keuangan';
 $currentContract = $contract ?? null;
 $currentHistory  = $history ?? null;
 
-$histories = $histories ?? collect();
+$histories = collect($histories ?? []);
+$historyToday = \Carbon\Carbon::today();
+
+// Kontrak pertama manual: belum ada history yang tersimpan sama sekali.
+// HRD boleh mengisi level awal (maksimal 13) dan PTKP, tanpa membuka akses gaji/BPJS.
+$isInitialContract = !$currentHistory && $histories->isEmpty();
+
+// Tampilan utama harus memakai riwayat yang efektif hari ini, bukan sekadar
+// riwayat yang ditunjuk current_contract_history_id (yang dapat menunjuk ke
+// perubahan masa depan). Riwayat mendatang tetap ditampilkan di tabel bawah.
+$effectiveHistoryForToday = $histories
+    ->filter(function ($item) use ($historyToday) {
+        try {
+            $starts = $item->start_date
+                ? \Carbon\Carbon::parse($item->start_date)->startOfDay()
+                : null;
+            $ends = $item->end_date
+                ? \Carbon\Carbon::parse($item->end_date)->endOfDay()
+                : null;
+            $exits = $item->exit_date
+                ? \Carbon\Carbon::parse($item->exit_date)->startOfDay()
+                : null;
+
+            return $starts !== null
+                && $starts->lte($historyToday)
+                && (!$ends || $ends->gte($historyToday))
+                && (!$exits || $exits->gte($historyToday));
+        } catch (\Throwable $e) {
+            return false;
+        }
+    })
+    ->sortByDesc('start_date')
+    ->sortByDesc('id_contract_history')
+    ->first();
+
+if ($effectiveHistoryForToday) {
+    $currentHistory = $effectiveHistoryForToday;
+}
+
+$historyStatus = function ($item) use ($historyToday) {
+    try {
+        $starts = $item->start_date ? \Carbon\Carbon::parse($item->start_date)->startOfDay() : null;
+        $ends = $item->end_date ? \Carbon\Carbon::parse($item->end_date)->endOfDay() : null;
+        $exit = $item->exit_date ? \Carbon\Carbon::parse($item->exit_date)->startOfDay() : null;
+
+        if ($starts && $starts->gt($historyToday)) return 'scheduled';
+        if ($exit && $exit->lte($historyToday)) return 'ended';
+        if ($ends && $ends->lt($historyToday)) return 'history';
+        if ($starts && $starts->lte($historyToday)) return 'effective';
+    } catch (\Throwable $e) {
+        return 'unknown';
+    }
+
+    return 'unknown';
+};
+
+$historyStatusCounts = [
+    'effective' => 0,
+    'scheduled' => 0,
+    'history' => 0,
+    'ended' => 0,
+    'unknown' => 0,
+];
+foreach ($histories as $historyRow) {
+    $state = $historyStatus($historyRow);
+    $historyStatusCounts[$state] = ($historyStatusCounts[$state] ?? 0) + 1;
+}
+
+$currentHistoryStartsInFuture = false;
+if ($currentHistory?->start_date) {
+    try {
+        $currentHistoryStartsInFuture = \Carbon\Carbon::parse($currentHistory->start_date)->startOfDay()->gt($historyToday);
+    } catch (\Throwable $e) {
+        $currentHistoryStartsInFuture = false;
+    }
+}
 
 
 /*
@@ -100,9 +175,9 @@ $isHighLevel =
 $canEditPtkpForLevel =
     $canEditPtkp &&
     (
+        $isInitialContract ||
         !in_array($userRole, ['hrd', 'head_hrd', 'kepala_hrd'], true) ||
-        $levelNumber !== null &&
-        $levelNumber <= 13
+        ($levelNumber !== null && $levelNumber <= 13)
     );
 
 
@@ -135,7 +210,10 @@ $canSeeLevelCategory =
     $isManagerKeuangan ||
     (
         ($isHeadHrd || $isHrd || $isKeuangan) &&
-        ($levelNumber !== null && $levelNumber <= 13)
+        (
+            $isInitialContract ||
+            ($levelNumber !== null && $levelNumber <= 13)
+        )
     );
 
 $maskLevelCategory = !$canSeeLevelCategory;
@@ -148,9 +226,11 @@ $maskFinancial     = !$canSeeSalary;
 |--------------------------------------------------------------------------
 */
 
+// Prioritaskan riwayat efektif hari ini untuk badge/form utama.
+// Pointer master dapat menunjuk ke perubahan yang baru berlaku nanti.
 $currentHistoryId =
-    $currentContract?->current_contract_history_id
-    ?? $currentHistory?->id_contract_history
+    $currentHistory?->id_contract_history
+    ?? $currentContract?->current_contract_history_id
     ?? null;
 
 
@@ -1065,9 +1145,23 @@ if ($endDate) {
 
 @if($currentContract || $currentHistory)
 
+@if($currentHistoryStartsInFuture)
+    <div class="alert alert-warning d-flex align-items-start gap-2 shadow-sm mb-4">
+        <i class="fas fa-calendar-alt mt-1"></i>
+        <div>
+            <strong>Perubahan terjadwal, belum berlaku hari ini.</strong>
+            <div class="small mt-1">
+                Riwayat yang terhubung ke master kontrak ini mulai berlaku pada
+                <strong>{{ \Carbon\Carbon::parse($currentHistory->start_date)->format('d M Y') }}</strong>.
+                Nilai pada formulir ini adalah nilai untuk tanggal tersebut. Periksa tabel Contract History di bawah untuk membandingkan riwayat yang berlaku hari ini.
+            </div>
+        </div>
+    </div>
+@endif
+
 <form
     id="currentContractForm"
-    action="{{ $updateUrl }}"
+    action="{{ $currentHistory ? $updateUrl : $addPeriodUrl }}"
     method="POST">
 
     {{--
@@ -1078,8 +1172,18 @@ if ($endDate) {
 
     @csrf
 
-    @method('PUT')
+    @if($currentHistory)
+        @method('PUT')
+    @else
+        <input type="hidden" name="change_type" value="initial_contract">
+    @endif
 
+    @if($currentHistory)
+        <div class="alert alert-info mb-4">
+            <i class="fas fa-info-circle me-2"></i>
+            Form ini boleh digunakan untuk melengkapi atau mengoreksi data periode aktif. Untuk perubahan resmi seperti naik/turun level, penyesuaian gaji, promosi, atau penurunan jabatan yang memiliki tanggal efektif, gunakan <strong>Tambah Contract Period / Perubahan</strong> agar nilai sebelum perubahan tetap tersimpan sebagai riwayat.
+        </div>
+    @endif
 
     <div class="row g-4">
 
@@ -1095,11 +1199,11 @@ if ($endDate) {
                 <div class="card-body p-4">
 
                     <h5 class="fw-bold mb-1">
-                        Penempatan & Status Kerja
+                        {{ $currentHistory ? 'Penempatan & Status Kerja' : 'Pengisian Contract Pertama' }}
                     </h5>
 
                     <small class="text-muted d-block mb-4">
-                        Informasi jabatan dan periode contract aktif
+                        {{ $currentHistory ? 'Informasi jabatan dan periode contract aktif. Koreksi data dasar dapat disimpan di sini.' : 'Contract master sudah tersedia dari data karyawan. Lengkapi nilai awal gaji, level, jabatan, dan tanggal kontrak lalu simpan.' }}
                     </small>
 
 
@@ -1910,7 +2014,10 @@ if ($endDate) {
 
                     {{-- SAVE --}}
 
-                    <div class="d-flex justify-content-end">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <small class="text-muted me-auto">
+                            Koreksi data periode dapat disimpan di sini. Untuk perubahan level atau gaji yang berlaku mulai tanggal tertentu, gunakan <strong>Tambah Contract Period</strong>.
+                        </small>
 
                         <button
                             type="submit"
@@ -1918,7 +2025,7 @@ if ($endDate) {
 
                             <i class="fas fa-save me-1"></i>
 
-                            Simpan Perubahan
+                            {{ $currentHistory ? 'Simpan Perubahan' : 'Simpan Contract Pertama' }}
 
                         </button>
 
@@ -1940,11 +2047,9 @@ if ($endDate) {
 
         <i class="fas fa-info-circle me-2"></i>
 
-        Employee ini belum memiliki contract aktif.
+        Employee ini belum memiliki Contract Period.
 
-        Gunakan tombol
-        <strong>Tambah Contract Period</strong>
-        di bawah untuk membuat contract pertama.
+        Jika Contract Master sudah tersedia, lengkapi form <strong>Pengisian Contract Pertama</strong> di atas. Jika master belum tersedia, gunakan form Contract Period di bawah untuk membuat kontrak pertama.
 
     </div>
 
@@ -1978,16 +2083,18 @@ if ($endDate) {
             </div>
 
 
-            <button
-                type="button"
-                id="btnAddContractPeriod"
-                class="btn btn-success">
+            @if($currentHistory || !$currentContract)
+                <button
+                    type="button"
+                    id="btnAddContractPeriod"
+                    class="btn btn-success">
 
-                <i class="fas fa-plus me-1"></i>
+                    <i class="fas fa-plus me-1"></i>
 
-                Tambah Contract Period
+                    Tambah Contract Period / Perubahan
 
-            </button>
+                </button>
+            @endif
 
         </div>
 
@@ -1996,10 +2103,11 @@ if ($endDate) {
              NEW PERIOD
         ========================================================== --}}
 
+        @if($currentHistory || !$currentContract)
         <div
             id="newPeriodWrapper"
             class="border rounded p-4 mb-4"
-            style="display:none;">
+            style="{{ (old('change_type') && old('change_type') !== 'initial_contract') || session('open_new_period') ? '' : 'display:none;' }}">
 
             <div class="d-flex justify-content-between align-items-center mb-4">
 
@@ -2036,6 +2144,67 @@ if ($endDate) {
 
                 @csrf
 
+                {{-- JENIS PERUBAHAN --}}
+                <div class="row g-3 mb-3">
+                    @if($currentHistory)
+                        <div class="col-md-6">
+                            <label for="new_change_type" class="form-label fw-semibold">Jenis Perubahan</label>
+                            <select name="change_type" id="new_change_type" class="form-select" required>
+                                <option value="contract_renewal" @selected(old('change_type', 'contract_renewal') === 'contract_renewal')>Perpanjangan kontrak / kontrak baru</option>
+                                <option value="level_up" @selected(old('change_type') === 'level_up')>Naik level</option>
+                                <option value="level_down" @selected(old('change_type') === 'level_down')>Turun level</option>
+                                <option value="salary_adjustment" @selected(old('change_type') === 'salary_adjustment')>Penyesuaian gaji saja</option>
+                                <option value="job_promotion" @selected(old('change_type') === 'job_promotion')>Promosi jabatan</option>
+                                <option value="job_demotion" @selected(old('change_type') === 'job_demotion')>Penurunan jabatan</option>
+                                <option value="position_change" @selected(old('change_type') === 'position_change')>Perubahan penempatan tanpa perubahan level/gaji</option>
+                            </select>
+                        </div>
+                    @else
+                        <input type="hidden" name="change_type" id="new_change_type" value="initial_contract">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Jenis Perubahan</label>
+                            <input type="text" class="form-control bg-light" value="Kontrak pertama" readonly>
+                        </div>
+                    @endif
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="small text-muted" id="newChangeTypeHelp">
+                            Perpanjangan akan menggunakan urutan kontrak berikutnya. Perubahan level/gaji tidak menambah nomor PKWT.
+                        </div>
+                    </div>
+                    <div class="col-12" id="newChangeReasonField" style="display:none;">
+                        <label for="new_change_reason" class="form-label fw-semibold">Alasan Perubahan</label>
+                        <textarea name="change_reason" id="new_change_reason" class="form-control" rows="2" maxlength="1000" placeholder="Contoh: promosi level, demosi, atau penyesuaian gaji berdasarkan keputusan perusahaan">{{ old('change_reason') }}</textarea>
+                    </div>
+                </div>
+
+                @if($currentHistory)
+                    <div id="currentContractSnapshot" class="border rounded-3 p-3 mb-4 bg-light" style="display:none;">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-clipboard-list me-2"></i>Data Contract Aktif Sebelum Perubahan</h6>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <small class="text-muted d-block">Jabatan saat ini</small>
+                                <strong>{{ $jobTitle ?: '-' }}</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <small class="text-muted d-block">Level saat ini</small>
+                                <strong>{{ $canSeeLevelCategory ? ($level ?: '-') : '*****' }}</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <small class="text-muted d-block">Kategori saat ini</small>
+                                <strong>{{ $canSeeLevelCategory ? ($category ?: '-') : '*****' }}</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">Gaji pokok saat ini</small>
+                                <strong>{{ $canSeeSalary ? ('Rp ' . $formatRupiah($basicSalary)) : '*****' }}</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">Tunjangan level saat ini</small>
+                                <strong>{{ $canSeeSalary ? ('Rp ' . $formatRupiah($allowance)) : '*****' }}</strong>
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-3">Nilai di atas adalah acuan sebelum perubahan. Form di bawah digunakan untuk mengisi nilai baru yang mulai berlaku pada tanggal efektif.</small>
+                    </div>
+                @endif
 
                 {{-- BASIC INFORMATION --}}
 
@@ -2044,7 +2213,7 @@ if ($endDate) {
 
                     {{-- STATUS KARYAWAN / PERIOD BARU --}}
 
-                    <div class="col-md-8">
+                    <div class="col-md-8" id="newEmploymentStatusBlock">
 
                         <label for="new_employment_status_ui" class="form-label fw-semibold">
                             Status Karyawan (Periode Baru)
@@ -2077,7 +2246,10 @@ if ($endDate) {
                             id="new_pkwt_sequence"
                             value="{{ $nextPkwtSequence }}">
 
-                        <div class="small text-muted mt-2">
+                        <div
+                            id="newPkwtSequenceBox"
+                            class="small text-muted mt-2"
+                            style="{{ $employmentType === 'PKWT' ? '' : 'display:none;' }}">
                             Kontrak baru berikutnya: <strong id="newPkwtSequenceLabel">{{ $nextPkwtSequence }}</strong>
                         </div>
 
@@ -2086,7 +2258,7 @@ if ($endDate) {
 
                     {{-- JOB --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newJobTitleField">
 
                         <label class="form-label fw-semibold">
                             Jabatan
@@ -2104,7 +2276,7 @@ if ($endDate) {
 
                     {{-- DEPARTMENT --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newDepartmentField">
 
                         <label class="form-label fw-semibold">
                             Department
@@ -2121,7 +2293,7 @@ if ($endDate) {
 
                     {{-- PLACEMENT --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newPlacementField">
 
                         <label class="form-label fw-semibold">
                             Penempatan
@@ -2138,7 +2310,7 @@ if ($endDate) {
 
                     {{-- FINGERPRINT PIN --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newFingerprintPinField">
 
                         <label class="form-label fw-semibold">
                             Fingerprint PIN
@@ -2155,7 +2327,7 @@ if ($endDate) {
 
                     {{-- NIK FINGERPRINT --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newNikFingerprintField">
 
                         <label class="form-label fw-semibold">
                             NIK Fingerprint
@@ -2172,7 +2344,7 @@ if ($endDate) {
 
                     {{-- CATEGORY --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newCategoryField">
 
                         <label class="form-label fw-semibold">
                             Kategori
@@ -2206,7 +2378,7 @@ if ($endDate) {
 
                     {{-- LEVEL --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newLevelField">
 
                         <label class="form-label fw-semibold">
                             Level
@@ -2244,7 +2416,7 @@ if ($endDate) {
 
                     <div class="col-md-4">
 
-                        <label class="form-label fw-semibold">
+                        <label class="form-label fw-semibold" id="newStartDateLabel">
                             Tanggal Mulai
                         </label>
 
@@ -2252,7 +2424,8 @@ if ($endDate) {
                             type="date"
                             name="start_date"
                             class="form-control"
-                            value="{{ $newPeriodStartDate }}"
+                            value="{{ old('start_date', $newPeriodStartDate) }}"
+                            data-user-changed="{{ old('start_date') ? '1' : '0' }}"
                             required>
 
                     </div>
@@ -2260,7 +2433,7 @@ if ($endDate) {
 
                     {{-- END DATE --}}
 
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="newEndDateField">
 
                         <label class="form-label fw-semibold">
                             Tanggal Berakhir
@@ -2270,7 +2443,7 @@ if ($endDate) {
                             type="date"
                             name="end_date"
                             class="form-control"
-                            value="">
+                            value="{{ old('end_date', '') }}">
 
                     </div>
 
@@ -2294,7 +2467,7 @@ if ($endDate) {
 
                         {{-- SALARY --}}
 
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="newSalaryField">
 
                             <label class="form-label fw-semibold">
                                 Gaji Pokok
@@ -2320,7 +2493,7 @@ if ($endDate) {
 
                         {{-- ALLOWANCE --}}
 
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="newAllowanceField">
 
                             <label class="form-label fw-semibold">
                                 Tunjangan Level
@@ -2353,7 +2526,7 @@ if ($endDate) {
 
                         {{-- PTKP PERIOD BARU --}}
 
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="newPtkpField">
 
                             <label
                                 for="new_ptkp_status"
@@ -2410,7 +2583,7 @@ if ($endDate) {
                          NEW PERIOD BPJS
                     ================================================== --}}
 
-                    <div class="mt-4">
+                    <div class="mt-4" id="newBpjsFields">
 
 
                         {{-- BPJS TK --}}
@@ -2638,10 +2811,30 @@ if ($endDate) {
 
                         <i class="fas fa-lock me-2"></i>
 
-                        Data Financial, BPJS dan PPh21
-                        mengikuti data contract sebelumnya
-                        dan tidak dapat diubah oleh role Anda.
+                        Data gaji dan BPJS mengikuti data contract sebelumnya dan tidak dapat diubah oleh role Anda.
 
+                    </div>
+
+                    {{-- Field tersembunyi mempertahankan validasi required controller tanpa membuka nominal gaji ke HRD. --}}
+                    <input type="hidden" name="basic_salary" value="{{ $basicSalary }}">
+                    <input type="hidden" name="allowance" value="{{ $allowance }}">
+
+                    {{-- HRD tidak mendapat akses gaji/BPJS, tetapi boleh mengisi PTKP untuk kontrak pertama atau level <= 13. --}}
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-4" id="newPtkpField">
+                            <label for="new_ptkp_status" class="form-label fw-semibold">Status PTKP / PPh21</label>
+                            @if($canEditPtkpForLevel)
+                                <select name="ptkp_status" id="new_ptkp_status" class="form-select" required>
+                                    @foreach($ptkpOptions as $item)
+                                        <option value="{{ $item }}" @selected(old('ptkp_status', $ptkp) === $item)>{{ $item }}</option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">PTKP dapat diisi untuk kontrak pertama. Untuk data yang sudah ada, HRD/Head HRD dibatasi pada level 13 ke bawah.</small>
+                            @else
+                                <input type="text" id="new_ptkp_status_display" class="form-control bg-light" value="*****" readonly disabled>
+                                <small class="text-muted">PTKP dibatasi sesuai level karyawan yang sudah tersimpan.</small>
+                            @endif
+                        </div>
                     </div>
 
                 @endif
@@ -2675,7 +2868,45 @@ if ($endDate) {
             </form>
 
         </div>
+        @endif
 
+
+        {{-- RINGKASAN STATUS RIWAYAT BERDASARKAN TANGGAL EFEKTIF --}}
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-xl-3">
+                <div class="border rounded-3 p-3 h-100 bg-light">
+                    <div class="small text-muted">Berlaku hari ini</div>
+                    <div class="fs-4 fw-bold text-success">{{ $historyStatusCounts['effective'] }}</div>
+                    <div class="small text-muted">Mencakup tanggal hari ini</div>
+                </div>
+            </div>
+            <div class="col-6 col-xl-3">
+                <div class="border rounded-3 p-3 h-100" style="background:#fff8e8;border-color:#f3d58a!important">
+                    <div class="small text-muted">Terjadwal</div>
+                    <div class="fs-4 fw-bold text-warning">{{ $historyStatusCounts['scheduled'] }}</div>
+                    <div class="small text-muted">Belum mencapai tanggal efektif</div>
+                </div>
+            </div>
+            <div class="col-6 col-xl-3">
+                <div class="border rounded-3 p-3 h-100 bg-light">
+                    <div class="small text-muted">Riwayat selesai / berakhir</div>
+                    <div class="fs-4 fw-bold text-secondary">{{ $historyStatusCounts['history'] + $historyStatusCounts['ended'] }}</div>
+                    <div class="small text-muted">Tanggal akhir sudah lewat</div>
+                </div>
+            </div>
+            <div class="col-6 col-xl-3">
+                <div class="border rounded-3 p-3 h-100 bg-light">
+                    <div class="small text-muted">Total record</div>
+                    <div class="fs-4 fw-bold text-primary">{{ $histories->count() }}</div>
+                    <div class="small text-muted">Seluruh periode tersimpan</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-light border small mb-3">
+            <i class="fas fa-info-circle text-primary me-1"></i>
+            Status pada tabel ditentukan dari <strong>tanggal mulai dan tanggal akhir</strong>, bukan hanya dari pointer kontrak. Badge “Terjadwal” berarti record sudah tersimpan tetapi belum berlaku.
+        </div>
 
         {{-- =========================================================
              HISTORY TABLE
@@ -2720,9 +2951,12 @@ if ($endDate) {
 
                         @php
 
-                            $isCurrent =
+                            $isPointerCurrent =
                                 (string) $currentHistoryId ===
                                 (string) $item->id_contract_history;
+                            $itemStatus = $historyStatus($item);
+                            $isEffectiveToday = $itemStatus === 'effective';
+                            $isScheduled = $itemStatus === 'scheduled';
 
                             $itemLevel =
                                 is_numeric($item->level)
@@ -2742,7 +2976,7 @@ if ($endDate) {
                         @endphp
 
 
-                        <tr>
+                        <tr class="{{ $isScheduled ? 'table-warning' : ($isEffectiveToday ? 'table-success-subtle' : '') }}">
 
 
                             {{-- CONTRACT --}}
@@ -2765,21 +2999,29 @@ if ($endDate) {
                                 </div>
 
 
-                                <small class="text-muted">
-
-                                    Level:
-
-                                    @if($itemCanSeeLevel)
-
-                                        {{ $item->level ?? '-' }}
-
-                                    @else
-
-                                        *****
-
-                                    @endif
-
+                                <small class="text-muted d-block">
+                                    Level: @if($itemCanSeeLevel){{ $item->level ?? '-' }}@else*****@endif
                                 </small>
+
+                                @php
+                                    $changeLabels = [
+                                        'initial_contract' => 'Kontrak pertama',
+                                        'contract_renewal' => 'Perpanjangan kontrak',
+                                        'level_change' => 'Perubahan level',
+                                        'level_up' => 'Naik level',
+                                        'level_down' => 'Turun level',
+                                        'salary_adjustment' => 'Penyesuaian gaji',
+                                        'job_promotion' => 'Promosi jabatan',
+                                        'job_demotion' => 'Penurunan jabatan',
+                                        'position_change' => 'Perubahan jabatan/penempatan',
+                                    ];
+                                @endphp
+                                <small class="text-primary d-block">
+                                    {{ $changeLabels[$item->change_type ?? ''] ?? 'Riwayat lama' }}
+                                </small>
+                                @if($item->change_reason)
+                                    <small class="text-muted d-block">{{ $item->change_reason }}</small>
+                                @endif
 
                             </td>
 
@@ -2803,7 +3045,7 @@ if ($endDate) {
 
                                     {{ $item->end_date
                                         ? \Carbon\Carbon::parse($item->end_date)->format('d M Y')
-                                        : 'Sekarang'
+                                        : ($isScheduled ? 'Menunggu tanggal efektif' : 'Belum ditutup')
                                     }}
 
                                 </div>
@@ -2830,26 +3072,30 @@ if ($endDate) {
 
                             <td>
 
-                                @if($isCurrent)
-
+                                @if($itemStatus === 'scheduled')
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="fas fa-calendar-alt me-1"></i> TERJADWAL
+                                    </span>
+                                    <div class="small text-muted mt-1">
+                                        Efektif {{ $item->start_date ? \Carbon\Carbon::parse($item->start_date)->format('d M Y') : '-' }}
+                                    </div>
+                                @elseif($itemStatus === 'effective')
                                     <span class="badge bg-success">
-
-                                        <i class="fas fa-check-circle me-1"></i>
-
-                                        CURRENT
-
+                                        <i class="fas fa-check-circle me-1"></i> BERLAKU HARI INI
                                     </span>
-
-                                @else
-
+                                    @if($isPointerCurrent)
+                                        <div class="small text-muted mt-1">Terhubung ke master</div>
+                                    @endif
+                                @elseif($itemStatus === 'ended')
+                                    <span class="badge bg-danger-subtle text-danger border">
+                                        <i class="fas fa-user-slash me-1"></i> BERAKHIR
+                                    </span>
+                                @elseif($itemStatus === 'history')
                                     <span class="badge bg-secondary">
-
-                                        <i class="fas fa-lock me-1"></i>
-
-                                        HISTORY
-
+                                        <i class="fas fa-lock me-1"></i> HISTORY
                                     </span>
-
+                                @else
+                                    <span class="badge bg-light text-muted border">STATUS PERLU DICEK</span>
                                 @endif
 
                             </td>
@@ -2859,7 +3105,7 @@ if ($endDate) {
 
                             <td class="text-end">
 
-                                @if($isCurrent)
+                                @if($isPointerCurrent)
 
                                     <span class="badge bg-primary me-2">
                                         Aktif
@@ -2872,7 +3118,7 @@ if ($endDate) {
 
                                         <i class="fas fa-edit me-1"></i>
 
-                                        Edit
+                                        Buka Form Terhubung
 
                                     </button>
 
@@ -2883,8 +3129,7 @@ if ($endDate) {
                                             'contracts.local.period.show',
                                             [
                                                 'employee' => $employee->uuid,
-                                                'history'  => $item->uuid
-                                                    ?? $item->id_contract_history,
+                                                'history'  => $item->id_contract_history,
                                             ]
                                         ) }}"
                                         class="btn btn-sm btn-outline-secondary">
@@ -3626,6 +3871,99 @@ document.addEventListener('DOMContentLoaded', function () {
 
     });
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONTRACT CHANGE TYPE
+    |--------------------------------------------------------------------------
+    */
+
+    const changeTypeSelect = document.getElementById('new_change_type');
+    const changeReasonField = document.getElementById('newChangeReasonField');
+    const changeTypeHelp = document.getElementById('newChangeTypeHelp');
+    const employmentStatusBlock = document.getElementById('newEmploymentStatusBlock');
+    const newLevelField = document.getElementById('newLevelField');
+    const newCategoryField = document.getElementById('newCategoryField');
+    const newJobTitleField = document.getElementById('newJobTitleField');
+    const newDepartmentField = document.getElementById('newDepartmentField');
+    const newPlacementField = document.getElementById('newPlacementField');
+    const newFingerprintPinField = document.getElementById('newFingerprintPinField');
+    const newNikFingerprintField = document.getElementById('newNikFingerprintField');
+    const newSalaryField = document.getElementById('newSalaryField');
+    const newAllowanceField = document.getElementById('newAllowanceField');
+    const newPtkpField = document.getElementById('newPtkpField');
+    const newBpjsFields = document.getElementById('newBpjsFields');
+    const newStartDateLabel = document.getElementById('newStartDateLabel');
+    const newEndDateField = document.getElementById('newEndDateField');
+    const newPeriodFormForType = document.getElementById('newPeriodForm');
+    const currentContractSnapshot = document.getElementById('currentContractSnapshot');
+
+    const changeTypeHelpText = {
+        initial_contract: 'Kontrak pertama. Isi status kerja dan tanggal kontrak.',
+        contract_renewal: 'Perpanjangan membuat periode kontrak berikutnya dan menaikkan urutan PKWT jika berlaku.',
+        level_change: 'Perubahan level lama. Gunakan Naik Level atau Turun Level agar arah perubahan tervalidasi.',
+        level_up: 'Isi level dan kompensasi baru. Jabatan serta nomor PKWT tetap; riwayat lama ditutup sehari sebelum tanggal efektif.',
+        level_down: 'Isi level dan kompensasi baru. Jabatan serta nomor PKWT tetap; riwayat lama ditutup sehari sebelum tanggal efektif.',
+        salary_adjustment: 'Ubah gaji pokok. Level, kategori, jabatan, dan nomor PKWT dipertahankan.',
+        job_promotion: 'Isi jabatan baru dan perbarui level, kategori, gaji serta tunjangan jika sesuai keputusan promosi.',
+        job_demotion: 'Isi jabatan baru dan perbarui level, kategori, gaji serta tunjangan jika sesuai keputusan penurunan jabatan.',
+        position_change: 'Perubahan penempatan/jabatan tanpa perubahan level, kategori, gaji, atau tunjangan.',
+    };
+
+    function syncChangeTypeFields() {
+        if (!changeTypeSelect) return;
+        const type = changeTypeSelect.value;
+        const isRenewal = type === 'contract_renewal' || type === 'initial_contract';
+        const isLevelChange = ['level_change', 'level_up', 'level_down'].includes(type);
+        const isJobPromotionDemotion = ['job_promotion', 'job_demotion'].includes(type);
+        const isSalaryAdjustment = type === 'salary_adjustment';
+        const isPositionChange = type === 'position_change';
+        const isChangeOnly = !isRenewal;
+
+        if (changeReasonField) changeReasonField.style.display = isChangeOnly ? '' : 'none';
+        if (changeTypeHelp && changeTypeHelpText[type]) changeTypeHelp.textContent = changeTypeHelpText[type];
+        if (currentContractSnapshot) currentContractSnapshot.style.display = isChangeOnly ? '' : 'none';
+        if (employmentStatusBlock) employmentStatusBlock.style.display = isRenewal ? '' : 'none';
+        if (newEndDateField) newEndDateField.style.display = isRenewal ? '' : 'none';
+        if (newLevelField) newLevelField.style.display = (isRenewal || isLevelChange || isJobPromotionDemotion) ? '' : 'none';
+        if (newCategoryField) newCategoryField.style.display = (isRenewal || isLevelChange || isJobPromotionDemotion) ? '' : 'none';
+        const showPositionFields = isRenewal || isPositionChange || isJobPromotionDemotion;
+        if (newJobTitleField) newJobTitleField.style.display = showPositionFields ? '' : 'none';
+        if (newDepartmentField) newDepartmentField.style.display = showPositionFields ? '' : 'none';
+        if (newPlacementField) newPlacementField.style.display = showPositionFields ? '' : 'none';
+        if (newFingerprintPinField) newFingerprintPinField.style.display = isRenewal ? '' : 'none';
+        if (newNikFingerprintField) newNikFingerprintField.style.display = isRenewal ? '' : 'none';
+        const compensationVisible = isRenewal || isLevelChange || isSalaryAdjustment || isJobPromotionDemotion;
+        if (newSalaryField) newSalaryField.style.display = compensationVisible ? '' : 'none';
+        if (newAllowanceField) newAllowanceField.style.display = compensationVisible ? '' : 'none';
+        if (newPtkpField) newPtkpField.style.display = isRenewal ? '' : 'none';
+        if (newBpjsFields) newBpjsFields.style.display = isRenewal ? '' : 'none';
+        if (newStartDateLabel) newStartDateLabel.textContent = isChangeOnly ? 'Tanggal Efektif Perubahan' : 'Tanggal Mulai Kontrak';
+
+        const reasonInput = document.getElementById('new_change_reason');
+        if (reasonInput) reasonInput.required = isChangeOnly;
+
+        const startInput = newPeriodFormForType?.querySelector('[name="start_date"]');
+        if (startInput && isChangeOnly && startInput.dataset.userChanged !== '1') {
+            startInput.value = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
+        }
+        if (startInput && isRenewal && startInput.dataset.userChanged !== '1') {
+            const defaultRenewalDate = newPeriodFormForType?.dataset.renewalStartDate;
+            if (defaultRenewalDate) startInput.value = defaultRenewalDate;
+        }
+    }
+
+    const effectiveDateInput = newPeriodFormForType?.querySelector('[name="start_date"]');
+    effectiveDateInput?.addEventListener('change', function () {
+        this.dataset.userChanged = '1';
+    });
+    changeTypeSelect?.addEventListener('change', syncChangeTypeFields);
+    if (newPeriodFormForType) {
+        const startInput = newPeriodFormForType.querySelector('[name="start_date"]');
+        const defaultRenewalDate = startInput?.value || '';
+        newPeriodFormForType.dataset.renewalStartDate = defaultRenewalDate;
+    }
+    syncChangeTypeFields();
 
     /*
     |--------------------------------------------------------------------------

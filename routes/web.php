@@ -149,8 +149,7 @@ Route::middleware(['auth'])->group(function () {
         'employees.local'
 
     );
-
-    /*
+/*
 
     |--------------------------------------------------------------------------
 
@@ -493,6 +492,12 @@ Route::middleware(['auth'])->group(function () {
                 'showHistory'
 
             ])->name('period.show');
+
+            // Update/correction of an existing local Contract History.
+            Route::put('{employee}/period/{history}', [
+                ContractLocalController::class,
+                'updateHistory',
+            ])->name('period.update');
 
         });
 

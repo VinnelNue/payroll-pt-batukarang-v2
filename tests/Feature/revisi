@@ -1,28 +1,32 @@
 revisi
-role head hrd dan hrd bisa input tanggal merah 
-PTKP bisa di input hrd dan head_hrd
+//bagian contract
+role head hrd dan hrd bisa input tanggal merah (Donnnne)
+history contract sebelumnya saat punishment maksud nya adalah pergantian level di tengah berjalannya contract maka gaji 0.5 bulan akan di keep 
+dan di tambahkan gaji setelah update contract luar pulau dan dalam pulau (done)
+PTKP bisa di input hrd dan head_hrd (done)
+
+//bagian payroll
 S tidak di bayar kecuali skd
 Optimasi percepat fitur export import
 Sigma absen adalah tolak ukur hari di bayar 26/27 
 Head_hrd Bisa cutoff
-generate sisa tanggal cut off formalitas 
+generate sisa tanggal cut off formalitas supaya tampil di excel export dan juga absensi
 setelah itu di import pakai tanggal asli baru masuk db 
 hari minggu bisa absensi tapi manual 
+Tanggal berakhir adalah tanggal terakhir kerja 
+26 close berarti 25 yang tidak bisa di edit 26 ikut draf
 Hari minggu staff karyawan jika lembur hari minggu itu gaji gaji per hari 7 jam x2 kasus khusus 7 jam 
 minggu lembur khusus kurang dari 7 jam gaji perhari di bagi 7 x jumlah jam masuk nya di kali 2
+gaji cm itu cair saat sudah melahirkan + ada surat keterangan melahirkan yang di berikan ke hrd 
+semisal mulai ijin di tanggal 17 berarti tanggal 1-16 di gaji kan pada akhir bulan 
 
-gantungan periode berjalan di hapus 
 penambahan absensi security 
 penghasilan tambahan = lembur jika karyawan biasa 
 kalau security kebijakan 1 kesejahteraan 
 
-Tanggal berakhir adalah tanggal terakhir kerja 
-26 close berarti 25 yang tidak bisa di edit 26 ikut draf
-
-gaji cm itu cair saat sudah melahirkan + ada surat keterangan melahirkan yang di berikan ke hrd 
-semisal mulai ijin di tanggal 17 berarti tanggal 1-16 di gaji kan pada akhir bulan 
-history contract sebelumnya saat punishment maksud nya adalah pergantian level di tengah berjalannya contract maka gaji 0.5 bulan akan di keep 
-dan di tambahkan gaji setelah update contract luar pulau dan dalam pulau 
 pengoptimalan cuti melahirkan
 
 cm/normatif ganti jadi cm aja
+
+//bagiann slip gaji
+gantungan periode berjalan di hapus 

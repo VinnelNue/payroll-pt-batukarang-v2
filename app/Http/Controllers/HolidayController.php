@@ -14,6 +14,8 @@ class HolidayController extends Controller
     private const ALLOWED_ROLES = [
         'manager_keuangan',
         'super_admin',
+        'head_hrd',
+        'hrd',
     ];
 
     /**

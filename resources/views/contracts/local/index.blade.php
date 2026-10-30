@@ -357,6 +357,10 @@
                     area penempatan, gaji, tunjangan, PTKP dan BPJS.
 
                 </div>
+                <div class="small text-muted mt-2">
+                    <i class="fa-solid fa-circle-info me-1"></i>
+                    Baris berwarna kuning menandakan record yang terhubung ke master kontrak memiliki tanggal efektif di masa depan.
+                </div>
 
             </div>
 
@@ -481,7 +485,49 @@
                         |
                         */
 
-                        $contract = $emp->contract?->currentHistory;
+                        $todayForContract = \Carbon\Carbon::today();
+                        $allContractHistories = $emp->contract?->histories ?? collect();
+                        $effectiveContractHistory = $allContractHistories
+                            ->filter(function ($historyRow) use ($todayForContract) {
+                                try {
+                                    $starts = $historyRow->start_date
+                                        ? \Carbon\Carbon::parse($historyRow->start_date)->startOfDay()
+                                        : null;
+                                    $ends = $historyRow->end_date
+                                        ? \Carbon\Carbon::parse($historyRow->end_date)->endOfDay()
+                                        : null;
+                                    $exits = $historyRow->exit_date
+                                        ? \Carbon\Carbon::parse($historyRow->exit_date)->startOfDay()
+                                        : null;
+
+                                    return $starts !== null
+                                        && $starts->lte($todayForContract)
+                                        && (!$ends || $ends->gte($todayForContract))
+                                        && (!$exits || $exits->gte($todayForContract));
+                                } catch (\Throwable $e) {
+                                    return false;
+                                }
+                            })
+                            ->sortByDesc('start_date')
+                            ->sortByDesc('id_contract_history')
+                            ->first();
+
+                        // Tabel utama selalu menampilkan data yang efektif hari ini.
+                        // Jika belum ada riwayat yang efektif (mis. kontrak pertama terjadwal),
+                        // gunakan pointer master sebagai fallback agar record tetap dapat dibuka.
+                        $contract = $effectiveContractHistory ?? $emp->contract?->currentHistory;
+                        $contractIsScheduled = false;
+                        $contractEffectiveDateLabel = null;
+                        if ($contract?->start_date) {
+                            try {
+                                $contractStart = \Carbon\Carbon::parse($contract->start_date)->startOfDay();
+                                $contractIsScheduled = $contractStart->gt(\Carbon\Carbon::today());
+                                $contractEffectiveDateLabel = $contractStart->format('d/m/Y');
+                            } catch (\Throwable $e) {
+                                $contractIsScheduled = false;
+                                $contractEffectiveDateLabel = null;
+                            }
+                        }
 
 
                         /*
@@ -641,7 +687,7 @@
                     @endphp
 
 
-                    <tr>
+                    <tr class="{{ $contractIsScheduled ? 'table-warning' : '' }}">
 
                         {{-- ==========================================================
                              NO
@@ -756,6 +802,17 @@
 
                                 </div>
 
+                                @if($contractIsScheduled)
+                                    <div class="mt-2">
+                                        <span class="badge bg-warning text-dark">
+                                            <i class="fa-solid fa-calendar-alt me-1"></i> PERUBAHAN TERJADWAL
+                                        </span>
+                                        <div class="small text-warning-emphasis mt-1">
+                                            Data di atas mulai berlaku {{ $contractEffectiveDateLabel }}; belum berlaku hari ini.
+                                        </div>
+                                    </div>
+                                @endif
+
                             @else
 
                                 <span class="text-muted">
@@ -776,6 +833,13 @@
                         <td class="text-center">
 
                             @if($contract)
+
+                                @if($contractIsScheduled)
+                                    <div class="mb-2">
+                                        <span class="badge bg-warning text-dark status-badge">BELUM BERLAKU</span>
+                                        <div class="small text-muted mt-1">Mulai {{ $contractEffectiveDateLabel }}</div>
+                                    </div>
+                                @endif
 
                                 @if(
                                     in_array(

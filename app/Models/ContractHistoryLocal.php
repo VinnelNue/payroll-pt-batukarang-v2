@@ -38,6 +38,8 @@ class ContractHistoryLocal extends Model
         'manual_bpjs_company',
         'employment_type',
         'pkwt_sequence',
+        'change_type',
+        'change_reason',
         'start_date',
         'end_date',
         'exit_date',

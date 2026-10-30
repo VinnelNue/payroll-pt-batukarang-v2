@@ -1686,6 +1686,12 @@ class ContractLocalController extends Controller
 
             $contract->currentHistory;
 
+        // Kontrak pertama manual hanya berlaku jika belum ada satupun history.
+        // Jangan anggap ini kontrak pertama bila pointer kosong tetapi history lama/terjadwal sudah ada.
+        $isInitialContract =
+            !$currentHistory &&
+            $contract->histories->isEmpty();
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2056,6 +2062,22 @@ class ContractLocalController extends Controller
 
             $validated['level'] ?? null;
 
+        // HRD boleh mengisi level untuk kontrak pertama, tetapi dibatasi level 1-13.
+        $hrdCanSetInitialLevel =
+            $isHrd &&
+            $isInitialContract &&
+            is_numeric($newLevel) &&
+            (int) $newLevel >= 1 &&
+            (int) $newLevel <= 13;
+
+        if ($isHrd && $isInitialContract && is_numeric($newLevel) && (int) $newLevel > 13) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'level' => 'HRD hanya dapat mengisi level 1 sampai 13 untuk kontrak pertama. Level di atas 13 harus diproses oleh Head HRD atau Manager Keuangan.',
+                ]);
+        }
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2129,8 +2151,9 @@ class ContractLocalController extends Controller
         */
 
         if ($isHrd) {
-            // HRD hanya dapat mengubah PTKP untuk level 13 ke bawah.
-            if (!is_numeric($oldLevel) || (int) $oldLevel > 13) {
+            // Untuk kontrak pertama tanpa riwayat, HRD boleh mengisi level 1-13 dan PTKP.
+            // Setelah history ada, izin kembali mengikuti level yang sudah tersimpan.
+            if (!$hrdCanSetInitialLevel && (!is_numeric($oldLevel) || (int) $oldLevel > 13)) {
                 $validated['ptkp_status'] = $oldPtkpStatus;
             }
 
@@ -2142,13 +2165,10 @@ class ContractLocalController extends Controller
 
                 $oldAllowance;
 
-            $validated['level'] =
-
-                $oldLevel;
-
-            $validated['category'] =
-
-                $oldCategory;
+            if (!$hrdCanSetInitialLevel) {
+                $validated['level'] = $oldLevel;
+                $validated['category'] = $oldCategory;
+            }
 
             $validated['manual_bpjs_tk_employee'] =
 

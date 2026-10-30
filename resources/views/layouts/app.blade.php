@@ -42,7 +42,7 @@
                 <span>Dashboard</span>
             </a>
             {{-- MASTER HARI LIBUR --}}
-            @if(Auth::check() && in_array(Auth::user()->role, ['manager_keuangan', 'super_admin'], true))
+            @if(Auth::check() && in_array(Auth::user()->role, ['manager_keuangan', 'super_admin', 'hrd', 'head_hrd', 'kepala_hrd'], true))
                 <a href="{{ route('holidays.index') }}"
                 class="nav-link-custom {{ request()->routeIs('holidays.*') ? 'active' : '' }}"
                 title="Master Hari Libur">
