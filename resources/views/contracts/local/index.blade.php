@@ -595,6 +595,25 @@
 
                         /*
                         |--------------------------------------------------------------------------
+                        | PTKP / BPJS VISIBILITY (SEPARATE FROM SALARY)
+                        |--------------------------------------------------------------------------
+                        | Manager Keuangan / Super Admin: all levels.
+                        | HRD / Head HRD / Keuangan: only known level 1-13.
+                        | Level 14+, unknown level, and other roles: masked.
+                        */
+                        $maskPtkpBpjs = !(
+                            $isManagerKeuangan ||
+                            (
+                                ($isHrd || $isHeadHrd || $isKeuangan) &&
+                                $level !== null &&
+                                $level >= 1 &&
+                                $level <= 13
+                            )
+                        );
+
+
+                        /*
+                        |--------------------------------------------------------------------------
                         | LEVEL / CATEGORY MASK
                         |--------------------------------------------------------------------------
                         */
@@ -1014,11 +1033,11 @@
                                     Belum Set
                                 </span>
 
-                            @elseif($maskFinancial)
+                            @elseif($maskPtkpBpjs)
 
                                 <span
                                     class="salary-masked"
-                                    title="PTKP hanya dapat dilihat untuk level 13 ke bawah"
+                                    title="PTKP hanya dapat dilihat untuk role yang diizinkan pada level 1–13"
                                 >
                                     *****
                                 </span>
@@ -1058,11 +1077,11 @@
                                     Belum Set
                                 </span>
 
-                            @elseif($maskFinancial)
+                            @elseif($maskPtkpBpjs)
 
                                 <span
                                     class="salary-masked"
-                                    title="Informasi BPJS hanya dapat dilihat untuk level 13 ke bawah"
+                                    title="Informasi BPJS hanya dapat dilihat untuk role yang diizinkan pada level 1–13"
                                 >
                                     *****
                                 </span>

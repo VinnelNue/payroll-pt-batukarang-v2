@@ -838,6 +838,13 @@
                             default => $contract?->employment_type ?? '-',
                         };
 
+                        $employeeHistories = $emp->contractMaster?->histories ?? collect();
+                        $futureHistoryForRow = $employeeHistories
+                            ->filter(fn ($row) => $row->start_date
+                                && \Carbon\Carbon::parse($row->start_date)->toDateString() > now()->toDateString())
+                            ->sortBy('start_date')
+                            ->first();
+
 
                         /*
 
@@ -942,6 +949,25 @@
 
 
                         }
+
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | PTKP / BPJS VISIBILITY (SEPARATE FROM SALARY)
+                        |--------------------------------------------------------------------------
+                        | Manager Keuangan / Super Admin: all levels.
+                        | HRD / Head HRD / Keuangan: only known level 1-13.
+                        | Level 14+, unknown level, and other roles: masked.
+                        */
+                        $maskPtkpBpjs = !(
+                            $isManagerKeuangan ||
+                            (
+                                ($isHrd || $isHeadHrd || $isKeuangan) &&
+                                $level !== null &&
+                                $level >= 1 &&
+                                $level <= 13
+                            )
+                        );
 
 
                         /*
@@ -1423,7 +1449,26 @@
                             @endif
 
 
-                        </td>
+                        
+                            @if($contract && $futureHistoryForRow)
+                                @php
+                                    $futureLabel = match ($futureHistoryForRow->employment_type) {
+                                        'PKWT' => 'PKWT ' . ($futureHistoryForRow->pkwt_sequence ?? '-'),
+                                        'Freelance' => 'Freelance ' . ($futureHistoryForRow->freelance_sequence ?? '-'),
+                                        default => $futureHistoryForRow->employment_type ?? '-',
+                                    };
+                                @endphp
+                                <div class="mt-2">
+                                    <span class="badge bg-warning text-dark status-badge">
+                                        <i class="fa-solid fa-calendar-clock me-1"></i> Terjadwal
+                                    </span>
+                                    <div class="text-muted mt-1" style="font-size:10px;">
+                                        {{ $futureLabel }} mulai {{ \Carbon\Carbon::parse($futureHistoryForRow->start_date)->format('d/m/Y') }}
+                                    </div>
+                                </div>
+                            @endif
+
+</td>
 
 
                         {{-- ==========================================================
@@ -1585,14 +1630,14 @@
                                 </span>
 
 
-                            @elseif($maskFinancial)
+                            @elseif($maskPtkpBpjs)
 
 
                                 <span
 
                                     class="salary-masked"
 
-                                    title="PTKP hanya dapat dilihat untuk level 13 ke bawah"
+                                    title="PTKP dan BPJS hanya dapat dilihat untuk role yang diizinkan pada level 1–13"
 
                                 >
 
@@ -1666,14 +1711,14 @@
                                 </span>
 
 
-                            @elseif($maskFinancial)
+                            @elseif($maskPtkpBpjs)
 
 
                                 <span
 
                                     class="salary-masked"
 
-                                    title="Informasi BPJS hanya dapat dilihat untuk level 13 ke bawah"
+                                    title="Informasi BPJS hanya dapat dilihat untuk role yang diizinkan pada level 1–13"
 
                                 >
 

@@ -20,6 +20,75 @@ minggu lembur khusus kurang dari 7 jam gaji perhari di bagi 7 x jumlah jam masuk
 gaji cm itu cair saat sudah melahirkan + ada surat keterangan melahirkan yang di berikan ke hrd 
 semisal mulai ijin di tanggal 17 berarti tanggal 1-16 di gaji kan pada akhir bulan 
 
+# PRIORITAS PERBAIKAN PAYROLL LOCAL
+
+## PRIORITAS 1 — SISTEM CUTOFF DAN HAK AKSES
+
+1. Memberikan hak kepada Head HRD untuk mengatur tanggal cutoff payroll.
+2. Memperbaiki aturan cutoff:
+   - Jika cutoff tanggal 26, tanggal 1–25 terkunci dan tidak bisa diedit.
+   - Tanggal 26 tetap masuk draft dan masih bisa diedit.
+   - Tanggal setelah cutoff tetap dapat diisi sesuai aturan periode.
+3. Menyamakan aturan cutoff pada halaman absensi, controller, proses penyimpanan, import fingerprint, export Excel, dan fitur Close/Lock.
+
+## PRIORITAS 2 — SISTEM DATA ABSENSI DAN PLACEHOLDER
+
+1. Membuat placeholder untuk tanggal absensi yang belum tersedia agar tetap tampil pada halaman absensi dan Excel export.
+2. Placeholder hanya untuk tampilan dan formalitas. Tidak boleh otomatis tersimpan sebagai data absensi di database.
+3. Memastikan import Excel membaca tanggal kalender yang sebenarnya.
+4. Saat Excel di-import kembali, hanya tanggal dengan status absensi yang benar-benar diisi yang masuk ke database.
+5. Menggunakan identitas karyawan dan tanggal asli untuk mencegah kesalahan pencocokan absensi.
+
+## PRIORITAS 3 — OPTIMASI IMPORT DAN EXPORT
+
+1. Mempercepat proses export Excel payroll.
+2. Mempercepat proses import Excel dan ZIP fingerprint.
+3. Mengurangi query database berulang dan menggunakan pemrosesan data secara batch.
+4. Mencegah import fingerprint menimpa absensi manual tanpa aturan yang sesuai.
+5. Memastikan import berulang tidak menghasilkan data absensi ganda.
+
+## PRIORITAS 4 — PERBAIKAN INPUT ABSENSI
+
+1. Mengaktifkan input absensi manual pada hari Minggu.
+2. Absensi hari Minggu tidak otomatis dianggap hadir. Status hanya tersimpan apabila diinput secara manual.
+3. Memastikan tanggal berakhir kontrak (`end_date`) merupakan tanggal terakhir karyawan bekerja dan tetap dihitung sebagai hari kerja.
+
+## PRIORITAS 5 — PERBAIKAN STATUS ABSENSI DAN SIGMA
+
+1. Status S tidak dibayar.
+2. Status SKD tetap dibayar dan menjadi pengecualian dari aturan S.
+3. Memperbaiki perhitungan Sigma Absensi sebagai tolok ukur jumlah hari yang dibayar.
+4. Memastikan standar hari pembayaran mengikuti ketentuan 26 atau 27 hari sesuai aturan perusahaan.
+5. Menyamakan hasil perhitungan status dan Sigma pada halaman absensi, Excel export, dan payroll.
+
+## PRIORITAS 6 — PERHITUNGAN LEMBUR HARI MINGGU
+
+1. Membuat perhitungan khusus lembur hari Minggu untuk karyawan/staff.
+2. Ketentuan lembur Minggu selama 7 jam: pembayaran sebesar 2 kali gaji harian.
+3. Ketentuan lembur Minggu kurang dari 7 jam:
+
+   (Gaji harian ÷ 7) × jumlah jam lembur × 2
+
+4. Memisahkan perhitungan lembur Minggu dari lembur reguler agar tidak terjadi perhitungan ganda.
+
+## PRIORITAS 7 — ATURAN PEMBAYARAN CUTI MELAHIRKAN (CM)
+
+1. Pembayaran gaji selama periode CM ditangguhkan sampai karyawan selesai melahirkan dan surat keterangan melahirkan diterima HRD.
+2. Menambahkan pencatatan bukti persalinan dan verifikasi oleh HRD.
+3. Memastikan pembayaran sebelum tanggal mulai CM tetap dilakukan pada akhir bulan.
+4. Contoh: jika CM dimulai tanggal 17, hak gaji tanggal 1–16 tetap dibayarkan pada akhir bulan.
+5. Setelah bukti persalinan diterima dan diverifikasi HRD, pembayaran CM dapat diproses sesuai hak karyawan.
+
+## PRIORITAS 8 — PENGUJIAN DAN VALIDASI PAYROLL
+
+1. Menguji cutoff tanggal 26: tanggal 1–25 terkunci dan tanggal 26 masuk draft.
+2. Menguji hak akses Finance, Super Admin, dan Head HRD.
+3. Menguji import/export Excel dengan tanggal asli dan placeholder.
+4. Menguji status S, SKD, Sigma, dan hari Minggu.
+5. Menguji perhitungan lembur Minggu.
+6. Menguji pembayaran CM dan pencatatan bukti persalinan.
+7. Memastikan total payroll, slip gaji, dan export Excel menghasilkan nilai yang konsisten.
+
 penambahan absensi security 
 penghasilan tambahan = lembur jika karyawan biasa 
 kalau security kebijakan 1 kesejahteraan 

@@ -1235,7 +1235,7 @@
                         if (
                             (int)
                             $recordDate->format('d')
-                            <= $cutoffDay
+                            < $cutoffDay
                         ) {
                             continue;
                         }

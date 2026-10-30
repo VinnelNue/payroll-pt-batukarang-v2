@@ -31,28 +31,22 @@ class ContractHistoryOuterIsland extends Model
 
     protected $casts = [
         'start_date' => 'date',
-        'end_date'   => 'date',
-        'exit_date'  => 'date',
-
+        'end_date' => 'date',
+        'exit_date' => 'date',
         'basic_salary' => 'decimal:2',
-        'allowance'    => 'decimal:2',
-
+        'allowance' => 'decimal:2',
         'manual_bpjs_tk_employee' => 'decimal:2',
         'manual_bpjs_ks_employee' => 'decimal:2',
-        'manual_bpjs_company'     => 'decimal:2',
-
-        'is_bpjstk_active'      => 'boolean',
+        'manual_bpjs_company' => 'decimal:2',
+        'is_bpjstk_active' => 'boolean',
         'is_bpjs_health_active' => 'boolean',
-        'use_manual_bpjs'       => 'boolean',
-        'is_active'             => 'boolean',
-
+        'use_manual_bpjs' => 'boolean',
+        'is_active' => 'boolean',
         'pkwt_sequence' => 'integer',
-        'level'         => 'integer',
+        'freelance_sequence' => 'integer',
+        'level' => 'integer',
     ];
 
-    /**
-     * History → Contract Master
-     */
     public function contract()
     {
         return $this->belongsTo(
@@ -62,9 +56,6 @@ class ContractHistoryOuterIsland extends Model
         );
     }
 
-    /**
-     * History → Employee
-     */
     public function employee()
     {
         return $this->hasOneThrough(

@@ -294,7 +294,8 @@ $showFinancialColumns =
     || $isHeadHrd;
 
 $canManageCutoff =
-    $isFinanceRole;
+    $isFinanceRole
+    || $isHeadHrd;
 
 $lockedState =
     (bool) ($isLocked ?? false);
@@ -469,10 +470,10 @@ $tableColspan =
 
                 Cut-off berlaku per periode.
 
-                Tanggal 01 s/d {{ $cutoffDay }}
+                Tanggal 01 s/d {{ $cutoffDay - 1 }}
                 masuk payroll bulan berjalan;
 
-                tanggal setelah cut-off tetap dicatat dan bila
+                tanggal cutoff dan setelahnya tetap menjadi draft; bila
                 A/I/H0.5 menjadi gantungan bulan berikutnya.
 
             </p>
@@ -681,7 +682,7 @@ $tableColspan =
 
                         <span class="badge bg-danger-subtle text-danger border border-danger rounded-pill px-3 py-1 fw-bold">
                             <i class="fa-solid fa-lock me-1"></i>
-                            Closed s/d Tgl {{ $cutoffDay }}
+                            Closed s/d Tgl {{ $cutoffDay - 1 }}
                         </span>
 
                     @else
@@ -754,7 +755,7 @@ $tableColspan =
                                 <div class="input-group input-group-sm">
 
                                     <span class="input-group-text bg-primary bg-opacity-10 border-end-0 text-primary fw-bold">
-                                        Close Tgl
+                                        Draft Mulai
                                     </span>
 
                                     <select
@@ -786,13 +787,13 @@ $tableColspan =
                             <div class="input-group input-group-sm">
 
                                 <span class="input-group-text bg-secondary bg-opacity-10 border-end-0 text-secondary fw-bold">
-                                    Cut-off
+                                    Draft mulai
                                 </span>
 
                                 <input
                                     type="text"
                                     class="form-control border-start-0 fw-bold text-secondary"
-                                    value="Tanggal {{ $cutoffDay }}"
+                                    value="Mulai tanggal {{ $cutoffDay }}"
                                     readonly
                                 >
 
@@ -824,12 +825,12 @@ $tableColspan =
                     <span>
 
                         <strong>
-                            01–{{ $cutoffDay }}
+                            01–{{ $cutoffDay - 1 }}
                         </strong>
                         = payroll bulan ini sesuai cut-off periode.
 
                         <strong>
-                            {{ $cutoffDay + 1 }}–{{ $endDate->format('d') }}
+                            {{ $cutoffDay }}–{{ $endDate->format('d') }}
                         </strong>
                         = attendance lanjutan.
 
@@ -891,7 +892,7 @@ $tableColspan =
                         &nbsp;
                     </span>
 
-                    01–{{ $cutoffDay }}:
+                    01–{{ $cutoffDay - 1 }}:
 
                     <strong>
                         {{ $lockedState ? 'Locked' : 'Open' }}
@@ -906,7 +907,7 @@ $tableColspan =
                         &nbsp;
                     </span>
 
-                    {{ $cutoffDay + 1 }}–{{ $endDate->format('d') }}:
+                    {{ $cutoffDay }}–{{ $endDate->format('d') }}:
 
                     <strong>
                         {{ $isNextPeriodLocked
@@ -950,16 +951,16 @@ $tableColspan =
                 </button>
 
 
-                @if(!$lockedState && $isFinanceRole)
+                @if(!$lockedState && $canManageCutoff)
 
                     <button type="submit"
                             form="formLockPayroll"
                             class="btn btn-dark px-3 py-2 fw-bold rounded-3 shadow-sm"
-                            onclick="return confirm('Close periode {{ $period }} sampai tanggal {{ $cutoffDay }}? Tanggal setelah cutoff tetap dapat diisi.');">
+                            onclick="return confirm('Close periode {{ $period }}? Tanggal 01–{{ $cutoffDay - 1 }} dikunci; tanggal {{ $cutoffDay }} dan setelahnya tetap draft.');">
 
                         <i class="fa-solid fa-lock me-1"></i>
 
-                        Close / Lock 01–{{ $cutoffDay }}
+                        Close / Lock 01–{{ $cutoffDay - 1 }}
 
                     </button>
 
@@ -1065,8 +1066,8 @@ $tableColspan =
                                 $dayNum =
                                     (int) $dt->format('d');
 
-                                $isAfterCutoff =
-                                    $dayNum > $cutoffDay;
+                                $isDraftDate =
+                                    $dayNum >= $cutoffDay;
 
                                 $headerDate =
                                     $dt->format('Y-m-d');
@@ -1079,7 +1080,7 @@ $tableColspan =
                             @endphp
 
 
-                            <th class="p-1 {{ $isAfterCutoff ? 'bg-warning bg-opacity-25 text-dark' : 'bg-light text-dark' }}"
+                            <th class="p-1 {{ $isDraftDate ? 'bg-warning bg-opacity-25 text-dark' : 'bg-light text-dark' }}"
                                 style="width:38px;font-size:.72rem;"
                                 @if($isHolidayHeader)
                                     title="{{ $holidayData[$headerDate]['name'] }}"
@@ -1090,7 +1091,7 @@ $tableColspan =
                                 </div>
 
 
-                                <div class="{{ $isAfterCutoff ? 'text-dark fw-semibold' : 'text-muted fw-normal' }}"
+                                <div class="{{ $isDraftDate ? 'text-dark fw-semibold' : 'text-muted fw-normal' }}"
                                      style="font-size:.6rem;">
 
                                     {{ $dt->format('M') }}
@@ -1513,7 +1514,7 @@ $tableColspan =
                                             if (
                                                 (int)
                                                 $rowDate->format('d')
-                                                <= $cutoffDay
+                                                < $cutoffDay
                                             ) {
 
                                                 $currentUnpaidDays
@@ -1537,7 +1538,7 @@ $tableColspan =
                                             if (
                                                 (int)
                                                 $rowDate->format('d')
-                                                <= $cutoffDay
+                                                < $cutoffDay
                                             ) {
 
                                                 $currentUnpaidDays
@@ -1969,7 +1970,7 @@ $tableColspan =
                                         */
 
                                         if (
-                                            $dayNum <= $cutoffDay
+                                            $dayNum < $cutoffDay
                                         ) {
 
                                             $isCellLocked =
@@ -1983,7 +1984,7 @@ $tableColspan =
 
 
                                         $isDraftCell =
-                                            $dayNum > $cutoffDay;
+                                            $dayNum >= $cutoffDay;
 
 
                                         $dateIsBeforeContract =
@@ -2724,7 +2725,7 @@ $tableColspan =
                         &nbsp;
                     </span>
 
-                    01–{{ $cutoffDay }}:
+                    01–{{ $cutoffDay - 1 }}:
 
                     <strong>
                         {{ $lockedState ? 'Locked' : 'Open' }}
@@ -2739,7 +2740,7 @@ $tableColspan =
                         &nbsp;
                     </span>
 
-                    {{ $cutoffDay + 1 }}–Akhir:
+                    {{ $cutoffDay }}–Akhir:
 
                     <strong>
                         {{ $isNextPeriodLocked
@@ -2755,12 +2756,12 @@ $tableColspan =
 
             <div>
 
-                @if(!$lockedState && $isFinanceRole)
+                @if(!$lockedState && $canManageCutoff)
 
                     <button type="submit"
                             form="formLockPayroll"
                             class="btn btn-dark px-4 py-2 fw-bold rounded-3 shadow-sm"
-                            onclick="return confirm('Close periode {{ $period }} sampai tanggal {{ $cutoffDay }}?');">
+                            onclick="return confirm('Close periode {{ $period }}? Tanggal 01–{{ $cutoffDay - 1 }} dikunci; tanggal {{ $cutoffDay }} mulai draft.');">
 
                         <i class="fa-solid fa-lock me-1"></i>
 
@@ -2945,7 +2946,7 @@ function recalculateSummary(selectEl) {
             unpaid += 0.5;
 
 
-            if (day <= cutoff) {
+            if (day < cutoff) {
 
                 currentUnpaid += 0.5;
 
@@ -2972,7 +2973,7 @@ function recalculateSummary(selectEl) {
             unpaid += 1;
 
 
-            if (day <= cutoff) {
+            if (day < cutoff) {
 
                 currentUnpaid += 1;
 

@@ -112,7 +112,7 @@ class PayrollController extends Controller
 
     private function canManageCutoff(): bool
     {
-        return $this->isFinanceRole();
+        return $this->isFinanceRole() || $this->isHeadHrdRole();
     }
 
     private function canEditFinancial(): bool
@@ -522,7 +522,7 @@ class PayrollController extends Controller
         // Preview harus selalu mewakili gantungan bulan sebelumnya.
         // Payroll snapshot dipakai terlebih dahulu. Bila snapshot
         // masih 0/null tetapi attendance bulan sebelumnya memiliki
-        // A/I/H0.5 setelah cutoff, helper akan menghitung fallback
+        // A/I/H0.5 pada/setelah tanggal cutoff, helper akan menghitung fallback
         // dari attendance agar data lama tetap dapat dipakai.
         // ========================================================
 
@@ -1079,12 +1079,12 @@ class PayrollController extends Controller
                 );
 
         // ========================================================
-        // LOCKED PERIOD = ATTENDANCE AFTER CUTOFF ONLY
+        // LOCKED PERIOD = ATTENDANCE ON/AFTER CUTOFF ONLY
         // ========================================================
         //
         // Payroll yang sudah lock tidak dihitung ulang.
-        // Yang masih boleh diubah hanya attendance > cutoff.
-        // Attendance <= cutoff tetap permanen.
+        // Yang masih boleh diubah hanya attendance >= cutoff.
+        // Attendance < cutoff tetap permanen.
         // Jika periode berikutnya sudah lock, gantungan juga ikut lock.
         //
         // ========================================================
@@ -1120,7 +1120,7 @@ class PayrollController extends Controller
                     ->with(
                         'error',
                         "Periode {$period} dan periode {$nextPeriod} sudah di-lock. "
-                        . "Attendance setelah cutoff tidak dapat diubah lagi."
+                        . "Attendance mulai tanggal cutoff dan setelahnya tidak dapat diubah lagi."
                     );
             }
 
@@ -1175,7 +1175,7 @@ class PayrollController extends Controller
                         $day =
                             (int) $date->format('d');
 
-                        if ($day <= $cutoffDay) {
+                        if ($day < $cutoffDay) {
                             continue;
                         }
 
@@ -1241,7 +1241,7 @@ class PayrollController extends Controller
                 // ====================================================
                 //
                 // Periode yang sudah lock tetap boleh menerima attendance
-                // setelah cutoff. Attendance tersebut harus menjadi
+                // pada/setelah cutoff. Attendance tersebut harus menjadi
                 // gantungan untuk bulan berikutnya. Yang tidak boleh
                 // berubah adalah perhitungan gaji periode yang sudah lock.
                 //
@@ -1327,7 +1327,7 @@ class PayrollController extends Controller
                 )
                 ->with(
                     'success',
-                    "Attendance setelah cutoff periode {$period} berhasil disimpan. "
+                    "Attendance mulai tanggal cutoff periode {$period} berhasil disimpan. "
                     . "Payroll periode {$period} tetap terkunci dan tidak dihitung ulang."
                 );
         }
@@ -1624,14 +1624,14 @@ class PayrollController extends Controller
                     // =================================================
                     // LOCK RULE
                     //
-                    // <= cutoff tidak boleh diubah.
-                    // > cutoff masih boleh diubah.
+                    // < cutoff tidak boleh diubah.
+                    // >= cutoff masih boleh diubah.
                     // =================================================
 
                     if (
                         $existingPeriodLocked
                         &&
-                        $day <= $cutoffDay
+                        $day < $cutoffDay
                     ) {
                         continue;
                     }
@@ -1755,7 +1755,7 @@ class PayrollController extends Controller
                 //
                 // Summary hanya untuk:
                 // - work days
-                // - unpaid <= cutoff
+                // - unpaid < cutoff
                 // - normative
                 // - holiday
                 //
@@ -1810,7 +1810,7 @@ class PayrollController extends Controller
                 // ====================================================
                 // POTONGAN ABSEN CURRENT
                 //
-                // Hanya A/I/H0.5 <= cutoff.
+                // Hanya A/I/H0.5 < cutoff.
                 // ====================================================
 
                 $basicSalaryDeduction =
@@ -2369,9 +2369,9 @@ class PayrollController extends Controller
     // SOURCE:
     // attendance_records
     //
-    // A     > cutoff = 1
-    // I     > cutoff = 1
-    // H0.5  > cutoff = 0.5
+    // A     >= cutoff = 1
+    // I     >= cutoff = 1
+    // H0.5  >= cutoff = 0.5
     //
     // HB tidak pernah menjadi gantungan.
     //
@@ -2415,12 +2415,12 @@ class PayrollController extends Controller
                     );
 
             /*
-             * <= cutoff = periode berjalan.
-             * > cutoff = gantungan.
+             * Tanggal sebelum cutoff masuk periode berjalan.
+             * Tanggal cutoff dan sesudahnya masuk gantungan.
              */
             if (
                 (int) $date->format('d')
-                <=
+                <
                 $cutoffDay
             ) {
                 continue;
@@ -2719,7 +2719,7 @@ class PayrollController extends Controller
         //
         // Ini penting untuk data historis yang terlanjur disimpan
         // sebelum snapshot gantungan diperbarui. Jadi Agustus tetap
-        // bisa menemukan A/I/H0.5 Juli setelah cutoff.
+        // bisa menemukan A/I/H0.5 Juli pada/setelah tanggal cutoff.
         // ========================================================
 
         $previousCutoffDay =
@@ -2916,9 +2916,9 @@ class PayrollController extends Controller
             ->with(
                 'success',
                 "Absensi periode {$period} berhasil di-Close. "
-                . "Tanggal 01-{$cutoffDay} terkunci; "
-                . "tanggal setelah cutoff tetap dapat diisi "
-                . "dan menjadi gantungan ke bulan berikutnya."
+                . "Tanggal 01-" . ($cutoffDay - 1) . " terkunci; "
+                . "tanggal {$cutoffDay} sampai akhir bulan tetap menjadi draft; "
+                . "A/I/H0.5 pada rentang tersebut menjadi gantungan bulan berikutnya."
             );
     }
 
@@ -3505,7 +3505,7 @@ class PayrollController extends Controller
 
                     if (
                         (int) $date->format('d')
-                        <=
+                        <
                         $cutoffDay
                     ) {
                         $currentUnpaidDays += 0.5;
@@ -3520,7 +3520,7 @@ class PayrollController extends Controller
 
                     if (
                         (int) $date->format('d')
-                        <=
+                        <
                         $cutoffDay
                     ) {
                         $currentUnpaidDays += 1;

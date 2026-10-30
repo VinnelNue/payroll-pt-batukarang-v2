@@ -47,7 +47,53 @@ $isHrd = $userRole === 'hrd';
 $currentContract = $contract ?? null;
 $currentHistory  = $history ?? null;
 
-$histories = $histories ?? collect();
+$histories = collect($histories ?? []);
+$historyToday = \Carbon\Carbon::today();
+
+// Riwayat utama di form harus merupakan riwayat yang efektif hari ini,
+// bukan semata-mata row yang ditunjuk current_contract_history_id.
+$effectiveHistoryForToday = $histories
+    ->filter(function ($item) use ($historyToday) {
+        try {
+            if (!$item->start_date) {
+                return false;
+            }
+
+            $starts = \Carbon\Carbon::parse($item->start_date)->startOfDay();
+            $ends = $item->end_date
+                ? \Carbon\Carbon::parse($item->end_date)->endOfDay()
+                : null;
+            $exits = $item->exit_date
+                ? \Carbon\Carbon::parse($item->exit_date)->endOfDay()
+                : null;
+
+            return $starts->lte($historyToday)
+                && (!$ends || $ends->gte($historyToday))
+                && (!$exits || $exits->gte($historyToday));
+        } catch (\Throwable $e) {
+            return false;
+        }
+    })
+    ->sort(function ($a, $b) {
+        $startOrder = \Carbon\Carbon::parse($b->start_date)->timestamp
+            <=> \Carbon\Carbon::parse($a->start_date)->timestamp;
+
+        return $startOrder !== 0
+            ? $startOrder
+            : ((int) $b->id_contract_history_outer_island
+                <=> (int) $a->id_contract_history_outer_island);
+    })
+    ->first();
+
+$currentHistory = $effectiveHistoryForToday;
+
+$futureHistories = $histories
+    ->filter(fn ($item) => $item->start_date
+        && \Carbon\Carbon::parse($item->start_date)->toDateString() > $historyToday->toDateString())
+    ->sortBy('start_date')
+    ->values();
+
+$nextScheduledHistory = $futureHistories->first();
 
 /*
 |--------------------------------------------------------------------------
@@ -116,10 +162,7 @@ $canEditPtkp = $canSeeSalary || (
 |--------------------------------------------------------------------------
 */
 
-$currentHistoryId =
-    $currentContract?->current_contract_history_id
-    ?? $currentHistory?->id_contract_history_outer_island
-    ?? null;
+$currentHistoryId = $currentHistory?->id_contract_history_outer_island;
 
 /*
 |--------------------------------------------------------------------------
@@ -963,6 +1006,21 @@ if ($endDate) {
 
 @endif
 
+{{-- Perubahan mendatang tetap terlihat sebagai terjadwal, tetapi tidak mengubah nilai form utama. --}}
+@if($nextScheduledHistory)
+    <div class="alert alert-warning d-flex align-items-start gap-2 shadow-sm mb-4">
+        <i class="fas fa-calendar-clock mt-1"></i>
+        <div>
+            <strong>Ada perubahan kontrak yang belum berlaku.</strong>
+            <div class="small mt-1">
+                Riwayat berikutnya mulai efektif pada
+                <strong>{{ \Carbon\Carbon::parse($nextScheduledHistory->start_date)->format('d/m/Y') }}</strong>.
+                Nilai kontrak saat ini tetap mengikuti riwayat yang berlaku hari ini sampai tanggal tersebut.
+            </div>
+        </div>
+    </div>
+@endif
+
 {{-- ==============================================================
      CURRENT CONTRACT
 ============================================================== --}}
@@ -1104,9 +1162,9 @@ if ($endDate) {
                                 type="text"
                                 name="category"
                                 id="category"
-                                class="form-control {{ $isHrd ? 'bg-light' : '' }}"
+                                class="form-control {{ ($isHrd && $currentHistory) ? 'bg-light' : '' }}"
                                 value="{{ old('category', $category) }}"
-                                @readonly($isHrd)>
+                                @readonly($isHrd && $currentHistory)>
 
                         @else
 
@@ -1116,10 +1174,6 @@ if ($endDate) {
                                 value="*****"
                                 readonly>
 
-                            <input
-                                type="hidden"
-                                name="category"
-                                value="{{ $category }}">
 
                         @endif
 
@@ -1139,10 +1193,10 @@ if ($endDate) {
                                 type="number"
                                 name="level"
                                 id="level"
-                                class="form-control {{ $isHrd ? 'bg-light' : '' }}"
+                                class="form-control {{ ($isHrd && $currentHistory) ? 'bg-light' : '' }}"
                                 min="1"
                                 value="{{ old('level', $level) }}"
-                                @readonly($isHrd)>
+                                @readonly($isHrd && $currentHistory)>
 
                         @else
 
@@ -1152,11 +1206,6 @@ if ($endDate) {
                                 value="*****"
                                 readonly>
 
-                            <input
-                                type="hidden"
-                                name="level"
-                                id="level"
-                                value="{{ $level }}">
 
                         @endif
 
@@ -1277,6 +1326,11 @@ if ($endDate) {
                             @endfor
 
                         </select>
+
+                        {{-- For change-only history, keep the existing employment type and sequence server-side. --}}
+                        <input type="hidden" id="new_employment_type_locked" name="employment_type" value="{{ $employmentType }}" disabled>
+                        <input type="hidden" id="new_pkwt_sequence_locked" name="pkwt_sequence" value="{{ $pkwtSequence }}" disabled>
+                        <input type="hidden" id="new_freelance_sequence_locked" name="freelance_sequence" value="{{ $freelanceSequence }}" disabled>
 
                     </div>
 
@@ -1462,10 +1516,6 @@ if ($endDate) {
                                 value="*****"
                                 readonly>
 
-                            <input
-                                type="hidden"
-                                name="basic_salary"
-                                value="{{ $basicSalary }}">
 
                         @endif
 
@@ -1515,10 +1565,6 @@ if ($endDate) {
                                 value="*****"
                                 readonly>
 
-                            <input
-                                type="hidden"
-                                name="allowance"
-                                value="{{ $allowance }}">
 
                         @endif
 
@@ -1821,10 +1867,6 @@ if ($endDate) {
                                 value="*****"
                                 readonly>
 
-                            <input
-                                type="hidden"
-                                name="ptkp_status"
-                                value="{{ $ptkp }}">
 
                         @endif
 
@@ -1953,6 +1995,37 @@ if ($endDate) {
 
                 @csrf
 
+                {{-- CHANGE TYPE / REASON --}}
+                <div class="row g-3 mb-3">
+                    @if($currentHistory)
+                        <div class="col-md-4">
+                            <label for="new_change_type" class="form-label fw-semibold">Jenis Perubahan</label>
+                            <select name="change_type" id="new_change_type" class="form-select" required>
+                                <option value="contract_renewal" @selected(old('change_type', 'contract_renewal') === 'contract_renewal')>Perpanjangan / kontrak baru</option>
+                                @unless($isHrd)
+                                    <option value="level_up" @selected(old('change_type') === 'level_up')>Naik level</option>
+                                    <option value="level_down" @selected(old('change_type') === 'level_down')>Turun level</option>
+                                    <option value="salary_adjustment" @selected(old('change_type') === 'salary_adjustment')>Penyesuaian gaji</option>
+                                    <option value="job_promotion" @selected(old('change_type') === 'job_promotion')>Promosi jabatan</option>
+                                    <option value="job_demotion" @selected(old('change_type') === 'job_demotion')>Penurunan jabatan</option>
+                                @endunless
+                                <option value="position_change" @selected(old('change_type') === 'position_change')>Perubahan penempatan</option>
+                            </select>
+                        </div>
+                    @else
+                        <input type="hidden" name="change_type" value="initial_contract">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Jenis Perubahan</label>
+                            <input type="text" class="form-control bg-light" value="Kontrak pertama" readonly>
+                        </div>
+                    @endif
+
+                    <div class="{{ $currentHistory ? 'col-md-8' : 'col-md-8' }}">
+                        <label for="new_change_reason" class="form-label fw-semibold">Alasan Perubahan</label>
+                        <textarea name="change_reason" id="new_change_reason" class="form-control" rows="2" maxlength="500" placeholder="Contoh: penyesuaian organisasi, promosi, atau perubahan status kerja">{{ old('change_reason') }}</textarea>
+                    </div>
+                </div>
+
                 {{-- BASIC INFORMATION --}}
 
                 <div class="row g-3">
@@ -2054,6 +2127,7 @@ if ($endDate) {
                         <input
                             type="text"
                             name="job_title"
+                            id="new_job_title"
                             class="form-control"
                             value="{{ $jobTitle }}"
                             required>
@@ -2071,6 +2145,7 @@ if ($endDate) {
                         <input
                             type="text"
                             name="department"
+                            id="new_department"
                             class="form-control"
                             value="{{ $department }}">
 
@@ -2087,6 +2162,7 @@ if ($endDate) {
                         <input
                             type="text"
                             name="placement_area"
+                            id="new_placement_area"
                             class="form-control"
                             value="{{ $placementArea }}">
 
@@ -2103,6 +2179,7 @@ if ($endDate) {
                         <input
                             type="text"
                             name="fingerprint_pin"
+                            id="new_fingerprint_pin"
                             class="form-control"
                             value="{{ $fingerprintPin }}">
 
@@ -2119,6 +2196,7 @@ if ($endDate) {
                         <input
                             type="text"
                             name="nik_fingerprint"
+                            id="new_nik_fingerprint"
                             class="form-control"
                             value="{{ $nikFingerprint }}">
 
@@ -2137,8 +2215,10 @@ if ($endDate) {
                             <input
                                 type="text"
                                 name="category"
-                                class="form-control"
-                                value="{{ $category }}">
+                                id="new_category"
+                                class="form-control {{ ($isHrd && $currentHistory) ? 'bg-light' : '' }}"
+                                value="{{ $category }}"
+                                @readonly($isHrd && $currentHistory)>
 
                         @else
 
@@ -2148,10 +2228,6 @@ if ($endDate) {
                                 value="*****"
                                 readonly>
 
-                            <input
-                                type="hidden"
-                                name="category"
-                                value="{{ $category }}">
 
                         @endif
 
@@ -2171,9 +2247,10 @@ if ($endDate) {
                                 type="number"
                                 name="level"
                                 id="new_level"
-                                class="form-control"
+                                class="form-control {{ ($isHrd && $currentHistory) ? 'bg-light' : '' }}"
                                 min="1"
-                                value="{{ $level }}">
+                                value="{{ $level }}"
+                                @readonly($isHrd && $currentHistory)>
 
                         @else
 
@@ -2183,10 +2260,6 @@ if ($endDate) {
                                 value="*****"
                                 readonly>
 
-                            <input
-                                type="hidden"
-                                name="level"
-                                value="{{ $level }}">
 
                         @endif
 
@@ -2332,10 +2405,6 @@ if ($endDate) {
                                     value="*****"
                                     readonly>
 
-                                <input
-                                    type="hidden"
-                                    name="ptkp_status"
-                                    value="{{ $ptkp }}">
 
                             @endif
 
@@ -2564,14 +2633,32 @@ if ($endDate) {
 
                 @else
 
-                    <div class="alert alert-secondary">
+                    <div class="alert alert-secondary mb-3">
 
                         <i class="fas fa-lock me-2"></i>
 
-                        Data Financial, BPJS dan PPh21
-                        mengikuti data contract sebelumnya
+                        Data gaji dan BPJS mengikuti data contract sebelumnya
                         dan tidak dapat diubah oleh role Anda.
 
+                    </div>
+
+                    {{-- Nilai finansial yang tidak boleh dilihat/diedit dipertahankan oleh controller, bukan dikirim sebagai hidden input. --}}
+
+                    {{-- PTKP boleh diisi HRD untuk kontrak level <= 13, meski data finansial disembunyikan. --}}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">PTKP / PPh21</label>
+                            @if($canEditPtkp)
+                                <select name="ptkp_status" class="form-select" required>
+                                    @foreach($ptkpOptions as $item)
+                                        <option value="{{ $item }}" @selected($ptkp === $item)>{{ $item }}</option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">Pilih status PTKP sesuai kondisi wajib pajak karyawan.</small>
+                            @else
+                                <input type="text" class="form-control bg-light" value="*****" readonly>
+                            @endif
+                        </div>
                     </div>
 
                 @endif
@@ -2608,7 +2695,34 @@ if ($endDate) {
              HISTORY TABLE
         ========================================================== --}}
 
-        <div class="table-responsive">
+        <div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+        <div class="border rounded-3 bg-light p-3 h-100">
+            <small class="text-muted">Berlaku hari ini</small>
+            <div class="fs-4 fw-bold text-success">{{ $histories->filter(fn ($item) => $item->start_date && \Carbon\Carbon::parse($item->start_date)->toDateString() <= $historyToday->toDateString() && (!$item->end_date || \Carbon\Carbon::parse($item->end_date)->toDateString() >= $historyToday->toDateString()) && (!$item->exit_date || \Carbon\Carbon::parse($item->exit_date)->toDateString() >= $historyToday->toDateString()))->count() }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="border rounded-3 bg-warning bg-opacity-10 p-3 h-100">
+            <small class="text-muted">Terjadwal</small>
+            <div class="fs-4 fw-bold text-warning">{{ $futureHistories->count() }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="border rounded-3 bg-light p-3 h-100">
+            <small class="text-muted">Riwayat selesai</small>
+            <div class="fs-4 fw-bold text-secondary">{{ $histories->filter(fn ($item) => ($item->end_date && \Carbon\Carbon::parse($item->end_date)->toDateString() < $historyToday->toDateString()) || ($item->exit_date && \Carbon\Carbon::parse($item->exit_date)->toDateString() < $historyToday->toDateString()))->count() }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="border rounded-3 bg-light p-3 h-100">
+            <small class="text-muted">Total record</small>
+            <div class="fs-4 fw-bold text-primary">{{ $histories->count() }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
 
             <table class="table table-hover align-middle mb-0">
 
@@ -2646,9 +2760,13 @@ if ($endDate) {
 
                         @php
 
-                            $isCurrent =
-                                (string) $currentHistoryId ===
-                                (string) $item->id_contract_history_outer_island;
+                            $itemStart = $item->start_date ? \Carbon\Carbon::parse($item->start_date)->startOfDay() : null;
+                            $itemEnd = $item->end_date ? \Carbon\Carbon::parse($item->end_date)->endOfDay() : null;
+                            $itemExit = $item->exit_date ? \Carbon\Carbon::parse($item->exit_date)->endOfDay() : null;
+                            $isCurrent = (string) $currentHistoryId === (string) $item->id_contract_history_outer_island;
+                            $isScheduled = $itemStart && $itemStart->gt($historyToday);
+                            $isEnded = ($itemEnd && $itemEnd->lt($historyToday))
+                                || ($itemExit && $itemExit->lt($historyToday));
 
                             $itemLevel =
                                 is_numeric($item->level)
@@ -2707,6 +2825,29 @@ if ($endDate) {
 
                                 </small>
 
+                                @php
+                                    $changeLabels = [
+                                        'initial_contract' => 'Kontrak pertama',
+                                        'contract_renewal' => 'Perpanjangan kontrak',
+                                        'level_up' => 'Naik level',
+                                        'level_down' => 'Turun level',
+                                        'salary_adjustment' => 'Penyesuaian gaji',
+                                        'job_promotion' => 'Promosi jabatan',
+                                        'job_demotion' => 'Penurunan jabatan',
+                                        'position_change' => 'Perubahan penempatan',
+                                    ];
+                                @endphp
+                                @if($item->change_type)
+                                    <small class="d-block text-primary mt-1">
+                                        {{ $changeLabels[$item->change_type] ?? ucfirst(str_replace('_', ' ', $item->change_type)) }}
+                                    </small>
+                                @endif
+                                @if($item->change_reason)
+                                    <small class="d-block text-muted mt-1">
+                                        {{ \Illuminate\Support\Str::limit($item->change_reason, 75) }}
+                                    </small>
+                                @endif
+
                             </td>
 
                             {{-- PERIOD --}}
@@ -2753,26 +2894,23 @@ if ($endDate) {
 
                             <td>
 
-                                @if($isCurrent)
-
+                                @if($isScheduled)
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="fas fa-calendar-clock me-1"></i> TERJADWAL
+                                    </span>
+                                    <div class="small text-muted mt-1">Efektif {{ $itemStart->format('d/m/Y') }}</div>
+                                @elseif($isCurrent)
                                     <span class="badge bg-success">
-
-                                        <i class="fas fa-check-circle me-1"></i>
-
-                                        CURRENT
-
+                                        <i class="fas fa-check-circle me-1"></i> BERLAKU HARI INI
                                     </span>
-
+                                @elseif($isEnded)
+                                    <span class="badge bg-dark">
+                                        <i class="fas fa-clock me-1"></i> SELESAI
+                                    </span>
                                 @else
-
                                     <span class="badge bg-secondary">
-
-                                        <i class="fas fa-lock me-1"></i>
-
-                                        HISTORY
-
+                                        <i class="fas fa-history me-1"></i> HISTORY
                                     </span>
-
                                 @endif
 
                             </td>
@@ -2805,8 +2943,7 @@ if ($endDate) {
                                             'contracts.outer_island.period.show',
                                             [
                                                 'employee' => $employee->uuid,
-                                                'history'  => $item->uuid
-                                                    ?? $item->id_contract_history_outer_island,
+                                                'history'  => $item->id_contract_history_outer_island,
                                             ]
                                         ) }}"
                                         class="btn btn-sm btn-outline-secondary">
@@ -3345,7 +3482,68 @@ document.addEventListener('DOMContentLoaded', function () {
         toggleNewPeriodEmployment
     );
 
+    const newChangeType = document.getElementById('new_change_type');
+    const newChangeReason = document.getElementById('new_change_reason');
+    const lockedEmploymentType = document.getElementById('new_employment_type_locked');
+    const lockedPkwtSequence = document.getElementById('new_pkwt_sequence_locked');
+    const lockedFreelanceSequence = document.getElementById('new_freelance_sequence_locked');
+
+    function applyNewPeriodChangeType() {
+        const type = newChangeType?.value || 'initial_contract';
+        const isRenewal = ['initial_contract', 'contract_renewal'].includes(type);
+        const reasonRequired = [
+            'level_up', 'level_down', 'salary_adjustment',
+            'job_promotion', 'job_demotion', 'position_change'
+        ].includes(type);
+
+        if (newChangeReason) {
+            newChangeReason.required = reasonRequired;
+        }
+
+        if (newEmploymentType) newEmploymentType.disabled = !isRenewal;
+        if (lockedEmploymentType) lockedEmploymentType.disabled = isRenewal;
+
+        const isPkwt = newEmploymentType?.value === 'PKWT';
+        const isFreelance = newEmploymentType?.value === 'Freelance';
+        if (newPkwtSequenceSelect) {
+            newPkwtSequenceSelect.disabled = !isRenewal || !isPkwt;
+            newPkwtSequenceSelect.required = isRenewal && isPkwt;
+        }
+        if (newFreelanceSequenceSelect) {
+            newFreelanceSequenceSelect.disabled = !isRenewal || !isFreelance;
+            newFreelanceSequenceSelect.required = isRenewal && isFreelance;
+        }
+        if (lockedPkwtSequence) lockedPkwtSequence.disabled = isRenewal || !isPkwt;
+        if (lockedFreelanceSequence) lockedFreelanceSequence.disabled = isRenewal || !isFreelance;
+
+        const lock = (selector, state) => {
+            const field = document.querySelector(selector);
+            if (field && 'readOnly' in field) {
+                field.readOnly = state;
+                field.classList.toggle('bg-light', state);
+            }
+        };
+
+        const levelOnly = ['level_up', 'level_down'].includes(type);
+        const salaryOnly = type === 'salary_adjustment';
+        const positionOnly = type === 'position_change';
+
+        ['#new_job_title', '#new_department', '#new_placement_area', '#new_fingerprint_pin', '#new_nik_fingerprint']
+            .forEach(selector => lock(selector, levelOnly || salaryOnly));
+        ['#new_category', '#new_level']
+            .forEach(selector => lock(selector, salaryOnly || positionOnly));
+        ['#new_basic_salary']
+            .forEach(selector => lock(selector, positionOnly));
+    }
+
+    newChangeType?.addEventListener('change', function () {
+        toggleNewPeriodEmployment();
+        applyNewPeriodChangeType();
+    });
+    newEmploymentType?.addEventListener('change', applyNewPeriodChangeType);
+
     toggleNewPeriodEmployment();
+    applyNewPeriodChangeType();
 
     /*
     |--------------------------------------------------------------------------
