@@ -12,6 +12,8 @@ use Maatwebsite\Excel\Concerns\FromView;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
+use Maatwebsite\Excel\Events\BeforeSheet;
+use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 
@@ -47,9 +49,11 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
         // Dua worksheet export memakai data dasar yang sama. Simpan pada
         // request aktif agar query karyawan/absensi/payroll tidak dieksekusi
         // dua kali dalam satu file Excel. Request attribute tidak lintas request.
+        $prepareStartedAt = hrtime(true);
         $viewData = request()->attributes->get($cacheKey);
+        $cacheHit = is_array($viewData);
 
-        if (!is_array($viewData)) {
+        if (!$cacheHit) {
             $periodDate = Carbon::createFromFormat('Y-m-d', $this->period . '-01');
             $startDate = $periodDate->copy()->startOfMonth();
             $endDate = $periodDate->copy()->endOfMonth();
@@ -118,6 +122,17 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
             request()->attributes->set($cacheKey, $viewData);
         }
 
+        Log::info('payroll.local.export.data_prepare', [
+            'period' => $this->period,
+            'sheet' => $this->sheetTitle,
+            'cache_hit' => $cacheHit,
+            'employee_count' => isset($viewData['employees']) ? $viewData['employees']->count() : 0,
+            'attendance_count' => isset($viewData['employees'])
+                ? $viewData['employees']->sum(static fn ($employee) => $employee->attendanceRecords?->count() ?? 0)
+                : 0,
+            'prepare_ms' => round((hrtime(true) - $prepareStartedAt) / 1_000_000, 2),
+        ]);
+
         return view($this->viewName, $viewData);
     }
 
@@ -128,8 +143,13 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
 
     public function registerEvents(): array
     {
+        $sheetStartedAt = null;
+
         return [
-            AfterSheet::class => function (AfterSheet $event): void {
+            BeforeSheet::class => function (BeforeSheet $event) use (&$sheetStartedAt): void {
+                $sheetStartedAt = hrtime(true);
+            },
+            AfterSheet::class => function (AfterSheet $event) use (&$sheetStartedAt): void {
                 $sheet = $event->sheet->getDelegate();
                 $sheet->setShowGridlines(false);
 
@@ -227,6 +247,17 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
                     ->setRight(0.2)
                     ->setBottom(0.25)
                     ->setLeft(0.2);
+
+                Log::info('payroll.local.export.sheet_complete', [
+                    'period' => $this->period,
+                    'sheet' => $this->sheetTitle,
+                    'highest_row' => $sheet->getHighestRow(),
+                    'highest_column' => $sheet->getHighestColumn(),
+                    'sheet_ms' => $sheetStartedAt !== null
+                        ? round((hrtime(true) - $sheetStartedAt) / 1_000_000, 2)
+                        : null,
+                    'peak_memory_mb' => round(memory_get_peak_usage(true) / 1024 / 1024, 2),
+                ]);
             },
         ];
     }

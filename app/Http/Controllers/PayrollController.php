@@ -17,6 +17,7 @@ use App\Jobs\SendLocalSalarySlipEmail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -4579,13 +4580,52 @@ class PayrollController extends Controller
                 );
         }
 
-        return Excel::download(
-            new PayrollLocalExport(
-                $period,
-                $this->userRole()
-            ),
-            "Rekap_Payroll_Local_{$period}.xlsx"
-        );
+        // Instrumentasi sementara untuk memisahkan waktu query DB dan
+        // total pembentukan workbook. Tidak mengubah isi maupun aturan export.
+        $exportStartedAt = hrtime(true);
+        $queryCount = 0;
+        $queryTotalMs = 0.0;
+        $queryMaxMs = 0.0;
+
+        DB::listen(static function ($query) use (&$queryCount, &$queryTotalMs, &$queryMaxMs): void {
+            $duration = (float) $query->time;
+            $queryCount++;
+            $queryTotalMs += $duration;
+            $queryMaxMs = max($queryMaxMs, $duration);
+        });
+
+        try {
+            $response = Excel::download(
+                new PayrollLocalExport(
+                    $period,
+                    $this->userRole()
+                ),
+                "Rekap_Payroll_Local_{$period}.xlsx"
+            );
+
+            Log::info('payroll.local.export.performance', [
+                'period' => $period,
+                'employee_count' => $employeeCount,
+                'query_count' => $queryCount,
+                'query_total_ms' => round($queryTotalMs, 2),
+                'query_max_ms' => round($queryMaxMs, 2),
+                'total_ms' => round((hrtime(true) - $exportStartedAt) / 1_000_000, 2),
+                'peak_memory_mb' => round(memory_get_peak_usage(true) / 1024 / 1024, 2),
+            ]);
+
+            return $response;
+        } catch (Throwable $exception) {
+            Log::error('payroll.local.export.failed', [
+                'period' => $period,
+                'employee_count' => $employeeCount,
+                'query_count' => $queryCount,
+                'query_total_ms' => round($queryTotalMs, 2),
+                'total_ms' => round((hrtime(true) - $exportStartedAt) / 1_000_000, 2),
+                'exception' => $exception::class,
+            ]);
+
+            throw $exception;
+        }
     }
     
     /**
