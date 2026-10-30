@@ -39,67 +39,86 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
 
     public function view(): View
     {
-        $periodDate = Carbon::createFromFormat('Y-m-d', $this->period . '-01');
-        $startDate = $periodDate->copy()->startOfMonth();
-        $endDate = $periodDate->copy()->endOfMonth();
+        $cacheKey = 'payroll-local-export-view-data:' . sha1(json_encode([
+            $this->period,
+            $this->userRole,
+        ]));
 
-        // Semua karyawan aktif tetap disertakan, termasuk yang belum memiliki payroll row.
-        $employees = Employee::query()
-            ->with([
-                'contract.currentHistory',
-                'attendanceRecords' => function ($query) use ($startDate, $endDate) {
-                    $query->whereBetween('attendance_date', [
-                        $startDate->format('Y-m-d'),
-                        $endDate->format('Y-m-d'),
-                    ])->orderBy('attendance_date');
-                },
-            ])
-            ->where('is_active', true)
-            ->get();
+        // Dua worksheet export memakai data dasar yang sama. Simpan pada
+        // request aktif agar query karyawan/absensi/payroll tidak dieksekusi
+        // dua kali dalam satu file Excel. Request attribute tidak lintas request.
+        $viewData = request()->attributes->get($cacheKey);
 
-        $employeeIds = $employees->pluck('id_employee')->filter()->values();
+        if (!is_array($viewData)) {
+            $periodDate = Carbon::createFromFormat('Y-m-d', $this->period . '-01');
+            $startDate = $periodDate->copy()->startOfMonth();
+            $endDate = $periodDate->copy()->endOfMonth();
 
-        $payrollsByEmployee = Payroll::query()
-            ->where('period_month', $this->period)
-            ->whereIn('employee_id', $employeeIds)
-            ->get()
-            ->keyBy('employee_id');
+            // Semua karyawan aktif disertakan, termasuk yang belum memiliki payroll row.
+            // Relasi absensi dan kontrak dimuat eager-load untuk menghindari N+1 query.
+            $employees = Employee::query()
+                ->with([
+                    'contract.currentHistory',
+                    'attendanceRecords' => function ($query) use ($startDate, $endDate) {
+                        $query->whereBetween('attendance_date', [
+                            $startDate->format('Y-m-d'),
+                            $endDate->format('Y-m-d'),
+                        ])->orderBy('attendance_date');
+                    },
+                ])
+                ->where('is_active', true)
+                ->get();
 
-        $holidays = Holiday::query()
-            ->where('is_active', true)
-            ->whereBetween('holiday_date', [
-                $startDate->format('Y-m-d'),
-                $endDate->format('Y-m-d'),
-            ])
-            ->orderBy('holiday_date')
-            ->get()
-            ->keyBy(static fn ($holiday) => Carbon::parse($holiday->holiday_date)->format('Y-m-d'));
+            $employeeIds = $employees->pluck('id_employee')->filter()->values();
 
-        // Prioritas cutoff: payroll tersimpan -> setting periode -> setting global -> 26.
-        $cutoffDay = $payrollsByEmployee
-            ->pluck('cutoff_day')
-            ->filter(static fn ($value) => $value !== null)
-            ->map(static fn ($value) => (int) $value)
-            ->filter(static fn ($value) => $value >= 20 && $value <= 28)
-            ->first();
+            $payrollsByEmployee = $employeeIds->isEmpty()
+                ? collect()
+                : Payroll::query()
+                    ->where('period_month', $this->period)
+                    ->whereIn('employee_id', $employeeIds)
+                    ->get()
+                    ->keyBy('employee_id');
 
-        if ($cutoffDay === null) {
-            $cutoffDay = (int) CompanySetting::get(
-                'attendance_cutoff_day:' . $this->period,
-                CompanySetting::get('attendance_cutoff_day', 26)
-            );
+            $holidays = Holiday::query()
+                ->where('is_active', true)
+                ->whereBetween('holiday_date', [
+                    $startDate->format('Y-m-d'),
+                    $endDate->format('Y-m-d'),
+                ])
+                ->orderBy('holiday_date')
+                ->get()
+                ->keyBy(static fn ($holiday) => Carbon::parse($holiday->holiday_date)->format('Y-m-d'));
+
+            // Prioritas cutoff: payroll tersimpan -> setting periode -> setting global -> 26.
+            $cutoffDay = $payrollsByEmployee
+                ->pluck('cutoff_day')
+                ->filter(static fn ($value) => $value !== null)
+                ->map(static fn ($value) => (int) $value)
+                ->filter(static fn ($value) => $value >= 20 && $value <= 28)
+                ->first();
+
+            if ($cutoffDay === null) {
+                $cutoffDay = (int) CompanySetting::get(
+                    'attendance_cutoff_day:' . $this->period,
+                    CompanySetting::get('attendance_cutoff_day', 26)
+                );
+            }
+
+            $cutoffDay = min(28, max(20, (int) $cutoffDay));
+
+            $viewData = [
+                'employees' => $employees,
+                'payrollsByEmployee' => $payrollsByEmployee,
+                'holidays' => $holidays,
+                'cutoffDay' => $cutoffDay,
+                'period' => $this->period,
+                'userRole' => $this->userRole,
+            ];
+
+            request()->attributes->set($cacheKey, $viewData);
         }
 
-        $cutoffDay = min(28, max(20, (int) $cutoffDay));
-
-        return view($this->viewName, [
-            'employees' => $employees,
-            'payrollsByEmployee' => $payrollsByEmployee,
-            'holidays' => $holidays,
-            'cutoffDay' => $cutoffDay,
-            'period' => $this->period,
-            'userRole' => $this->userRole,
-        ]);
+        return view($this->viewName, $viewData);
     }
 
     public function title(): string
@@ -132,16 +151,12 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
                     $this->period . '-01'
                 )->daysInMonth;
                 $showBpjsColumns = $isFinanceRole || $isHeadHrd;
-
-                // Finance melihat kolom keuangan di kedua worksheet.
-                // Role lain mengikuti kolom yang dirender Blade masing-masing.
                 $showFinancialColumns = $isFinanceRole;
 
                 $sheet->freezePane(
                     Coordinate::stringFromColumnIndex($firstAttendanceColumn) . '6'
                 );
 
-                // Lebar kolom identitas.
                 $sheet->getColumnDimension('A')->setWidth(4.5);
                 $sheet->getColumnDimension('B')->setWidth(26);
                 $sheet->getColumnDimension('C')->setWidth(40);
@@ -151,7 +166,6 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
                     $sheet->getColumnDimension('E')->setWidth(6);
                 }
 
-                // Kalender harian.
                 for ($i = 0; $i < $daysInMonth; $i++) {
                     $index = $firstAttendanceColumn + $i;
                     $sheet->getColumnDimension(
@@ -159,7 +173,6 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
                     )->setWidth(3.1);
                 }
 
-                // Total kolom ringkasan menyesuaikan worksheet ringkas/detail.
                 $summaryWidths = $this->isCompact
                     ? [8, 10, 10, 8, 7, 9]
                     : [8, 10, 10, 8, 7, 7, 9, 9, 10, 9];
@@ -191,6 +204,15 @@ class PayrollLocalViewSheet implements FromView, WithEvents, WithTitle
                         )->setWidth($width);
                         $columnIndex++;
                     }
+                }
+
+                // The Detail Lengkap worksheet carries a stable employee ID
+                // in its final column. Hide it from normal users; import still
+                // reads the value so names/order are never used as database keys.
+                if (!$this->isCompact) {
+                    $internalIdColumn = Coordinate::stringFromColumnIndex($columnIndex);
+                    $sheet->getColumnDimension($internalIdColumn)->setWidth(2);
+                    $sheet->getColumnDimension($internalIdColumn)->setVisible(false);
                 }
 
                 $sheet->getPageSetup()

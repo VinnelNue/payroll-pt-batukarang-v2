@@ -476,6 +476,8 @@ $tableColspan =
                 tanggal cutoff dan setelahnya tetap menjadi draft; bila
                 A/I/H0.5 menjadi gantungan bulan berikutnya.
 
+                Tanda "-" hanya placeholder tampilan dan bukan record absensi.
+
             </p>
 
         </div>

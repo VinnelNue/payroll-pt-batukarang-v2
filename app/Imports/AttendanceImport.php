@@ -1,1119 +1,473 @@
 <?php
 
-
-
 namespace App\Imports;
 
-
-
 use App\Models\AttendanceRecord;
-
 use App\Models\ContractHistoryLocal;
-
 use App\Models\Employee;
-
+use App\Models\Payroll;
 use Carbon\Carbon;
-
 use Illuminate\Support\Collection;
-
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-
 use Maatwebsite\Excel\Concerns\ToCollection;
-
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
-
-
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
+use Throwable;
 
 class AttendanceImport implements ToCollection, WithHeadingRow
-
 {
-
-    protected $period;
-
-
+    protected string $period;
 
     /**
-
-     * Satu proses import dapat membaca beberapa file
-
-     * (misalnya ZIP), sehingga data ditampung sementara.
-
+     * Satu proses import dapat membaca beberapa file (misalnya ZIP).
+     * Buffer diproses sekaligus agar query database tidak dilakukan
+     * berulang kali untuk setiap baris/tanggal.
      */
-
     protected static array $globalAttendanceBuffer = [];
 
-
+    private const MANUAL_SOURCES = [
+        'manual',
+        'manual_excel',
+    ];
 
     public function __construct($period)
-
     {
-
         $this->period = $period ?? date('Y-m');
-
     }
 
-
-
-    /**
-
-     * Membaca file fingerprint saja.
-
-     *
-
-     * Tidak menghitung payroll.
-
-     * Tidak menghitung BPJS.
-
-     * Tidak mengubah payroll.daily_attendance.
-
-     */
-
-    public function collection(Collection $rows)
-
+    public static function resetBuffer(): void
     {
+        self::$globalAttendanceBuffer = [];
+    }
 
-        Log::info(
-
-            "=== MEMBACA FILE ABSENSI (Target Periode: {$this->period}) ==="
-
-        );
-
-
-
+    public function collection(Collection $rows): void
+    {
         foreach ($rows as $index => $row) {
-
             try {
-
                 $cleanRow = [];
 
+                foreach ($row as $key => $value) {
+                    $cleanKey = strtolower(trim(preg_replace(
+                        '/[^a-zA-Z0-9_]/',
+                        '',
+                        (string) $key
+                    )));
 
-
-                foreach ($row as $key => $val) {
-
-                    $cleanKey = strtolower(
-
-                        trim(
-
-                            preg_replace(
-
-                                '/[^a-zA-Z0-9_]/',
-
-                                '',
-
-                                (string) $key
-
-                            )
-
-                        )
-
-                    );
-
-
-
-                    $cleanRow[$cleanKey] = is_string($val)
-
-                        ? trim($val)
-
-                        : $val;
-
+                    $cleanRow[$cleanKey] = is_string($value)
+                        ? trim($value)
+                        : $value;
                 }
 
+                $pin = trim((string) ($cleanRow['pin'] ?? ''));
+                $nik = strtoupper(trim((string) ($cleanRow['nik'] ?? '')));
+                $name = trim((string) (
+                    $cleanRow['namakaryawan']
+                    ?? $cleanRow['nama_karyawan']
+                    ?? $cleanRow['nama']
+                    ?? ''
+                ));
+                $rawDate = $cleanRow['tanggal'] ?? $cleanRow['date'] ?? null;
 
-
-                $pinMesin = trim(
-
-                    (string) ($cleanRow['pin'] ?? '')
-
-                );
-
-
-
-                $nikMesin = strtoupper(
-
-                    trim(
-
-                        (string) ($cleanRow['nik'] ?? '')
-
-                    )
-
-                );
-
-
-
-                $namaKaryawan = trim(
-
-                    (string) (
-
-                        $cleanRow['namakaryawan']
-
-                        ?? $cleanRow['nama_karyawan']
-
-                        ?? $cleanRow['nama']
-
-                        ?? ''
-
-                    )
-
-                );
-
-
-
-                $rawDate =
-
-                    $cleanRow['tanggal']
-
-                    ?? $cleanRow['date']
-
-                    ?? null;
-
-
-
-                if (
-
-                    (empty($nikMesin) && empty($pinMesin))
-
-                    || empty($rawDate)
-
-                ) {
-
+                if ((($nik === '') && ($pin === '')) || $rawDate === null || $rawDate === '') {
                     continue;
-
                 }
 
-
-
-                $dateObj = null;
-
-
-
-                if (is_numeric($rawDate)) {
-
-                    $dateObj = Carbon::instance(
-
-                        \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject(
-
-                            $rawDate
-
-                        )
-
-                    );
-
-                } else {
-
-                    $dateStr = str_replace(
-
-                        ['/', '.'],
-
-                        '-',
-
-                        (string) $rawDate
-
-                    );
-
-
-
-                    if (
-
-                        preg_match(
-
-                            '/^\d{1,2}-\d{1,2}-\d{4}$/',
-
-                            $dateStr
-
-                        )
-
-                    ) {
-
-                        $dateObj = Carbon::createFromFormat(
-
-                            'd-m-Y',
-
-                            $dateStr
-
-                        );
-
-                    } else {
-
-                        $dateObj = Carbon::parse($dateStr);
-
-                    }
-
+                $date = $this->parseAttendanceDate($rawDate);
+                if (!$date) {
+                    continue;
                 }
 
+                $targetPeriod = $date->format('Y-m');
+                $dateString = $date->format('Y-m-d');
+                $identity = $nik !== '' ? $nik : $pin;
+                $mapKey = $targetPeriod . '|' . $identity . '|' . mb_strtolower($name);
 
-
-                $targetDatabasePeriod = $dateObj->format('Y-m');
-
-                $dateString = $dateObj->format('Y-m-d');
-
-
-
-                $identityKey = $nikMesin ?: $pinMesin;
-
-
-
-                $mapKey =
-
-                    $targetDatabasePeriod
-
-                    . '|'
-
-                    . $identityKey
-
-                    . '|'
-
-                    . strtolower($namaKaryawan);
-
-
-
-                self::$globalAttendanceBuffer[$targetDatabasePeriod] ??= [];
-
-
-
-                self::$globalAttendanceBuffer[$targetDatabasePeriod][$mapKey] ??= [
-
-                    'period'        => $targetDatabasePeriod,
-
-                    'nik_mesin'     => $nikMesin,
-
-                    'pin_mesin'     => $pinMesin,
-
-                    'nama_karyawan' => $namaKaryawan,
-
-                    'daily'         => [],
-
+                self::$globalAttendanceBuffer[$targetPeriod] ??= [];
+                self::$globalAttendanceBuffer[$targetPeriod][$mapKey] ??= [
+                    'period' => $targetPeriod,
+                    'nik_mesin' => $nik,
+                    'pin_mesin' => $pin,
+                    'nama_karyawan' => $name,
+                    'daily' => [],
                 ];
 
-
-
-                /*
-
-                 * Setiap log fingerprint = Hadir.
-
-                 * Duplikasi tanggal akan tetap menjadi satu record H.
-
-                 */
-
-                self::$globalAttendanceBuffer
-
-                    [$targetDatabasePeriod]
-
-                    [$mapKey]
-
-                    ['daily'][$dateString] = 'H';
-
-
-
-            } catch (\Throwable $e) {
-
-                Log::error(
-
-                    "Gagal membaca baris absensi index {$index}: "
-
-                    . $e->getMessage(),
-
-                    [
-
-                        'row' => $row->toArray(),
-
-                    ]
-
-                );
-
+                // Satu atau banyak log di tanggal yang sama tetap menjadi satu status H.
+                self::$globalAttendanceBuffer[$targetPeriod][$mapKey]['daily'][$dateString] = 'H';
+            } catch (Throwable $exception) {
+                Log::warning('Baris fingerprint gagal dibaca.', [
+                    'row_index' => $index,
+                    'error' => $exception->getMessage(),
+                ]);
             }
-
         }
-
     }
 
+    private function parseAttendanceDate(mixed $rawDate): ?Carbon
+    {
+        try {
+            if (is_numeric($rawDate)) {
+                return Carbon::instance(
+                    ExcelDate::excelToDateTimeObject((float) $rawDate)
+                )->startOfDay();
+            }
 
+            $dateString = str_replace(['/', '.'], '-', trim((string) $rawDate));
+
+            if (preg_match('/^\d{1,2}-\d{1,2}-\d{4}$/', $dateString)) {
+                return Carbon::createFromFormat('!d-m-Y', $dateString);
+            }
+
+            return Carbon::parse($dateString)->startOfDay();
+        } catch (Throwable) {
+            return null;
+        }
+    }
 
     /**
-
-     * Simpan buffer fingerprint ke attendance_records.
-
-     *
-
-     * Local:
-
-     * - sumber attendance tetap attendance_records
-
-     * - tidak membuat payroll
-
-     * - tidak mengubah payroll.daily_attendance
-
-     *
-
-     * Contract History digunakan berdasarkan tanggal attendance,
-
-     * bukan berdasarkan current history saja.
-
+     * Resolves fingerprint identities, lock data and existing attendance in
+     * batches, then writes attendance_records using chunked upserts.
      */
-
-    public static function saveSummaryToDatabase($defaultPeriod)
-
+    public static function saveSummaryToDatabase($defaultPeriod): array
     {
-
-        Log::info(
-
-            "=== MULAI MENYIMPAN BUFFER ABSENSI KE attendance_records ==="
-
-        );
-
-
-
-        if (empty(self::$globalAttendanceBuffer)) {
-
-            Log::warning(
-
-                "Buffer absensi kosong, tidak ada data yang disimpan."
-
-            );
-
-
-
-            return [
-
-                'inserted' => 0,
-
-                'updated' => 0,
-
-                'skipped_locked' => 0,
-
-                'unmatched' => 0,
-
-            ];
-
-        }
-
-
-
-        $inserted = 0;
-
-        $updated = 0;
-
-        $skippedLocked = 0;
-
-        $unmatched = 0;
-
-
-
-        foreach (self::$globalAttendanceBuffer as $periodKey => $employeesData) {
-
-            $targetPeriod = $periodKey ?? $defaultPeriod;
-
-
-
-            Log::info(
-
-                "Memproses periode {$targetPeriod} ("
-
-                . count($employeesData)
-
-                . " karyawan)"
-
-            );
-
-
-
-            foreach ($employeesData as $data) {
-
-                $nikMesin = trim(
-
-                    (string) ($data['nik_mesin'] ?? '')
-
-                );
-
-
-
-                $pinMesin = trim(
-
-                    (string) ($data['pin_mesin'] ?? '')
-
-                );
-
-
-
-                $namaKaryawan = trim(
-
-                    (string) ($data['nama_karyawan'] ?? '')
-
-                );
-
-
-
-                $employee = null;
-
-                $history = null;
-
-
-
-                /*
-
-                 * ==========================================================
-
-                 * 1. CARI CONTRACT HISTORY BERDASARKAN NIK / PIN + TANGGAL
-
-                 * ==========================================================
-
-                 *
-
-                 * Jangan menggunakan currentHistory saja.
-
-                 *
-
-                 * Contoh:
-
-                 * History 1 : 01-01-2026 s/d 25-09-2026
-
-                 * History 2 : 26-09-2026 s/d 25-12-2026
-
-                 *
-
-                 * Absensi 20-09 harus masuk History 1,
-
-                 * walaupun saat import Current History sudah History 2.
-
-                 *
-
-                 * end_date bersifat exclusive:
-
-                 * tanggal end_date sendiri sudah dianggap selesai.
-
-                 */
-
-                foreach ($data['daily'] as $dateString => $status) {
-
-                    try {
-
-                        $attendanceDate = Carbon::parse($dateString);
-
-                    } catch (\Throwable) {
-
-                        continue;
-
-                    }
-
-
-
-                    $historyQuery = ContractHistoryLocal::query()
-
-                        ->with('contract.employee')
-
-                        ->where(function ($query) use ($nikMesin, $pinMesin) {
-
-                            if (!empty($nikMesin)) {
-
-                                $query->orWhere(
-
-                                    'nik_fingerprint',
-
-                                    $nikMesin
-
-                                );
-
-                            }
-
-
-
-                            if (!empty($pinMesin)) {
-
-                                $query->orWhere(
-
-                                    'fingerprint_pin',
-
-                                    $pinMesin
-
-                                );
-
-                            }
-
-                        })
-
-                        ->whereDate(
-
-                            'start_date',
-
-                            '<=',
-
-                            $attendanceDate->format('Y-m-d')
-
-                        )
-
-                        ->where(function ($query) use ($attendanceDate) {
-
-                            $query
-
-                                ->whereNull('end_date')
-
-                                ->orWhereDate(
-
-                                    'end_date',
-
-                                    '>',
-
-                                    $attendanceDate->format('Y-m-d')
-
-                                );
-
-                        })
-
-                        ->orderByDesc('start_date');
-
-
-
-                    $history = $historyQuery->first();
-
-
-
-                    if ($history) {
-
-                        $employee = $history->contract?->employee;
-
-                        break;
-
-                    }
-
-                }
-
-
-
-                /*
-
-                 * ==========================================================
-
-                 * 2. FALLBACK CARI EMPLOYEE BERDASARKAN NAMA
-
-                 * ==========================================================
-
-                 */
-
-                if (!$employee && !empty($namaKaryawan)) {
-
-                    $employee = Employee::query()
-
-                        ->whereRaw(
-
-                            'LOWER(TRIM(full_name)) = ?',
-
-                            [strtolower($namaKaryawan)]
-
-                        )
-
-                        ->first();
-
-
-
-                    if (!$employee) {
-
-                        $employee = Employee::query()
-
-                            ->whereRaw(
-
-                                'LOWER(TRIM(full_name)) LIKE ?',
-
-                                [
-
-                                    '%'
-
-                                    . strtolower($namaKaryawan)
-
-                                    . '%',
-
-                                ]
-
-                            )
-
-                            ->first();
-
-                    }
-
-
-
-                    if ($employee) {
-
-                        foreach ($data['daily'] as $dateString => $status) {
-
-                            try {
-
-                                $attendanceDate = Carbon::parse($dateString);
-
-                            } catch (\Throwable) {
-
-                                continue;
-
-                            }
-
-
-
-                            $history = $employee->contract?->histories()
-
-                                ->whereDate(
-
-                                    'start_date',
-
-                                    '<=',
-
-                                    $attendanceDate->format('Y-m-d')
-
-                                )
-
-                                ->where(function ($query) use ($attendanceDate) {
-
-                                    $query
-
-                                        ->whereNull('end_date')
-
-                                        ->orWhereDate(
-
-                                            'end_date',
-
-                                            '>',
-
-                                            $attendanceDate->format('Y-m-d')
-
-                                        );
-
-                                })
-
-                                ->orderByDesc('start_date')
-
-                                ->first();
-
-
-
-                            if ($history) {
-
-                                break;
-
-                            }
-
-                        }
-
-                    }
-
-                }
-
-
-
-                /*
-
-                 * Tidak boleh menyimpan absensi kalau employee/history
-
-                 * tidak berhasil ditemukan.
-
-                 */
-
-                if (!$employee || !$history) {
-
-                    $unmatched++;
-
-
-
-                    Log::warning(
-
-                        "Karyawan absensi / Contract History tidak ditemukan.",
-
-                        [
-
-                            'nik' => $nikMesin,
-
-                            'pin' => $pinMesin,
-
-                            'nama' => $namaKaryawan,
-
-                            'period' => $targetPeriod,
-
-                        ]
-
-                    );
-
-
-
-                    continue;
-
-                }
-
-
-
-                /*
-
-                 * ==========================================================
-
-                 * 3. AUTO-BIND NIK / PIN KE HISTORY YANG BERLAKU
-
-                 * ==========================================================
-
-                 *
-
-                 * Jadi binding juga mengikuti period attendance.
-
-                 */
-
-                $updateData = [];
-
-
-
-                if (
-
-                    !empty($nikMesin)
-
-                    && empty($history->nik_fingerprint)
-
-                ) {
-
-                    $updateData['nik_fingerprint'] = $nikMesin;
-
-                }
-
-
-
-                if (
-
-                    !empty($pinMesin)
-
-                    && empty($history->fingerprint_pin)
-
-                ) {
-
-                    $updateData['fingerprint_pin'] = $pinMesin;
-
-                }
-
-
-
-                if (!empty($updateData)) {
-
-                    $history->update($updateData);
-
-                    $history->refresh();
-
-                }
-
-
-
-                $empId = $employee->id_employee;
-
-
-
-                /*
-
-                 * ==========================================================
-
-                 * 4. CEK PAYROLL LOCK
-
-                 * ==========================================================
-
-                 *
-
-                 * Attendance < cutoff:
-
-                 *   locked -> tidak boleh diubah
-
-                 *
-
-                 * Attendance >= cutoff:
-
-                 *   masih boleh masuk / update sebagai gantungan.
-
-                 */
-
-                $payroll = \App\Models\Payroll::query()
-
-                    ->where('employee_id', $empId)
-
-                    ->where('period_month', $targetPeriod)
-
-                    ->first();
-
-
-
-                $isLocked = (bool) ($payroll?->is_locked ?? false);
-
-
-
-                $cutoffDay = (int) (
-
-                    $payroll?->cutoff_day ?? 26
-
-                );
-
-
-
-                /*
-
-                 * ==========================================================
-
-                 * 5. SIMPAN SETIAP TANGGAL
-
-                 * ==========================================================
-
-                 */
-
-                foreach ($data['daily'] as $dateString => $status) {
-
-                    try {
-
-                        $attendanceDate = Carbon::parse($dateString);
-
-
-
-                        if (
-
-                            $attendanceDate->format('Y-m')
-
-                            !== $targetPeriod
-
-                        ) {
-
-                            Log::warning(
-
-                                "Tanggal attendance di luar periode.",
-
-                                [
-
-                                    'employee_id' => $empId,
-
-                                    'date' => $dateString,
-
-                                    'period' => $targetPeriod,
-
-                                ]
-
-                            );
-
-
-
-                            continue;
-
-                        }
-
-
-
-                        /*
-
-                         * Pastikan tanggal tersebut memang masih berada
-
-                         * dalam salah satu Contract History.
-
-                         */
-
-                        $dateHistory = ContractHistoryLocal::query()
-
-                            ->where('id_contract_history', $history->id_contract_history)
-
-                            ->whereDate(
-
-                                'start_date',
-
-                                '<=',
-
-                                $dateString
-
-                            )
-
-                            ->where(function ($query) use ($dateString) {
-
-                                $query
-
-                                    ->whereNull('end_date')
-
-                                    ->orWhereDate(
-
-                                        'end_date',
-
-                                        '>',
-
-                                        $dateString
-
-                                    );
-
-                            })
-
-                            ->first();
-
-
-
-                        if (!$dateHistory) {
-
-                            Log::warning(
-
-                                "Attendance berada di luar Contract History.",
-
-                                [
-
-                                    'employee_id' => $empId,
-
-                                    'date' => $dateString,
-
-                                    'period' => $targetPeriod,
-
-                                ]
-
-                            );
-
-
-
-                            continue;
-
-                        }
-
-
-
-                        $dayNumber = (int) $attendanceDate->format('j');
-
-
-
-                        if (
-
-                            $isLocked
-
-                            && $dayNumber < $cutoffDay
-
-                        ) {
-
-                            $skippedLocked++;
-
-
-
-                            Log::info(
-
-                                "Attendance dikunci, tanggal dilewati.",
-
-                                [
-
-                                    'employee_id' => $empId,
-
-                                    'date' => $dateString,
-
-                                    'cutoff' => $cutoffDay,
-
-                                ]
-
-                            );
-
-
-
-                            continue;
-
-                        }
-
-
-
-                        $existingRecord = AttendanceRecord::query()
-
-                            ->where('employee_id', $empId)
-
-                            ->whereDate(
-
-                                'attendance_date',
-
-                                $dateString
-
-                            )
-
-                            ->first();
-
-
-
-                        AttendanceRecord::updateOrCreate(
-
-                            [
-
-                                'employee_id' => $empId,
-
-                                'attendance_date' => $dateString,
-
-                            ],
-
-                            [
-
-                                'status' => $status ?: 'H',
-
-                                'source' => 'fingerprint',
-
-                            ]
-
-                        );
-
-
-
-                        if ($existingRecord) {
-
-                            $updated++;
-
-                        } else {
-
-                            $inserted++;
-
-                        }
-
-
-
-                    } catch (\Throwable $e) {
-
-                        Log::error(
-
-                            "Gagal menyimpan attendance.",
-
-                            [
-
-                                'employee_id' => $empId,
-
-                                'date' => $dateString,
-
-                                'error' => $e->getMessage(),
-
-                            ]
-
-                        );
-
-                    }
-
-                }
-
-            }
-
-        }
-
-
-
-        self::$globalAttendanceBuffer = [];
-
-
-
-        Log::info(
-
-            "=== SELESAI MENYIMPAN attendance_records ===",
-
-            [
-
-                'inserted' => $inserted,
-
-                'updated' => $updated,
-
-                'skipped_locked' => $skippedLocked,
-
-                'unmatched' => $unmatched,
-
-            ]
-
-        );
-
-
-
-        return [
-
-            'inserted' => $inserted,
-
-            'updated' => $updated,
-
-            'skipped_locked' => $skippedLocked,
-
-            'unmatched' => $unmatched,
-
+        $summary = [
+            'inserted' => 0,
+            'updated' => 0,
+            'unchanged' => 0,
+            'skipped_locked' => 0,
+            'skipped_manual' => 0,
+            'unmatched' => 0,
         ];
 
+        if (empty(self::$globalAttendanceBuffer)) {
+            return $summary;
+        }
+
+        try {
+            foreach (self::$globalAttendanceBuffer as $periodKey => $employeesData) {
+                $targetPeriod = $periodKey ?: $defaultPeriod;
+                $periodStart = Carbon::createFromFormat('!Y-m-d', $targetPeriod . '-01');
+                $periodEnd = $periodStart->copy()->endOfMonth();
+                $periodStartString = $periodStart->toDateString();
+                $periodEndString = $periodEnd->toDateString();
+
+                $niks = [];
+                $pins = [];
+                $names = [];
+
+                foreach ($employeesData as $data) {
+                    $nik = trim((string) ($data['nik_mesin'] ?? ''));
+                    $pin = trim((string) ($data['pin_mesin'] ?? ''));
+                    $name = trim((string) ($data['nama_karyawan'] ?? ''));
+
+                    if ($nik !== '') {
+                        $niks[$nik] = $nik;
+                    }
+                    if ($pin !== '') {
+                        $pins[$pin] = $pin;
+                    }
+                    if ($name !== '') {
+                        $names[mb_strtolower($name)] = $name;
+                    }
+                }
+
+                // Satu query untuk seluruh candidate contract history periode ini.
+                $historyQuery = ContractHistoryLocal::query()
+                    ->with('contract.employee')
+                    ->where(function ($query) use ($niks, $pins): void {
+                        if ($niks !== []) {
+                            $query->whereIn('nik_fingerprint', array_values($niks));
+                        }
+                        if ($pins !== []) {
+                            if ($niks !== []) {
+                                $query->orWhereIn('fingerprint_pin', array_values($pins));
+                            } else {
+                                $query->whereIn('fingerprint_pin', array_values($pins));
+                            }
+                        }
+                    })
+                    ->orderByDesc('start_date');
+
+                $identityHistories = ($niks !== [] || $pins !== [])
+                    ? $historyQuery->get()
+                    : collect();
+
+                $historiesByNik = [];
+                $historiesByPin = [];
+
+                foreach ($identityHistories as $history) {
+                    $historyNik = trim((string) ($history->nik_fingerprint ?? ''));
+                    $historyPin = trim((string) ($history->fingerprint_pin ?? ''));
+
+                    if ($historyNik !== '') {
+                        $historiesByNik[$historyNik][$history->id_contract_history] = $history;
+                    }
+                    if ($historyPin !== '') {
+                        $historiesByPin[$historyPin][$history->id_contract_history] = $history;
+                    }
+                }
+
+                // Fallback exact-name candidates dimuat sekaligus, bukan per karyawan.
+                $fallbackEmployees = collect();
+                foreach (array_chunk(array_values($names), 50) as $nameChunk) {
+                    $chunkNames = array_map(
+                        static fn (string $name): string => mb_strtolower(trim($name)),
+                        $nameChunk
+                    );
+
+                    $found = Employee::query()
+                        ->with('contract.histories')
+                        ->where(function ($query) use ($chunkNames): void {
+                            foreach ($chunkNames as $name) {
+                                $query->orWhereRaw('LOWER(TRIM(full_name)) = ?', [$name]);
+                            }
+                        })
+                        ->get();
+
+                    $fallbackEmployees = $fallbackEmployees->concat($found);
+                }
+
+                $fallbackEmployeesByName = $fallbackEmployees->keyBy(
+                    static fn (Employee $employee): string => mb_strtolower(trim((string) $employee->full_name))
+                );
+
+                $resolvedRows = [];
+                $resolvedEmployeeIds = [];
+                $historyUpdates = [];
+                $fallbackCache = [];
+
+                foreach ($employeesData as $data) {
+                    $nik = trim((string) ($data['nik_mesin'] ?? ''));
+                    $pin = trim((string) ($data['pin_mesin'] ?? ''));
+                    $name = trim((string) ($data['nama_karyawan'] ?? ''));
+                    $normalizedName = mb_strtolower($name);
+                    $candidateHistories = [];
+
+                    if ($nik !== '' && !empty($historiesByNik[$nik])) {
+                        $candidateHistories += $historiesByNik[$nik];
+                    }
+                    if ($pin !== '' && !empty($historiesByPin[$pin])) {
+                        $candidateHistories += $historiesByPin[$pin];
+                    }
+
+                    $employeeFallback = null;
+                    if ($candidateHistories === [] && $normalizedName !== '') {
+                        $employeeFallback = $fallbackEmployeesByName->get($normalizedName);
+
+                        // Pertahankan fallback substring lama hanya untuk nama yang tidak exact-match.
+                        if (!$employeeFallback && !array_key_exists($normalizedName, $fallbackCache)) {
+                            $employeeFallback = Employee::query()
+                                ->with('contract.histories')
+                                ->whereRaw('LOWER(TRIM(full_name)) LIKE ?', ['%' . $normalizedName . '%'])
+                                ->orderByRaw('CHAR_LENGTH(full_name) ASC')
+                                ->first();
+                            $fallbackCache[$normalizedName] = $employeeFallback;
+                        } elseif (!$employeeFallback) {
+                            $employeeFallback = $fallbackCache[$normalizedName];
+                        }
+                    }
+
+                    if ($candidateHistories !== []) {
+                        uasort($candidateHistories, static function ($left, $right): int {
+                            return strcmp(
+                                (string) ($right->start_date?->format('Y-m-d') ?? ''),
+                                (string) ($left->start_date?->format('Y-m-d') ?? '')
+                            );
+                        });
+                    }
+
+                    $groupMatched = false;
+
+                    foreach (($data['daily'] ?? []) as $dateString => $status) {
+                        if (!is_string($dateString) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateString)) {
+                            continue;
+                        }
+
+                        if (substr($dateString, 0, 7) !== $targetPeriod) {
+                            continue;
+                        }
+
+                        $history = self::findHistoryForDate($candidateHistories, $dateString);
+                        $employee = $history?->contract?->employee;
+
+                        // Bila NIK/PIN belum terikat pada history periode tersebut, gunakan fallback nama.
+                        if ((!$history || !$employee) && $employeeFallback) {
+                            $fallbackHistories = $employeeFallback->contract?->histories ?? collect();
+                            $history = self::findHistoryForDate($fallbackHistories, $dateString);
+                            $employee = $history ? $employeeFallback : null;
+                        }
+
+                        if (!$history || !$employee) {
+                            continue;
+                        }
+
+                        $groupMatched = true;
+                        $employeeId = (int) $employee->id_employee;
+                        $resolvedEmployeeIds[$employeeId] = $employeeId;
+
+                        // Auto-bind identifier tetap dipertahankan, tetapi hanya satu kali per history.
+                        $historyId = (int) $history->id_contract_history;
+                        $historyUpdates[$historyId] ??= [
+                            'model' => $history,
+                            'changes' => [],
+                        ];
+
+                        if ($nik !== '' && empty($history->nik_fingerprint)) {
+                            $historyUpdates[$historyId]['changes']['nik_fingerprint'] = $nik;
+                            $history->nik_fingerprint = $nik;
+                        }
+                        if ($pin !== '' && empty($history->fingerprint_pin)) {
+                            $historyUpdates[$historyId]['changes']['fingerprint_pin'] = $pin;
+                            $history->fingerprint_pin = $pin;
+                        }
+
+                        $resolvedRows[] = [
+                            'employee_id' => $employeeId,
+                            'attendance_date' => $dateString,
+                            'status' => $status ?: 'H',
+                            'day' => (int) substr($dateString, 8, 2),
+                        ];
+                    }
+
+                    if (!$groupMatched) {
+                        $summary['unmatched']++;
+                        Log::warning('Karyawan fingerprint / contract history tidak ditemukan untuk periode absensi.', [
+                            'nik' => $nik,
+                            'pin' => $pin,
+                            'nama' => $name,
+                            'period' => $targetPeriod,
+                        ]);
+                    }
+                }
+
+                if ($resolvedRows === []) {
+                    foreach ($historyUpdates as $update) {
+                        if ($update['changes'] !== []) {
+                            $update['model']->update($update['changes']);
+                        }
+                    }
+                    continue;
+                }
+
+                // Payroll lock diambil sekali untuk seluruh employee periode ini.
+                $payrollRows = Payroll::query()
+                    ->where('period_month', $targetPeriod)
+                    ->whereIn('employee_id', array_values($resolvedEmployeeIds))
+                    ->orderBy('id_payroll')
+                    ->get(['id_payroll', 'employee_id', 'is_locked', 'cutoff_day']);
+
+                $payrollByEmployee = [];
+                foreach ($payrollRows as $payroll) {
+                    $employeeId = (int) $payroll->employee_id;
+                    $payrollByEmployee[$employeeId] ??= $payroll;
+                }
+
+                // Attendance existing diambil sekali per periode, bukan per hari.
+                $existingRecords = AttendanceRecord::query()
+                    ->whereIn('employee_id', array_values($resolvedEmployeeIds))
+                    ->whereBetween('attendance_date', [$periodStartString, $periodEndString])
+                    ->get(['employee_id', 'attendance_date', 'status', 'source'])
+                    ->keyBy(static function (AttendanceRecord $record): string {
+                        $date = $record->attendance_date instanceof Carbon
+                            ? $record->attendance_date->format('Y-m-d')
+                            : Carbon::parse($record->attendance_date)->format('Y-m-d');
+                        return (int) $record->employee_id . '|' . $date;
+                    });
+
+                $upserts = [];
+                $now = now();
+
+                foreach ($resolvedRows as $row) {
+                    $employeeId = $row['employee_id'];
+                    $payroll = $payrollByEmployee[$employeeId] ?? null;
+                    $isLocked = (bool) ($payroll?->is_locked ?? false);
+                    $cutoffDay = max(1, min(31, (int) ($payroll?->cutoff_day ?? 26)));
+
+                    if ($isLocked && $row['day'] < $cutoffDay) {
+                        $summary['skipped_locked']++;
+                        continue;
+                    }
+
+                    $key = $employeeId . '|' . $row['attendance_date'];
+                    $existing = $existingRecords->get($key);
+                    $existingSource = strtolower(trim((string) ($existing?->source ?? '')));
+
+                    // Catatan manual dari UI / Excel selalu menang terhadap fingerprint.
+                    if ($existing && in_array($existingSource, self::MANUAL_SOURCES, true)) {
+                        $summary['skipped_manual']++;
+                        continue;
+                    }
+
+                    $status = strtoupper(trim((string) $row['status']));
+                    $currentStatus = strtoupper(trim((string) ($existing?->status ?? '')));
+
+                    if ($existing && $currentStatus === $status) {
+                        $summary['unchanged']++;
+                        continue;
+                    }
+
+                    if ($existing) {
+                        $summary['updated']++;
+                    } else {
+                        $summary['inserted']++;
+                    }
+
+                    $upserts[] = [
+                        'employee_id' => $employeeId,
+                        'attendance_date' => $row['attendance_date'],
+                        'status' => $status,
+                        'source' => 'fingerprint',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+
+                DB::transaction(function () use ($upserts, $historyUpdates): void {
+                    // Simpan auto-binding NIK/PIN satu kali per contract history.
+                    foreach ($historyUpdates as $update) {
+                        if ($update['changes'] !== []) {
+                            $update['model']->update($update['changes']);
+                        }
+                    }
+
+                    foreach (array_chunk($upserts, 500) as $chunk) {
+                        AttendanceRecord::query()->upsert(
+                            $chunk,
+                            ['employee_id', 'attendance_date'],
+                            ['status', 'source', 'updated_at']
+                        );
+                    }
+                });
+            }
+        } finally {
+            // Mencegah buffer tertinggal pada worker PHP yang hidup lebih dari satu request.
+            self::$globalAttendanceBuffer = [];
+        }
+
+        Log::info('Import fingerprint selesai.', $summary);
+
+        return $summary;
     }
 
+    /**
+     * Pilih contract history yang efektif pada tanggal absensi.
+     * end_date tetap exclusive, mengikuti perilaku sistem sebelumnya.
+     */
+    private static function findHistoryForDate(iterable $histories, string $dateString): ?ContractHistoryLocal
+    {
+        foreach ($histories as $history) {
+            $startDate = $history->start_date instanceof Carbon
+                ? $history->start_date->format('Y-m-d')
+                : (string) $history->start_date;
+            $endDate = $history->end_date instanceof Carbon
+                ? $history->end_date->format('Y-m-d')
+                : ($history->end_date ? (string) $history->end_date : null);
+
+            if ($startDate !== '' && $startDate <= $dateString && ($endDate === null || $endDate === '' || $endDate > $dateString)) {
+                return $history;
+            }
+        }
+
+        return null;
+    }
 }

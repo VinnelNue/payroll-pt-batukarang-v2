@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Imports\AttendanceImport;
+use App\Imports\PayrollCalendarAttendanceImport;
 use App\Exports\PayrollLocalExport;
 use App\Mail\SalarySlipMail;
 use App\Models\CompanySetting;
@@ -706,6 +707,10 @@ class PayrollController extends Controller
 
         try {
 
+            // Buang buffer dari proses sebelumnya, terutama bila aplikasi
+            // berjalan pada worker PHP yang tidak langsung berhenti.
+            AttendanceImport::resetBuffer();
+
             if ($extension === 'zip') {
 
                 $zip = new ZipArchive();
@@ -906,6 +911,46 @@ class PayrollController extends Controller
                     );
             }
 
+            // Coba kenali workbook payroll hasil export terlebih dahulu.
+            // Workbook tersebut memiliki sheet "Detail Lengkap" dengan ID
+            // karyawan internal tersembunyi dan kalender tanggal asli.
+            $calendarImport = new PayrollCalendarAttendanceImport(
+                $period,
+                $this->getPeriodCutoffDay($period),
+                Payroll::query()
+                    ->where('period_month', $period)
+                    ->where('is_locked', true)
+                    ->exists()
+            );
+
+            Excel::import($calendarImport, $file);
+
+            if ($calendarImport->sheetWasFound()) {
+                if (!$calendarImport->wasRecognized()) {
+                    return redirect()
+                        ->back()
+                        ->with(
+                            'error',
+                            'Sheet Detail Lengkap ditemukan, tetapi bukan template export payroll terbaru. Silakan export ulang sebelum melakukan import.'
+                        );
+                }
+
+                $summary = $calendarImport->summary();
+
+                return redirect()
+                    ->back()
+                    ->with(
+                        'success',
+                        'Import kalender payroll selesai. '
+                        . 'Baru: ' . $summary['inserted'] . ', '
+                        . 'update: ' . $summary['updated'] . ', '
+                        . 'tetap: ' . $summary['unchanged'] . ', '
+                        . 'dilewati karena terkunci: ' . $summary['skipped_locked'] . ', '
+                        . 'placeholder: ' . $summary['skipped_placeholder'] . '.'
+                    );
+            }
+
+            // Bukan workbook payroll: pertahankan jalur import fingerprint lama.
             Excel::import(
                 new AttendanceImport($period),
                 $file
@@ -919,7 +964,7 @@ class PayrollController extends Controller
                 ->back()
                 ->with(
                     'success',
-                    'File absensi berhasil diimpor!'
+                    'File absensi fingerprint berhasil diimpor!'
                 );
 
         } catch (Throwable $e) {

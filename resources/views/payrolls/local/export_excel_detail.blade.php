@@ -153,12 +153,16 @@
     $bpjsCount = $showBpjsColumns ? 2 : 0;
     $financialCount = $showFinancialColumns ? 9 : 0;
 
+    // Satu kolom metadata internal untuk employee_id.
+    // Kolom ini disembunyikan oleh PayrollLocalViewSheet dan dipakai
+    // hanya untuk import balik absensi dari worksheet Detail Lengkap.
     $columnCount =
         $identityCount
         + $dayCount
         + $totalCount
         + $bpjsCount
-        + $financialCount;
+        + $financialCount
+        + 1;
 
     /*
     |--------------------------------------------------------------------------
@@ -1011,6 +1015,19 @@
             </th>
 
         @endif
+
+        <th
+            style="
+                width:1px;
+                max-width:1px;
+                border:0;
+                color:#ffffff;
+                font-size:1px;
+                padding:0;
+            "
+        >
+            _EMPLOYEE_ID
+        </th>
     </tr>
 
     {{-- ============================================================
@@ -1810,6 +1827,20 @@
                     @endif
 
                 @endif
+
+                {{-- Hidden import key: never use row number or employee name as identity. --}}
+                <td
+                    style="
+                        width:1px;
+                        max-width:1px;
+                        border:0;
+                        color:#ffffff;
+                        font-size:1px;
+                        padding:0;
+                    "
+                >
+                    {{ (int) $employee->id_employee }}
+                </td>
 
             </tr>
 
