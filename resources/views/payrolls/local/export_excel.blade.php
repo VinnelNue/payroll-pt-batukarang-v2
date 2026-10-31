@@ -595,7 +595,7 @@
             rowspan="2"
             style="
                 border:1px solid #000;
-                background:#d9eaf7;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -608,7 +608,7 @@
             rowspan="2"
             style="
                 border:1px solid #000;
-                background:#d9eaf7;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -621,7 +621,7 @@
             rowspan="2"
             style="
                 border:1px solid #000;
-                background:#d9eaf7;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -635,7 +635,7 @@
             rowspan="2"
             style="
                 border:1px solid #000;
-                background:#d9eaf7;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -648,7 +648,7 @@
             rowspan="2"
             style="
                 border:1px solid #000;
-                background:#d9eaf7;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -664,7 +664,7 @@
             colspan="{{ $dayCount }}"
             style="
                 border:1px solid #000;
-                background:#9dc3e6;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -677,7 +677,7 @@
             colspan="{{ $totalCount }}"
             style="
                 border:1px solid #000;
-                background:#bdd7ee;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -691,7 +691,7 @@
                 colspan="2"
                 style="
                     border:1px solid #000;
-                    background:#bdd7ee;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -706,7 +706,7 @@
                 colspan="9"
                 style="
                     border:1px solid #000;
-                    background:#c6e0b4;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -777,7 +777,7 @@
         <th
             style="
                 border:1px solid #000;
-                background:#eaf3f8;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -789,7 +789,7 @@
         <th
             style="
                 border:1px solid #000;
-                background:#fde9e7;
+                background:#ffffff;
                 color:#ff0000;
                 text-align:center;
                 vertical-align:middle;
@@ -803,7 +803,7 @@
         <th
             style="
                 border:1px solid #000;
-                background:#e2f0d9;
+                background:#ffffff;
                 color:#008000;
                 text-align:center;
                 vertical-align:middle;
@@ -817,7 +817,7 @@
         <th
             style="
                 border:1px solid #000;
-                background:#d9eaf7;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -829,7 +829,7 @@
         <th
             style="
                 border:1px solid #000;
-                background:#e7e6e6;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -842,7 +842,7 @@
 <th
             style="
                 border:1px solid #000;
-                background:#e9d5ff;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -855,7 +855,7 @@
         <th
             style="
                 border:1px solid #000;
-                background:#d9ead3;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -868,7 +868,7 @@
 <th
             style="
                 border:1px solid #000;
-                background:#fce4d6;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -883,7 +883,7 @@
 <th
             style="
                 border:1px solid #000;
-                background:#fff2cc;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -897,7 +897,7 @@
 <th
             style="
                 border:1px solid #000;
-                background:#d9e1f2;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -913,7 +913,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#fff2cc;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -927,7 +927,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#fff2cc;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -945,7 +945,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#e2f0d9;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -957,7 +957,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#fde9e7;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -969,7 +969,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#fde9e7;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -982,7 +982,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#fde9e7;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -995,7 +995,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#e2f0d9;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -1008,7 +1008,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#e2f0d9;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -1020,7 +1020,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#fde9e7;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -1032,7 +1032,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#c6e0b4;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -1044,7 +1044,7 @@
             <th
                 style="
                     border:1px solid #000;
-                    background:#a9d18e;
+                    background:#ffffff;
                     text-align:center;
                     vertical-align:middle;
                     font-weight:800;
@@ -1102,7 +1102,7 @@
                 colspan="{{ $columnCount }}"
                 style="
                     border:1px solid #000;
-                    background:#d9eaf7;
+                    background:#ffffff;
                     font-weight:800;
                     padding:2px 5px;
                     text-align:left;
@@ -1465,25 +1465,7 @@
                                 $date->format('Y-m-d')
                             ] ?? '-';
 
-                        $statusBg =
-                            match ($status) {
-                                'A',
-                                'I'
-                                    => '#ffd9d9',
-
-                                'H0.5'
-                                    => '#fff2cc',
-
-                                'HB',
-                                'M/HB'
-                                    => '#e7e6e6',
-
-                                'CM'
-                                    => '#eadcf8',
-
-                                default
-                                    => '#ffffff',
-                            };
+                        $statusBg = '#ffffff';
 
                         $statusColor =
                             match ($status) {
@@ -1910,7 +1892,7 @@
             )
 
                 @php $dailyTotalValue = (float) ($departmentDailyTotals[$date->format('Y-m-d')] ?? 0); @endphp
-                <td style="border:1px solid #000;background:#f2f2f2;text-align:center;font-weight:800;">{{ $formatDayTotal($dailyTotalValue) }}</td>
+                <td style="border:1px solid #000;background:#ffffff;text-align:center;font-weight:800;">{{ $formatDayTotal($dailyTotalValue) }}</td>
 
             @endforeach
 
@@ -2209,7 +2191,7 @@
             colspan="{{ $identityCount }}"
             style="
                 border:1px solid #000;
-                background:#d9eaf7;
+                background:#ffffff;
                 font-weight:800;
                 text-align:center;
             "
@@ -2226,7 +2208,7 @@
         )
 
             @php $dailyTotalValue = (float) ($dailyGrandTotals[$date->format('Y-m-d')] ?? 0); @endphp
-            <td style="border:1px solid #000;background:#eaf3f8;text-align:center;font-weight:800;">{{ $formatDayTotal($dailyTotalValue) }}</td>
+            <td style="border:1px solid #000;background:#ffffff;text-align:center;font-weight:800;">{{ $formatDayTotal($dailyTotalValue) }}</td>
 
         @endforeach
 

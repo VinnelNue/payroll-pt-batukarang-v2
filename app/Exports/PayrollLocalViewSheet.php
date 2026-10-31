@@ -182,7 +182,8 @@ class PayrollLocalViewSheet implements FromArray, WithEvents, WithTitle
                 $this->applyTableStyles($sheet);
                 $this->applyRowHeights($sheet);
 
-                $sheet->setShowGridlines(false);
+                // Layout follows the supplied company attendance workbook.
+                $sheet->setShowGridlines(true);
 
                 $isFinanceRole = in_array(
                     $this->userRole,
@@ -201,32 +202,28 @@ class PayrollLocalViewSheet implements FromArray, WithEvents, WithTitle
                 $showBpjsColumns = $isFinanceRole || $isHeadHrd;
                 $showFinancialColumns = $isFinanceRole;
 
-                $sheet->freezePane(
-                    Coordinate::stringFromColumnIndex($firstAttendanceColumn) . '6'
-                );
-
-                $sheet->getColumnDimension('A')->setWidth(4.5);
-                $sheet->getColumnDimension('B')->setWidth(26);
-                $sheet->getColumnDimension('C')->setWidth(40);
+                // Widths are based on the original GLOBAL worksheet.
+                $sheet->getColumnDimension('A')->setWidth(2.81);
+                $sheet->getColumnDimension('B')->setWidth(19.90);
+                $sheet->getColumnDimension('C')->setWidth(35.17);
 
                 if ($isFinanceRole) {
-                    $sheet->getColumnDimension('D')->setWidth(8);
-                    $sheet->getColumnDimension('E')->setWidth(6);
+                    $sheet->getColumnDimension('D')->setWidth(4.99);
+                    $sheet->getColumnDimension('E')->setWidth(4.17);
                 }
 
                 for ($i = 0; $i < $daysInMonth; $i++) {
                     $index = $firstAttendanceColumn + $i;
                     $sheet->getColumnDimension(
                         Coordinate::stringFromColumnIndex($index)
-                    )->setWidth(3.1);
+                    )->setWidth(3.99);
                 }
 
                 $summaryWidths = $this->isCompact
-                    ? [8, 10, 10, 8, 7, 9]
-                    : [8, 10, 10, 8, 7, 7, 9, 9, 10, 9];
+                    ? [7.53, 6.44, 4.26, 6.53, 4.72, 4.72]
+                    : [7.53, 6.44, 4.26, 6.53, 4.72, 4.72, 7.53, 7.53, 7.53, 6.44];
 
                 $columnIndex = $firstAttendanceColumn + $daysInMonth;
-
                 foreach ($summaryWidths as $width) {
                     $sheet->getColumnDimension(
                         Coordinate::stringFromColumnIndex($columnIndex)
@@ -237,17 +234,17 @@ class PayrollLocalViewSheet implements FromArray, WithEvents, WithTitle
                 if ($showBpjsColumns) {
                     $sheet->getColumnDimension(
                         Coordinate::stringFromColumnIndex($columnIndex)
-                    )->setWidth(15);
+                    )->setWidth(11.53);
                     $columnIndex++;
 
                     $sheet->getColumnDimension(
                         Coordinate::stringFromColumnIndex($columnIndex)
-                    )->setWidth(15);
+                    )->setWidth(11.99);
                     $columnIndex++;
                 }
 
                 if ($showFinancialColumns) {
-                    foreach ([13, 13, 15, 13, 15, 14, 12, 14, 16] as $width) {
+                    foreach ([9.5, 9.5, 11.0, 9.5, 11.0, 11.0, 9.0, 11.0, 12.5] as $width) {
                         $sheet->getColumnDimension(
                             Coordinate::stringFromColumnIndex($columnIndex)
                         )->setWidth($width);
@@ -259,20 +256,29 @@ class PayrollLocalViewSheet implements FromArray, WithEvents, WithTitle
                     $internalIdColumn = Coordinate::stringFromColumnIndex($columnIndex);
                     $sheet->getColumnDimension($internalIdColumn)->setWidth(2);
                     $sheet->getColumnDimension($internalIdColumn)->setVisible(false);
+
+                    // The reference detail sheet keeps employee identity and
+                    // the six heading rows visible while scrolling.
+                    $sheet->freezePane(
+                        Coordinate::stringFromColumnIndex($firstAttendanceColumn) . '7'
+                    );
                 }
 
                 $sheet->getPageSetup()
                     ->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)
                     ->setFitToWidth(1)
                     ->setFitToHeight(0)
-                    ->setPaperSize(PageSetup::PAPERSIZE_A3);
+                    ->setPaperSize(PageSetup::PAPERSIZE_A4);
                 $sheet->getPageSetup()->setFitToPage(true);
+                $sheet->setPrintGridlines(false);
+                $sheet->getSheetView()->setZoomScale(100);
 
+                // Margins mirror the supplied GLOBAL worksheet.
                 $sheet->getPageMargins()
-                    ->setTop(0.25)
-                    ->setRight(0.2)
-                    ->setBottom(0.25)
-                    ->setLeft(0.2);
+                    ->setTop(0.39375)
+                    ->setRight(0.31528)
+                    ->setBottom(0.39375)
+                    ->setLeft(0.15764);
 
                 Log::info('payroll.local.export.sheet_complete', [
                     'period' => $this->period,

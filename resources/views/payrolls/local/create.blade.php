@@ -1079,6 +1079,12 @@ $tableColspan =
                                         $holidayData[$headerDate]
                                     );
 
+                                $isSundayHeader =
+                                    $dt->isSunday();
+
+                                $isRedDateHeader =
+                                    $isSundayHeader || $isHolidayHeader;
+
                             @endphp
 
 
@@ -1086,14 +1092,16 @@ $tableColspan =
                                 style="width:38px;font-size:.72rem;"
                                 @if($isHolidayHeader)
                                     title="{{ $holidayData[$headerDate]['name'] }}"
+                                @elseif($isSundayHeader)
+                                    title="Hari Minggu"
                                 @endif>
 
-                                <div>
+                                <div class="{{ $isRedDateHeader ? 'text-danger fw-bold' : 'text-dark fw-semibold' }}">
                                     {{ $dt->format('d') }}
                                 </div>
 
 
-                                <div class="{{ $isDraftDate ? 'text-dark fw-semibold' : 'text-muted fw-normal' }}"
+                                <div class="{{ $isRedDateHeader ? 'text-danger fw-semibold' : ($isDraftDate ? 'text-dark fw-semibold' : 'text-muted fw-normal') }}"
                                      style="font-size:.6rem;">
 
                                     {{ $dt->format('M') }}
@@ -1103,7 +1111,7 @@ $tableColspan =
 
                                 @if($isHolidayHeader)
 
-                                    <div class="text-success fw-bold"
+                                    <div class="text-danger fw-bold"
                                          style="font-size:.52rem;">
 
                                         HB
@@ -2000,7 +2008,7 @@ $tableColspan =
 
                                         $dateIsAfterContract =
                                             $contract?->end_date
-                                            && $dt->copy()->startOfDay()->greaterThanOrEqualTo(
+                                            && $dt->copy()->startOfDay()->greaterThan(
                                                 \Carbon\Carbon::parse(
                                                     $contract->end_date
                                                 )->startOfDay()
@@ -2041,20 +2049,7 @@ $tableColspan =
                                             onchange="updateStatusColor(this); recalculateSummary(this);"
                                             {{ $isCellLocked ? 'disabled' : '' }}>
 
-
-                                            @if(
-                                                $isSunday
-                                                && $dayStatus === ''
-                                            )
-
-                                                <option value=""
-                                                        selected>
-                                                    -
-                                                </option>
-
-                                            @else
-
-                                                <option value=""
+                                            <option value=""
                                                     {{ $dayStatus === '' ? 'selected' : '' }}>
 
                                                     -
@@ -2144,8 +2139,6 @@ $tableColspan =
                                                     A
 
                                                 </option>
-
-                                            @endif
 
                                         </select>
 

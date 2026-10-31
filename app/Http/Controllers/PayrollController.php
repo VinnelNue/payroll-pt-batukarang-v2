@@ -1186,13 +1186,29 @@ class PayrollController extends Controller
                     $employee =
                         $employees->get($empId);
 
-                    if (
-                        !$employee
-                        ||
-                        !$employee->contract?->currentHistory
-                        ||
-                        !$employee->contract?->currentHistory?->is_active
-                    ) {
+                    $contractHistory =
+                        $employee?->contract?->currentHistory;
+
+                    if (!$employee || !$contractHistory) {
+                        continue;
+                    }
+
+                    $periodStart = Carbon::createFromFormat(
+                        'Y-m-d',
+                        $period . '-01'
+                    )->startOfMonth();
+
+                    $periodEnd = $periodStart->copy()->endOfMonth();
+
+                    $contractEnd = $contractHistory->end_date
+                        ? Carbon::parse($contractHistory->end_date)->startOfDay()
+                        : null;
+
+                    $hasLastWorkingDayInPeriod = $contractEnd
+                        && $contractEnd->gte($periodStart)
+                        && $contractEnd->lte($periodEnd);
+
+                    if (!$contractHistory->is_active && !$hasLastWorkingDayInPeriod) {
                         continue;
                     }
 
@@ -1556,12 +1572,22 @@ class PayrollController extends Controller
                         )->startOfDay()
                         : null;
 
+                $periodStart = $periodDate->copy()->startOfMonth();
+                $periodEnd = $periodDate->copy()->endOfMonth();
+
+                // end_date adalah hari kerja terakhir dan tetap termasuk
+                // dalam periode payroll. History nonaktif tetap diproses
+                // pada bulan yang memuat hari kerja terakhir tersebut.
+                $hasLastWorkingDayInPeriod = $contractEnd
+                    && $contractEnd->gte($periodStart)
+                    && $contractEnd->lte($periodEnd);
+
                 $periodContractInvalid =
-                    !$contract->is_active
+                    (!$contract->is_active && !$hasLastWorkingDayInPeriod)
                     ||
-                    ($contractStart && $periodDate->copy()->endOfMonth()->lt($contractStart))
+                    ($contractStart && $periodEnd->lt($contractStart))
                     ||
-                    ($contractEnd && $periodDate->copy()->startOfMonth()->gte($contractEnd));
+                    ($contractEnd && $periodStart->gt($contractEnd));
 
                 if ($periodContractInvalid) {
 
