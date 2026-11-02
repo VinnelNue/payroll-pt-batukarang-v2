@@ -160,10 +160,27 @@ class PayrollController extends Controller
 
     private function standardWorkDays(): float
     {
-        return (float) CompanySetting::get(
+        $configuredDays = (int) CompanySetting::get(
             'standard_work_days',
             self::DEFAULT_STANDARD_WORK_DAYS
         );
+
+        return in_array($configuredDays, [26, 27], true)
+            ? (float) $configuredDays
+            : (float) self::DEFAULT_STANDARD_WORK_DAYS;
+    }
+
+    private function periodStandardWorkDays(string $period): float
+    {
+        $savedDays = Payroll::query()
+            ->where('period_month', $period)
+            ->whereIn('standard_work_days', [26, 27])
+            ->orderByDesc('id_payroll')
+            ->value('standard_work_days');
+
+        return $savedDays !== null
+            ? (float) $savedDays
+            : $this->standardWorkDays();
     }
 
     private function overtimeRate(): float
@@ -172,6 +189,53 @@ class PayrollController extends Controller
             'overtime_hour_rate',
             self::DEFAULT_OVERTIME_RATE
         );
+    }
+
+    /**
+     * Normalize overtime entries keyed by YYYY-MM-DD.
+     * Only Sundays inside the selected payroll period are accepted.
+     */
+    private function normalizeSundayOvertimeDetails(array $entries, string $period): array
+    {
+        $normalized = [];
+
+        foreach ($entries as $dateKey => $rawHours) {
+            $dateKey = (string) $dateKey;
+
+            if (
+                !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateKey)
+                || !is_numeric($rawHours)
+            ) {
+                continue;
+            }
+
+            try {
+                $date = Carbon::createFromFormat('!Y-m-d', $dateKey);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (
+                !$date
+                || $date->format('Y-m-d') !== $dateKey
+                || $date->format('Y-m') !== $period
+                || !$date->isSunday()
+            ) {
+                continue;
+            }
+
+            $hours = round((float) $rawHours, 1);
+
+            if ($hours <= 0 || $hours > 24) {
+                continue;
+            }
+
+            $normalized[$dateKey] = $hours;
+        }
+
+        ksort($normalized);
+
+        return $normalized;
     }
 
     private function calculateAllowance($contract): float
@@ -363,6 +427,7 @@ class PayrollController extends Controller
             $this->getPeriodCutoffDay($period);
 
         $savedCutoffDay = $cutoffDay;
+        $standardWorkDays = $this->periodStandardWorkDays($period);
 
         $isLocked = Payroll::where(
             'period_month',
@@ -433,8 +498,13 @@ class PayrollController extends Controller
                         'employee_id',
                         'period_month',
                         'cutoff_day',
+                        'standard_work_days',
+                        'paid_days',
+                        'unpaid_days',
                         'daily_attendance',
                         'overtime_hours',
+                        'weekday_overtime_hours',
+                        'sunday_overtime_details',
                         'incentive',
                         'cash_advance',
                         'other_deductions',
@@ -507,6 +577,7 @@ class PayrollController extends Controller
                 'employee_id',
                 'period_month',
                 'cutoff_day',
+                'standard_work_days',
                 'basic_salary',
                 'allowance',
                 'gantungan_days',
@@ -524,7 +595,7 @@ class PayrollController extends Controller
         // Preview harus selalu mewakili gantungan bulan sebelumnya.
         // Payroll snapshot dipakai terlebih dahulu. Bila snapshot
         // masih 0/null tetapi attendance bulan sebelumnya memiliki
-        // A/I/H0.5 pada/setelah tanggal cutoff, helper akan menghitung fallback
+        // A/I/S/H0.5 pada/setelah tanggal cutoff, helper akan menghitung fallback
         // dari attendance agar data lama tetap dapat dipakai.
         // ========================================================
 
@@ -560,6 +631,7 @@ class PayrollController extends Controller
                 'isNextPeriodLocked',
                 'cutoffDay',
                 'savedCutoffDay',
+                'standardWorkDays',
                 'holidays',
                 'previousPayrolls',
                 'previousGantunganPreview',
@@ -1020,11 +1092,31 @@ class PayrollController extends Controller
                 'array',
             ],
 
+            // Legacy field is accepted for compatibility with older forms.
             'payrolls.*.overtime_hours' => [
                 'nullable',
                 'numeric',
                 'min:0',
                 'max:744',
+            ],
+
+            'payrolls.*.weekday_overtime_hours' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:744',
+            ],
+
+            'payrolls.*.sunday_overtime' => [
+                'nullable',
+                'array',
+            ],
+
+            'payrolls.*.sunday_overtime.*' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:24',
             ],
 
             'payrolls.*.incentive' => [
@@ -1170,11 +1262,14 @@ class PayrollController extends Controller
                     );
             }
 
+            $lockedHolidayMap = $this->getHolidayMap($period);
+
             DB::transaction(function () use (
                 $validated,
                 $employees,
                 $period,
-                $cutoffDay
+                $cutoffDay,
+                $lockedHolidayMap
             ) {
 
                 foreach (
@@ -1321,7 +1416,7 @@ class PayrollController extends Controller
                 // ====================================================
 
                 $standardWorkDays =
-                    $this->standardWorkDays();
+                    $this->periodStandardWorkDays($period);
 
                 foreach (
                     $validated['payrolls'] as $empId => $data
@@ -1345,6 +1440,20 @@ class PayrollController extends Controller
                             $period
                         );
 
+                    $dailyAttendance =
+                        $this->buildEffectiveDailyAttendance(
+                            $attendanceRecords,
+                            $period,
+                            $lockedHolidayMap
+                        );
+
+                    $attendanceSummary =
+                        $this->summarizeAttendance(
+                            $dailyAttendance,
+                            $period,
+                            $cutoffDay
+                        );
+
                     $gantunganDays =
                         $this->calculateCurrentGantungan(
                             $attendanceRecords,
@@ -1357,8 +1466,13 @@ class PayrollController extends Controller
                     $allowance =
                         (float) ($payroll->allowance ?? 0);
 
+                    $payrollStandardWorkDays =
+                        in_array((int) ($payroll->standard_work_days ?? 0), [26, 27], true)
+                            ? (float) $payroll->standard_work_days
+                            : $standardWorkDays;
+
                     $gantunganDeduction =
-                        $standardWorkDays > 0
+                        $payrollStandardWorkDays > 0
                             ? (
                                 (
                                     $basicSalary
@@ -1366,13 +1480,28 @@ class PayrollController extends Controller
                                     $allowance
                                 )
                                 /
-                                $standardWorkDays
+                                $payrollStandardWorkDays
                             )
                             *
                             $gantunganDays
                             : 0;
 
                     $payroll->update([
+                        'standard_work_days' =>
+                            $payrollStandardWorkDays,
+
+                        'daily_attendance' =>
+                            $dailyAttendance,
+
+                        'work_days' =>
+                            $attendanceSummary['total_days'],
+
+                        'paid_days' =>
+                            $attendanceSummary['paid_days'],
+
+                        'unpaid_days' =>
+                            $attendanceSummary['unpaid_days'],
+
                         'gantungan_days' =>
                             round($gantunganDays, 1),
 
@@ -1434,6 +1563,12 @@ class PayrollController extends Controller
                 ->addMonth()
                 ->format('Y-m');
 
+        $isNextPeriodLocked =
+            Payroll::query()
+                ->where('period_month', $nextPeriod)
+                ->where('is_locked', true)
+                ->exists();
+
         // ========================================================
         // SETTINGS
         // ========================================================
@@ -1457,7 +1592,7 @@ class PayrollController extends Controller
             );
 
         $standardWorkDays =
-            $this->standardWorkDays();
+            $this->periodStandardWorkDays($period);
 
         $overtimeRate =
             $this->overtimeRate();
@@ -1498,6 +1633,7 @@ class PayrollController extends Controller
                     'gantungan_days',
                     'gantungan_deduction',
                     'cutoff_day',
+                    'standard_work_days',
                     'is_locked',
                 ])
                 ->keyBy(
@@ -1516,6 +1652,8 @@ class PayrollController extends Controller
             $period,
             $periodDate,
             $previousPeriod,
+            $nextPeriod,
+            $isNextPeriodLocked,
             $cutoffDay,
             $existingPeriodLocked,
             $tkRate,
@@ -1601,11 +1739,16 @@ class PayrollController extends Controller
                         ],
                         [
                             'cutoff_day' => $cutoffDay,
+                            'standard_work_days' => $standardWorkDays,
                             'daily_attendance' => [],
                             'work_days' => 0,
+                            'paid_days' => 0,
+                            'unpaid_days' => 0,
                             'unpaid_leave' => 0,
                             'gantungan_days' => 0,
                             'overtime_hours' => 0,
+                            'weekday_overtime_hours' => 0,
+                            'sunday_overtime_details' => [],
                             'basic_salary' => 0,
                             'allowance' => 0,
                             'overtime_pay' => 0,
@@ -1882,7 +2025,7 @@ class PayrollController extends Controller
                 // ====================================================
                 // POTONGAN ABSEN CURRENT
                 //
-                // Hanya A/I/H0.5 < cutoff.
+                // Hanya A/I/S/H0.5 < cutoff.
                 // ====================================================
 
                 $basicSalaryDeduction =
@@ -1985,23 +2128,138 @@ class PayrollController extends Controller
                 // ====================================================
                 // OVERTIME
                 // ====================================================
+                //
+                // Lembur hari kerja tetap menggunakan tarif per jam lama.
+                // Lembur hari Minggu dihitung per tanggal:
+                // <= 7 jam: (upah harian / 7) x jam lembur x 2
+                // > 7 jam : sementara memakai tarif lama per jam.
+                //
+                // Upah harian = (gaji pokok + tunjangan tetap) / standar hari.
+                // ====================================================
 
-                $overtimeHours =
+                $weekdayOvertimeHours =
                     $existingPeriodLocked
                         ? (float) (
-                            $existing?->overtime_hours
+                            $existing?->weekday_overtime_hours
+                            ?? $existing?->overtime_hours
                             ?? 0
                         )
                         : (float) (
-                            $data['overtime_hours']
+                            $data['weekday_overtime_hours']
+                            ?? $data['overtime_hours']
+                            ?? $existing?->weekday_overtime_hours
                             ?? $existing?->overtime_hours
                             ?? 0
                         );
 
+                $sundayOvertimeDetails =
+                    (array) (
+                        $existing?->sunday_overtime_details
+                        ?? []
+                    );
+
+                if (!$existingPeriodLocked) {
+                    $submittedSundayOvertime =
+                        (array) (
+                            $data['sunday_overtime']
+                            ?? []
+                        );
+
+                    $sundayOvertimeDetails =
+                        $this->normalizeSundayOvertimeDetails(
+                            $sundayOvertimeDetails,
+                            $period
+                        );
+
+                    // Inputs that are disabled by the UI are omitted from
+                    // the request. Existing values are kept unless the user
+                    // explicitly submits a replacement or clears that date.
+                    foreach (
+                        $submittedSundayOvertime
+                        as $dateKey => $rawHours
+                    ) {
+                        $dateKey = (string) $dateKey;
+
+                        $validDate = $this->normalizeSundayOvertimeDetails(
+                            [$dateKey => 1],
+                            $period
+                        );
+
+                        if (!array_key_exists($dateKey, $validDate)) {
+                            continue;
+                        }
+
+                        $dayOfMonth = (int) substr($dateKey, 8, 2);
+
+                        if (
+                            $isNextPeriodLocked
+                            && $dayOfMonth >= $cutoffDay
+                        ) {
+                            continue;
+                        }
+
+                        if (
+                            $rawHours === null
+                            || $rawHours === ''
+                            || !is_numeric($rawHours)
+                            || (float) $rawHours <= 0
+                        ) {
+                            unset($sundayOvertimeDetails[$dateKey]);
+                            continue;
+                        }
+
+                        $hours = round((float) $rawHours, 1);
+
+                        if ($hours <= 24) {
+                            $sundayOvertimeDetails[$dateKey] = $hours;
+                        }
+                    }
+
+                    ksort($sundayOvertimeDetails);
+                }
+
+                $sundayOvertimeHours =
+                    array_sum($sundayOvertimeDetails);
+
+                $overtimeHours =
+                    round(
+                        $weekdayOvertimeHours
+                        + $sundayOvertimeHours,
+                        1
+                    );
+
+                $dailyWage =
+                    $standardWorkDays > 0
+                        ? (
+                            ($basicSalary + $allowance)
+                            / $standardWorkDays
+                        )
+                        : 0;
+
+                $sundayOvertimePay = 0.0;
+
+                foreach ($sundayOvertimeDetails as $hours) {
+                    $hours = (float) $hours;
+
+                    if ($hours <= 7) {
+                        $sundayOvertimePay +=
+                            ($dailyWage / 7)
+                            * $hours
+                            * 2;
+                    } else {
+                        // Belum ada ketentuan khusus untuk >7 jam.
+                        // Gunakan perhitungan lama untuk seluruh jam pada tanggal itu.
+                        $sundayOvertimePay +=
+                            $hours * $overtimeRate;
+                    }
+                }
+
                 $overtimePay =
-                    $overtimeHours
-                    *
-                    $overtimeRate;
+                    round(
+                        ($weekdayOvertimeHours * $overtimeRate)
+                        + $sundayOvertimePay,
+                        2
+                    );
 
                 // ====================================================
                 // MATERNITY
@@ -2248,6 +2506,9 @@ class PayrollController extends Controller
                     'cutoff_day' =>
                         $cutoffDay,
 
+                    'standard_work_days' =>
+                        $standardWorkDays,
+
                     /*
                      * Snapshot saja.
                      *
@@ -2256,10 +2517,16 @@ class PayrollController extends Controller
                     'daily_attendance' =>
                         $dailyAttendance,
 
+                    // Legacy total: paid + unpaid attendance days.
                     'work_days' =>
-                        $summary[
-                            'total_days'
-                        ],
+                        $summary['total_days'],
+
+                    // Internal Sigma values are stored independently.
+                    'paid_days' =>
+                        $summary['paid_days'],
+
+                    'unpaid_days' =>
+                        $summary['unpaid_absence_days'],
 
                     'unpaid_leave' =>
                         $unpaidLeave,
@@ -2267,8 +2534,15 @@ class PayrollController extends Controller
                     'gantungan_days' =>
                         $gantunganDays,
 
+                    // Total jam lembur tetap tersedia untuk rekap/export lama.
                     'overtime_hours' =>
                         $overtimeHours,
+
+                    'weekday_overtime_hours' =>
+                        round($weekdayOvertimeHours, 1),
+
+                    'sunday_overtime_details' =>
+                        $sundayOvertimeDetails,
 
                     'basic_salary' =>
                         $basicSalary,
@@ -2443,6 +2717,7 @@ class PayrollController extends Controller
     //
     // A     >= cutoff = 1
     // I     >= cutoff = 1
+    // S     >= cutoff = 1
     // H0.5  >= cutoff = 0.5
     //
     // HB tidak pernah menjadi gantungan.
@@ -2471,6 +2746,7 @@ class PayrollController extends Controller
                     [
                         'A',
                         'I',
+                        'S',
                         'H0.5',
                     ],
                     true
@@ -2728,6 +3004,11 @@ class PayrollController extends Controller
         float $standardWorkDays,
         ?Payroll $previousPayroll
     ): array {
+        $savedPreviousDivisor = (int) ($previousPayroll?->standard_work_days ?? 0);
+        if (in_array($savedPreviousDivisor, [26, 27], true)) {
+            $standardWorkDays = (float) $savedPreviousDivisor;
+        }
+
 
         // ========================================================
         // PRIORITAS 1: SNAPSHOT PAYROLL BULAN SEBELUMNYA
@@ -2791,7 +3072,7 @@ class PayrollController extends Controller
         //
         // Ini penting untuk data historis yang terlanjur disimpan
         // sebelum snapshot gantungan diperbarui. Jadi Agustus tetap
-        // bisa menemukan A/I/H0.5 Juli pada/setelah tanggal cutoff.
+        // bisa menemukan A/I/S/H0.5 Juli pada/setelah tanggal cutoff.
         // ========================================================
 
         $previousCutoffDay =
@@ -2990,7 +3271,7 @@ class PayrollController extends Controller
                 "Absensi periode {$period} berhasil di-Close. "
                 . "Tanggal 01-" . ($cutoffDay - 1) . " terkunci; "
                 . "tanggal {$cutoffDay} sampai akhir bulan tetap menjadi draft; "
-                . "A/I/H0.5 pada rentang tersebut menjadi gantungan bulan berikutnya."
+                . "A/I/S/H0.5 pada rentang tersebut menjadi gantungan bulan berikutnya."
             );
     }
 
@@ -3315,10 +3596,7 @@ class PayrollController extends Controller
                 ),
 
             'standard_work_days' =>
-                CompanySetting::get(
-                    'standard_work_days',
-                    self::DEFAULT_STANDARD_WORK_DAYS
-                ),
+                $this->standardWorkDays(),
 
             'overtime_hour_rate' =>
                 CompanySetting::get(
@@ -3366,7 +3644,7 @@ class PayrollController extends Controller
                 'required|numeric|min:0',
 
             'standard_work_days' =>
-                'required|numeric|min:1|max:31',
+                'required|integer|in:26,27',
 
             'overtime_hour_rate' =>
                 'required|numeric|min:0',
@@ -3587,6 +3865,7 @@ class PayrollController extends Controller
 
                 case 'A':
                 case 'I':
+                case 'S':
 
                     $unpaidAbsenceDays += 1;
 
@@ -3601,7 +3880,6 @@ class PayrollController extends Controller
                     break;
 
                 case 'SKD':
-                case 'S':
                 case 'C':
                 case 'CM':
                 case 'M/HB':
@@ -3649,6 +3927,18 @@ class PayrollController extends Controller
             'paid_absence_days' =>
                 round(
                     $paidAbsenceDays,
+                    1
+                ),
+
+            'paid_days' =>
+                round(
+                    $presentDays + $paidAbsenceDays,
+                    1
+                ),
+
+            'unpaid_days' =>
+                round(
+                    $unpaidAbsenceDays,
                     1
                 ),
 

@@ -47,8 +47,9 @@
     }
 
     .status-bg-S {
-        background-color: #e0f2fe !important;
-        color: #0369a1 !important;
+        background-color: #fee2e2 !important;
+        color: #dc2626 !important;
+        font-weight: 900 !important;
     }
 
     .status-bg-C {
@@ -96,6 +97,27 @@
         text-align: center;
         background-color: #ffffff;
         color: #333333;
+    }
+
+    .sunday-overtime-input {
+        width: 100%;
+        min-width: 34px;
+        height: 20px;
+        padding: 0 2px !important;
+        border: 1px solid rgba(13, 110, 253, .25);
+        border-radius: 0;
+        font-size: .60rem;
+        line-height: 1;
+        text-align: center;
+    }
+
+    .sunday-overtime-label {
+        display: block;
+        font-size: .52rem;
+        line-height: 1;
+        color: #0d6efd;
+        font-weight: 800;
+        margin-top: 1px;
     }
 
     .cell-editable-draft {
@@ -422,7 +444,7 @@ $ksCapPreview =
     );
 
 
-$recapColspan = 8;
+$recapColspan = 9;
 
 $bpjsColspan =
     $showFinancialColumns
@@ -474,9 +496,11 @@ $tableColspan =
                 masuk payroll bulan berjalan;
 
                 tanggal cutoff dan setelahnya tetap menjadi draft; bila
-                A/I/H0.5 menjadi gantungan bulan berikutnya.
+                A/I/S/H0.5 menjadi gantungan bulan berikutnya.
 
                 Tanda "-" hanya placeholder tampilan dan bukan record absensi.
+                Standar pembagi gaji harian periode ini:
+                <strong>{{ number_format((float) ($standardWorkDays ?? 26), 0, ',', '.') }} hari</strong>.
 
             </p>
 
@@ -836,7 +860,7 @@ $tableColspan =
                         </strong>
                         = attendance lanjutan.
 
-                        A/I/H0.5 pada rentang ini menjadi gantungan bulan berikutnya.
+                        A/I/S/H0.5 pada rentang ini menjadi gantungan bulan berikutnya.
 
                     </span>
 
@@ -1148,6 +1172,12 @@ $tableColspan =
 
                         </th>
 
+                        <th class="bg-success bg-opacity-10 text-success"
+                            style="min-width:82px;">
+
+                            Hari Dibayar
+
+                        </th>
 
                         <th class="bg-primary bg-opacity-10 text-primary"
                             style="min-width:70px;">
@@ -1182,9 +1212,9 @@ $tableColspan =
 
 
                         <th class="bg-primary bg-opacity-10 text-primary"
-                            style="min-width:90px;">
+                            style="min-width:145px;">
 
-                            Lembur (Jam)
+                            Lembur Hari Kerja (Jam)
 
                         </th>
 
@@ -1384,6 +1414,23 @@ $tableColspan =
                                 |--------------------------------------------------------------------------
                                 */
 
+                                $sundayOvertimeData = old(
+                                    'payrolls.' . $emp->id_employee . '.sunday_overtime',
+                                    $existing?->sunday_overtime_details ?? []
+                                );
+
+                                $sundayOvertimeData = is_array($sundayOvertimeData)
+                                    ? $sundayOvertimeData
+                                    : [];
+
+                                $weekdayOvertimeValue = old(
+                                    'payrolls.' . $emp->id_employee . '.weekday_overtime_hours',
+                                    $existing?->weekday_overtime_hours
+                                        ?? $existing?->overtime_hours
+                                        ?? 0
+                                );
+
+
                                 $level =
                                     $contract?->level;
 
@@ -1541,6 +1588,7 @@ $tableColspan =
 
                                         case 'A':
                                         case 'I':
+                                        case 'S':
 
                                             $unpaidDays += 1;
 
@@ -1564,7 +1612,6 @@ $tableColspan =
 
 
                                         case 'SKD':
-                                        case 'S':
                                         case 'C':
                                         case 'CM':
                                         case 'M/HB':
@@ -1604,6 +1651,10 @@ $tableColspan =
                                 $totalAttendanceDays =
                                     $presentDays
                                     + $unpaidDays
+                                    + $paidAbsenceDays;
+
+                                $paidDays =
+                                    $presentDays
                                     + $paidAbsenceDays;
 
 
@@ -2142,6 +2193,27 @@ $tableColspan =
 
                                         </select>
 
+                                        @if($isSunday)
+                                            <span class="sunday-overtime-label">OT</span>
+                                            <input
+                                                type="number"
+                                                step="0.5"
+                                                min="0"
+                                                max="24"
+                                                inputmode="decimal"
+                                                name="payrolls[{{ $emp->id_employee }}][sunday_overtime][{{ $dateFormatted }}]"
+                                                class="form-control sunday-overtime-input"
+                                                value="{{ old(
+                                                    'payrolls.'
+                                                    . $emp->id_employee
+                                                    . '.sunday_overtime.'
+                                                    . $dateFormatted,
+                                                    $sundayOvertimeData[$dateFormatted] ?? 0
+                                                ) }}"
+                                                title="Jam lembur hari Minggu tanggal {{ $dt->format('d-m-Y') }}"
+                                                {{ ($lockedState || $isCellLocked) ? 'disabled' : '' }}>
+                                        @endif
+
                                     </td>
 
                                 @endforeach
@@ -2249,6 +2321,29 @@ $tableColspan =
 
                                 </td>
 
+                                <td class="p-1">
+
+                                    <div class="summary-box">
+
+                                        <div class="summary-value text-success"
+                                             data-summary="paid-days">
+
+                                            {{ number_format(
+                                                $paidDays,
+                                                1,
+                                                ',',
+                                                '.'
+                                            ) }}
+
+                                        </div>
+
+                                        <div class="summary-label">
+                                            Sigma Dibayar
+                                        </div>
+
+                                    </div>
+
+                                </td>
 
                                 <td class="p-1">
 
@@ -2376,15 +2471,13 @@ $tableColspan =
                                            step="0.5"
                                            min="0"
                                            max="744"
-                                           name="payrolls[{{ $emp->id_employee }}][overtime_hours]"
+                                           name="payrolls[{{ $emp->id_employee }}][weekday_overtime_hours]"
                                            class="form-control form-control-sm text-center fw-bold border-primary border-opacity-25"
-                                           value="{{ old(
-                                                'payrolls.'
-                                                . $emp->id_employee
-                                                . '.overtime_hours',
-                                                $existing->overtime_hours ?? 0
-                                           ) }}"
+                                           value="{{ $weekdayOvertimeValue }}"
                                            {{ $lockedState ? 'readonly' : '' }}>
+                                    <small class="text-muted d-block mt-1" style="font-size:.55rem;">
+                                        OT Minggu di kolom tanggal Minggu
+                                    </small>
 
                                 </td>
 
@@ -2890,6 +2983,7 @@ function recalculateSummary(selectEl) {
     let present = 0;
     let unpaid = 0;
     let paid = 0;
+    let paidDays = 0;
     let holiday = 0;
     let normative = 0;
     let currentUnpaid = 0;
@@ -2963,6 +3057,7 @@ function recalculateSummary(selectEl) {
         else if (
             status === 'A'
             || status === 'I'
+            || status === 'S'
         ) {
 
             unpaid += 1;
@@ -2990,7 +3085,6 @@ function recalculateSummary(selectEl) {
         else if (
             [
                 'SKD',
-                'S',
                 'C',
                 'CM',
                 'M/HB',
@@ -3028,6 +3122,7 @@ function recalculateSummary(selectEl) {
         + unpaid
         + paid;
 
+    paidDays = present + paid;
 
     const set =
         (
@@ -3074,6 +3169,10 @@ function recalculateSummary(selectEl) {
         paid
     );
 
+    set(
+        'paid-days',
+        paidDays
+    );
 
     set(
         'total',

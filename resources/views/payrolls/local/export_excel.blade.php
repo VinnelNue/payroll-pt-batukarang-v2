@@ -170,7 +170,7 @@
     */
 
     $identityCount = $showIdentityDetails ? 5 : 3;
-    $totalCount = $showDetailedSummary ? 10 : 6;
+    $totalCount = $showDetailedSummary ? 11 : 7;
     $bpjsCount = $showBpjsColumns ? 2 : 0;
     $financialCount = $showFinancialColumns ? 9 : 0;
 
@@ -322,6 +322,7 @@
 
                 case 'A':
                 case 'I':
+                case 'S':
 
                     $unpaid += 1;
                     $total += 1;
@@ -329,7 +330,6 @@
                     break;
 
                 case 'SKD':
-                case 'S':
                 case 'C':
 
                     $paid += 1;
@@ -375,6 +375,9 @@
             'paid' =>
                 round($paid, 1),
 
+            'paid_days' =>
+                round($present + $paid, 1),
+
             'mhb' =>
                 round($mhb, 1),
 
@@ -400,6 +403,7 @@
         'present' => 0.0,
         'unpaid' => 0.0,
         'paid' => 0.0,
+        'paid_days' => 0.0,
         'total' => 0.0,
         'mhb' => 0.0,
         'cm' => 0.0,
@@ -818,6 +822,20 @@
             style="
                 border:1px solid #000;
                 background:#ffffff;
+                color:#008000;
+                text-align:center;
+                vertical-align:middle;
+                font-weight:800;
+                line-height:1;
+            "
+        >
+            Hari<br>Dibayar
+        </th>
+
+        <th
+            style="
+                border:1px solid #000;
+                background:#ffffff;
                 text-align:center;
                 vertical-align:middle;
                 font-weight:800;
@@ -1071,6 +1089,7 @@
                 'present' => 0.0,
                 'unpaid' => 0.0,
                 'paid' => 0.0,
+        'paid_days' => 0.0,
                 'total' => 0.0,
                 'mhb' => 0.0,
                 'cm' => 0.0,
@@ -1328,6 +1347,7 @@
                         'present',
                         'unpaid',
                         'paid',
+                        'paid_days',
                         'total',
                         'mhb',
                         'cm',
@@ -1470,7 +1490,8 @@
                         $statusColor =
                             match ($status) {
                                 'A',
-                                'I'
+                                'I',
+                                'S'
                                     => '#ff0000',
 
                                 default
@@ -1540,6 +1561,22 @@
                 >
                     {{ number_format(
                         $summary['paid'],
+                        1,
+                        ',',
+                        '.'
+                    ) }}
+                </td>
+
+                <td
+                    style="
+                        border:1px solid #000;
+                        color:#008000;
+                        text-align:right;
+                        vertical-align:middle;
+                    "
+                >
+                    {{ number_format(
+                        $summary['paid_days'],
                         1,
                         ',',
                         '.'
@@ -1943,6 +1980,10 @@
                 ) }}
             </td>
 
+            <td style="border:1px solid #000;color:#008000;text-align:right;font-weight:800;">
+                {{ number_format($departmentTotal['paid_days'], 1, ',', '.') }}
+            </td>
+
             <td
                 style="
                     border:1px solid #000;
@@ -2237,6 +2278,10 @@
                 ',',
                 '.'
             ) }}
+        </td>
+
+        <td style="border:1px solid #000;font-weight:800;text-align:right;color:#008000;">
+            {{ number_format($grand['paid_days'], 1, ',', '.') }}
         </td>
 
         <td style="border:1px solid #000;font-weight:800;text-align:right;">
