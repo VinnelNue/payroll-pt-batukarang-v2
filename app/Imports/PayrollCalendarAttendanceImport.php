@@ -4,6 +4,7 @@ namespace App\Imports;
 
 use App\Models\AttendanceRecord;
 use App\Models\Employee;
+use App\Models\MaternityLeaveCase;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,7 @@ class PayrollCalendarAttendanceSheetImport implements ToCollection, WithStartRow
         'skipped_placeholder' => 0,
         'skipped_invalid' => 0,
         'skipped_unknown_employee' => 0,
+        'skipped_maternity' => 0,
     ];
 
     private const ALLOWED_STATUSES = [
@@ -236,10 +238,27 @@ class PayrollCalendarAttendanceSheetImport implements ToCollection, WithStartRow
         $periodStart = $this->period . '-01';
         $periodEnd = Carbon::createFromFormat('Y-m-d', $periodStart)->endOfMonth()->format('Y-m-d');
 
+        $eligibleMaternityEmployeeIds = Employee::query()
+            ->whereIn('id_employee', $employeeIdsForLookup)
+            ->where('gender', 'P')
+            ->where('is_active', true)
+            ->whereHas('contract', function ($query): void {
+                $query->where('is_active', true);
+            })
+            ->pluck('id_employee')
+            ->map(static fn ($id): int => (int) $id)
+            ->flip();
+
+        $maternityCasesByEmployee = MaternityLeaveCase::query()
+            ->whereIn('employee_id', $employeeIdsForLookup)
+            ->whereDate('leave_start_date', '<=', $periodEnd)
+            ->get()
+            ->groupBy('employee_id');
+
         $existingRecords = AttendanceRecord::query()
             ->whereIn('employee_id', $employeeIdsForLookup)
             ->whereBetween('attendance_date', [$periodStart, $periodEnd])
-            ->get(['employee_id', 'attendance_date', 'status'])
+            ->get(['employee_id', 'attendance_date', 'status', 'source'])
             ->keyBy(static function (AttendanceRecord $record): string {
                 return (int) $record->employee_id . '|' . Carbon::parse($record->attendance_date)->format('Y-m-d');
             });
@@ -250,6 +269,43 @@ class PayrollCalendarAttendanceSheetImport implements ToCollection, WithStartRow
         foreach ($pending as $key => $item) {
             $existing = $existingRecords->get($key);
             $currentStatus = strtoupper(trim((string) ($existing?->status ?? '')));
+            $currentSource = strtolower(trim((string) ($existing?->source ?? '')));
+
+            $attendanceDate = Carbon::createFromFormat('!Y-m-d', $item['attendance_date']);
+            $isSunday = $attendanceDate->isSunday();
+
+            // Sunday remains part of the 45-day calendar duration, but it is
+            // never imported as CM. Other Sunday attendance (e.g. security H)
+            // remains eligible for import.
+            if ($isSunday && $item['status'] === 'CM') {
+                $this->summary['skipped_maternity']++;
+                continue;
+            }
+
+            $hasRegisteredWorkdaySchedule = !$isSunday
+                && ($maternityCasesByEmployee->get($item['employee_id']) ?? collect())
+                    ->contains(fn (MaternityLeaveCase $case) => $case->containsDate($item['attendance_date']));
+
+            if ($hasRegisteredWorkdaySchedule && $item['status'] !== 'CM') {
+                // An Excel calendar must not erase or replace a scheduled CM workday.
+                $this->summary['skipped_maternity']++;
+                continue;
+            }
+
+            if ($item['status'] === 'CM') {
+                $eligible = $eligibleMaternityEmployeeIds->has((int) $item['employee_id']);
+
+                if (!$eligible || !$hasRegisteredWorkdaySchedule) {
+                    $this->summary['skipped_maternity']++;
+                    continue;
+                }
+            }
+
+            // Imported payroll workbook must not replace scheduled maternity CM.
+            if ($existing && $currentSource === 'maternity') {
+                $this->summary['skipped_maternity']++;
+                continue;
+            }
 
             if ($existing && $currentStatus === $item['status']) {
                 $this->summary['unchanged']++;

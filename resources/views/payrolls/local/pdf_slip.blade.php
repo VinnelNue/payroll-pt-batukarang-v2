@@ -1047,6 +1047,7 @@
     $incentive = (float) ($payroll->incentive ?? 0);
 
 $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
+$maternityHoldAmount = (float) ($payroll->maternity_hold_amount ?? 0);
 
     /*
      * Counter CM untuk tampilan saja.
@@ -1060,6 +1061,7 @@ $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
 
     $isMaternity =
         $maternityPay > 0
+        || $maternityHoldAmount > 0
         || $maternityLeaveDays > 0;
 
 
@@ -1241,29 +1243,12 @@ $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
 
 
     $totalPotongan =
-
-
-
         $bpjsTk
-
-
-
         + $bpjsKs
-
-
-
         + $pph21
-
-
-
+        + $maternityHoldAmount
         + $previousGantunganDeduction
-
-
-
         + $cashAdvance
-
-
-
         + $otherDeductions;
 
 
@@ -2151,14 +2136,16 @@ $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
                                 </td>
                             </tr>
 
-                            <tr>
-                                <td class="small">
-                                    CM tercatat
-                                </td>
-                                <td class="amount small">
-                                    {{ number_format($maternityLeaveDays, 1, ',', '.') }} hari
-                                </td>
-                            </tr>
+                            @if($maternityLeaveDays > 0)
+                                <tr>
+                                    <td class="small">
+                                        CM tercatat
+                                    </td>
+                                    <td class="amount small">
+                                        {{ number_format($maternityLeaveDays, 1, ',', '.') }} hari
+                                    </td>
+                                </tr>
+                            @endif
                         @endif
 
                         @if(!$hasAdditionalIncome && $maternityLeaveDays <= 0)
@@ -2494,564 +2481,57 @@ $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
 
 
                 <table class="deduction-table">
-
-
-
-
-
-
-
-                    <!-- BPJS TK -->
-
-
-
-
-
-
+                    @php $deductionNumber = 1; @endphp
 
                     <tr>
-
-
-
-
-
-
-
-                        <td class="deduction-number">
-
-
-
-                            1.
-
-
-
-                        </td>
-
-
-
-
-
-
-
-                        <td class="deduction-name">
-
-
-
-                            BPJS Ketenagakerjaan
-
-
-
-                        </td>
-
-
-
-
-
-
-
-                        <td class="deduction-value">
-
-
-
-                            Rp {{ number_format($bpjsTk, 0, ',', '.') }}
-
-
-
-                        </td>
-
-
-
-
-
-
-
+                        <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                        <td class="deduction-name">BPJS Ketenagakerjaan</td>
+                        <td class="deduction-value">Rp {{ number_format($bpjsTk, 0, ',', '.') }}</td>
                     </tr>
-
-
-
-
-
-
-
-
-
-
-
-                    <!-- BPJS KS -->
-
-
-
-
-
-
 
                     <tr>
-
-
-
-
-
-
-
-                        <td class="deduction-number">
-
-
-
-                            2.
-
-
-
-                        </td>
-
-
-
-
-
-
-
-                        <td class="deduction-name">
-
-
-
-                            BPJS Kesehatan
-
-
-
-                        </td>
-
-
-
-
-
-
-
-                        <td class="deduction-value">
-
-
-
-                            Rp {{ number_format($bpjsKs, 0, ',', '.') }}
-
-
-
-                        </td>
-
-
-
-
-
-
-
+                        <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                        <td class="deduction-name">BPJS Kesehatan</td>
+                        <td class="deduction-value">Rp {{ number_format($bpjsKs, 0, ',', '.') }}</td>
                     </tr>
-
-
-
-
-
-
-
-
-
-
-
-                    <!-- PPH21 -->
-
-
-
-
-
-
 
                     <tr>
-
-
-
-
-
-
-
-                        <td class="deduction-number">
-
-
-
-                            3.
-
-
-
-                        </td>
-
-
-
-
-
-
-
-                        <td class="deduction-name">
-
-
-
-                            Pajak PPh 21
-
-
-
-                        </td>
-
-
-
-
-
-
-
-                        <td class="deduction-value">
-
-
-
-                            Rp {{ number_format($pph21, 0, ',', '.') }}
-
-
-
-                        </td>
-
-
-
-
-
-
-
+                        <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                        <td class="deduction-name">Pajak PPh 21</td>
+                        <td class="deduction-value">Rp {{ number_format($pph21, 0, ',', '.') }}</td>
                     </tr>
 
-
-
-
-
-
-
-
-
-
-
-                    <!-- GANTUNGAN PERIODE SEBELUMNYA -->
-
-
-
-
-
-
+                    @if($maternityHoldAmount > 0)
+                        <tr>
+                            <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                            <td class="deduction-name">Penahanan Gaji Cuti Melahirkan</td>
+                            <td class="deduction-value">Rp {{ number_format($maternityHoldAmount, 0, ',', '.') }}</td>
+                        </tr>
+                    @endif
 
                     @if($previousGantunganDeduction > 0)
-
-
-
-
-
-
-
                         <tr>
-
-
-
-
-
-
-
-                            <td class="deduction-number">
-
-
-
-                                4.
-
-
-
-                            </td>
-
-
-
-
-
-
-
-                            <td class="deduction-name">
-
-
-
-                                Gantungan Periode Sebelumnya
-
-
-
-                            </td>
-
-
-
-
-
-
-
-                            <td class="deduction-value">
-
-
-
-                                Rp {{ number_format($previousGantunganDeduction, 0, ',', '.') }}
-
-
-
-                            </td>
-
-
-
-
-
-
-
+                            <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                            <td class="deduction-name">Gantungan Periode Sebelumnya</td>
+                            <td class="deduction-value">Rp {{ number_format($previousGantunganDeduction, 0, ',', '.') }}</td>
                         </tr>
-
-
-
-
-
-
-
                     @endif
-
-
-
-
-
-
-
-
-
-
-
-                    <!-- KASBON -->
-
-
-
-
-
-
 
                     @if($cashAdvance > 0)
-
-
-
-
-
-
-
                         <tr>
-
-
-
-
-
-
-
-                            <td class="deduction-number">
-
-
-
-                                {{ $previousGantunganDeduction > 0 ? '5.' : '4.' }}
-
-
-
-                            </td>
-
-
-
-
-
-
-
-                            <td class="deduction-name">
-
-
-
-                                Angsuran Pinjaman / Kasbon
-
-
-
-                            </td>
-
-
-
-
-
-
-
-                            <td class="deduction-value">
-
-
-
-                                Rp {{ number_format($cashAdvance, 0, ',', '.') }}
-
-
-
-                            </td>
-
-
-
-
-
-
-
+                            <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                            <td class="deduction-name">Angsuran Pinjaman / Kasbon</td>
+                            <td class="deduction-value">Rp {{ number_format($cashAdvance, 0, ',', '.') }}</td>
                         </tr>
-
-
-
-
-
-
-
                     @endif
-
-
-
-
-
-
-
-
-
-
-
-                    <!-- OTHER DEDUCTION -->
-
-
-
-
-
-
 
                     @if($otherDeductions > 0)
-
-
-
-
-
-
-
-                        @php
-
-
-
-                            $otherNumber = 4;
-
-
-
-
-
-
-
-                            if ($previousGantunganDeduction > 0) {
-
-
-
-                                $otherNumber++;
-
-
-
-                            }
-
-
-
-
-
-
-
-                            if ($cashAdvance > 0) {
-
-
-
-                                $otherNumber++;
-
-
-
-                            }
-
-
-
-                        @endphp
-
-
-
-
-
-
-
                         <tr>
-
-
-
-
-
-
-
-                            <td class="deduction-number">
-
-
-
-                                {{ $otherNumber }}.
-
-
-
-                            </td>
-
-
-
-
-
-
-
-                            <td class="deduction-name">
-
-
-
-                                Potongan Lainnya
-
-
-
-                            </td>
-
-
-
-
-
-
-
-                            <td class="deduction-value">
-
-
-
-                                Rp {{ number_format($otherDeductions, 0, ',', '.') }}
-
-
-
-                            </td>
-
-
-
-
-
-
-
+                            <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                            <td class="deduction-name">Potongan Lainnya</td>
+                            <td class="deduction-value">Rp {{ number_format($otherDeductions, 0, ',', '.') }}</td>
                         </tr>
-
-
-
-
-
-
-
                     @endif
-
-
-
-
-
-
-
-
-
-
 
                     <!-- TOTAL POTONGAN -->
 
@@ -3329,18 +2809,16 @@ $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
 
 
 
-                        <div style="margin-top: 4px;">
+                                                <div style="margin-top: 4px;">
+                            Hak cuti melahirkan mengikuti jadwal dua tahap:
+                            Tahap 1 sesuai durasi pengajuan HRD (maksimal 45 hari)
+                            dan Tahap 2 selama 45 hari setelah persalinan aktual.
+                        </div>
 
-
-
-                            Hak normative cuti melahirkan
-
-
-
-                            selama 63 hari.
-
-
-
+                        <div style="margin-top: 5px;">
+                            Pembayaran hak CM ditahan selama jadwal berlangsung
+                            dan dilepas sekaligus pada payroll setelah Tahap 2 selesai
+                            serta dokumen diverifikasi HRD.
                         </div>
 
 

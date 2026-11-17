@@ -541,6 +541,14 @@ $tableColspan =
 
             @endif
 
+            @if($isHrd || $isHeadHrd || $userRole === 'super_admin')
+                <a href="{{ route('payrolls.local.maternity.index') }}"
+                   class="btn btn-outline-purple btn-sm px-3 py-2 rounded-3 fw-semibold"
+                   style="border-color:#7e22ce;color:#7e22ce;">
+                    <i class="fa-solid fa-baby me-1"></i>
+                    Kelola CM
+                </a>
+            @endif
 
             <a href="{{ route('payrolls.local.index') }}"
                class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3 fw-medium">
@@ -1198,7 +1206,7 @@ $tableColspan =
                         <th class="bg-info bg-opacity-10 text-info"
                             style="min-width:75px;">
 
-                            Normatif
+                            CM
 
                         </th>
 
@@ -1552,6 +1560,12 @@ $tableColspan =
                                         continue;
                                     }
 
+
+                                    // CM ditampilkan penuh pada kalender, tetapi hari Minggu
+                                    // tidak menambah paid_days / Sigma hari kerja.
+                                    if ($status === 'CM' && $rowDate->isSunday()) {
+                                        continue;
+                                    }
 
                                     switch ($status) {
 
@@ -2163,7 +2177,7 @@ $tableColspan =
                                                 <option value="CM"
                                                     {{ $dayStatus === 'CM' ? 'selected' : '' }}>
 
-                                                    CM
+                                                    CM — Kelola CM
 
                                                 </option>
 
@@ -2424,7 +2438,7 @@ $tableColspan =
 
                                         <div class="summary-label">
 
-                                            CM / Normatif
+                                            CM
 
                                         </div>
 
@@ -3005,6 +3019,15 @@ function recalculateSummary(selectEl) {
                 dateString.slice(-2),
                 10
             );
+
+        // CM remains visible on Sundays, but Sunday is not a paid workday in Sigma.
+        if (
+            status === 'CM'
+            && dateString
+            && new Date(dateString + 'T12:00:00').getDay() === 0
+        ) {
+            return;
+        }
 
 
         /*

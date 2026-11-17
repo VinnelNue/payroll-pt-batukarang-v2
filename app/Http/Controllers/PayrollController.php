@@ -11,6 +11,8 @@ use App\Models\Employee;
 use App\Models\Payroll;
 use App\Models\AttendanceRecord;
 use App\Models\Holiday;
+use App\Models\MaternityLeaveCase;
+use App\Services\MaternityLeaveScheduleService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use App\Jobs\SendLocalSalarySlipEmail;
@@ -21,6 +23,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
 use Throwable;
 use ZipArchive;
@@ -515,6 +518,10 @@ class PayrollController extends Controller
                         'bpjs_ks_deduction',
                         'is_bpjs_override',
                         'maternity_leave_pay',
+                        'maternity_case_id',
+                        'maternity_hold_days',
+                        'maternity_hold_amount',
+                        'maternity_release_amount',
                         'basic_salary',
                         'allowance',
                         'overtime_pay',
@@ -1019,7 +1026,8 @@ class PayrollController extends Controller
                         . 'update: ' . $summary['updated'] . ', '
                         . 'tetap: ' . $summary['unchanged'] . ', '
                         . 'dilewati karena terkunci: ' . $summary['skipped_locked'] . ', '
-                        . 'placeholder: ' . $summary['skipped_placeholder'] . '.'
+                        . 'placeholder: ' . $summary['skipped_placeholder'] . ', '
+                        . 'CM yang tidak sesuai kasus/karyawan perempuan: ' . ($summary['skipped_maternity'] ?? 0) . '.'
                     );
             }
 
@@ -1216,6 +1224,15 @@ class PayrollController extends Controller
                     'id_employee'
                 );
 
+        // A new CM period must be registered through Kelola CM, where HRD
+        // enters the Stage 1 duration. The calendar may only submit CM dates
+        // that are already covered by a registered female employee's CM case.
+        $this->validateMaternityCalendarEntries(
+            $validated['payrolls'],
+            $employees,
+            $period
+        );
+
         // ========================================================
         // LOCKED PERIOD = ATTENDANCE ON/AFTER CUTOFF ONLY
         // ========================================================
@@ -1344,6 +1361,17 @@ class PayrollController extends Controller
                         $dateString =
                             $date->format('Y-m-d');
 
+                        // CM rows are generated and owned by the maternity scheduler.
+                        // A locked-period edit may not convert or delete their source.
+                        $existingAttendance = AttendanceRecord::query()
+                            ->where('employee_id', $empId)
+                            ->whereDate('attendance_date', $dateString)
+                            ->first();
+
+                        if (strtolower((string) ($existingAttendance?->source ?? '')) === 'maternity') {
+                            continue;
+                        }
+
                         if ($normalizedStatus === 'HB') {
 
                             AttendanceRecord::where(
@@ -1354,6 +1382,10 @@ class PayrollController extends Controller
                                     'attendance_date',
                                     $dateString
                                 )
+                                ->where(function ($query) {
+                                    $query->whereNull('source')
+                                        ->orWhere('source', '!=', 'maternity');
+                                })
                                 ->delete();
 
                             continue;
@@ -1369,6 +1401,10 @@ class PayrollController extends Controller
                                     'attendance_date',
                                     $dateString
                                 )
+                                ->where(function ($query) {
+                                    $query->whereNull('source')
+                                        ->orWhere('source', '!=', 'maternity');
+                                })
                                 ->delete();
 
                             continue;
@@ -1859,6 +1895,13 @@ class PayrollController extends Controller
                     $dateString =
                         $date->format('Y-m-d');
 
+                    // Sunday is included in the CM calendar duration, but it
+                    // must never be written as a CM attendance record. The
+                    // schedule service will restore any legacy Sunday row.
+                    if ($date->isSunday() && $normalizedStatus === 'CM') {
+                        continue;
+                    }
+
                     // =================================================
                     // HB
                     //
@@ -1877,6 +1920,10 @@ class PayrollController extends Controller
                                 'attendance_date',
                                 $dateString
                             )
+                            ->where(function ($query) {
+                                $query->whereNull('source')
+                                    ->orWhere('source', '!=', 'maternity');
+                            })
                             ->delete();
 
                         continue;
@@ -1900,6 +1947,10 @@ class PayrollController extends Controller
                                 'attendance_date',
                                 $dateString
                             )
+                            ->where(function ($query) {
+                                $query->whereNull('source')
+                                    ->orWhere('source', '!=', 'maternity');
+                            })
                             ->delete();
 
                         continue;
@@ -1942,6 +1993,64 @@ class PayrollController extends Controller
                         $empId,
                         $period
                     );
+
+                // ====================================================
+                // MATERNITY SCHEDULE -> ATTENDANCE CM
+                // ====================================================
+                // Periode 1 dimulai dari tanggal CM dan berakhir saat
+                // persalinan (maksimal 45 hari). Periode 2 dimulai sehari
+                // setelah persalinan dan berjalan 45 hari kalender.
+                // Status CM hanya boleh berasal dari kasus yang sudah
+                // didaftarkan melalui Kelola CM. Payroll yang sudah lock
+                // tidak disentuh.
+                // ====================================================
+
+                $scheduledMaternityCase = MaternityLeaveCase::query()
+                    ->where('employee_id', $empId)
+                    ->whereDate('leave_start_date', '<=', $periodEnd->format('Y-m-d'))
+                    ->orderByDesc('leave_start_date')
+                    ->orderByDesc('id')
+                    ->get()
+                    ->first(fn (MaternityLeaveCase $case) =>
+                        $case->intersectsPeriod($periodStart, $periodEnd)
+                    );
+
+                // Every verified case remains eligible for release until its
+                // release transaction is committed. This also covers cases
+                // with no historical hold (for example, verification before
+                // the first payroll calculation) and cases whose schedule
+                // ended in an earlier month.
+                $releaseMaternityCase = MaternityLeaveCase::query()
+                    ->where('employee_id', $empId)
+                    ->where('status', 'verified')
+                    ->whereNull('released_at')
+                    ->orderBy('leave_start_date')
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                // Keep the historical link when a previously saved payroll row
+                // is edited after the case schedule has ended or was released.
+                $storedMaternityCase = $existing?->maternity_case_id
+                    ? MaternityLeaveCase::find($existing->maternity_case_id)
+                    : null;
+
+                $maternityCase = $scheduledMaternityCase
+                    ?? $releaseMaternityCase
+                    ?? $storedMaternityCase;
+
+                if ($maternityCase) {
+                    app(MaternityLeaveScheduleService::class)
+                        ->syncAttendance($maternityCase);
+
+                    // Reload because the service has populated the complete
+                    // scheduled CM range in attendance_records.
+                    $attendanceRecords =
+                        $this->loadAttendanceRecords(
+                            $empId,
+                            $period
+                        );
+                }
 
                 // ====================================================
                 // EFFECTIVE DAILY ATTENDANCE
@@ -2262,15 +2371,118 @@ class PayrollController extends Controller
                     );
 
                 // ====================================================
-                // MATERNITY
+                // MATERNITY LEAVE - DEFERRED PAYMENT
+                // ====================================================
+                // CM tetap dihitung sebagai paid days pada Sigma.
+                // Nilai hari CM ditahan sampai dokumen persalinan
+                // diverifikasi HRD. Hari sebelum tanggal mulai CM
+                // tidak ikut ditahan.
                 // ====================================================
 
+                $cmAttendanceDates = [];
+
+                foreach ($dailyAttendance as $attendanceDate => $attendanceStatus) {
+                    if (
+                        $this->normalizeAttendanceStatus($attendanceStatus) !== 'CM'
+                        || !is_string($attendanceDate)
+                    ) {
+                        continue;
+                    }
+
+                    try {
+                        $cmDate = Carbon::createFromFormat('!Y-m-d', $attendanceDate);
+                    } catch (Throwable) {
+                        continue;
+                    }
+
+                    if (
+                        $cmDate
+                        && $cmDate->format('Y-m-d') === $attendanceDate
+                        && !$cmDate->lt($periodStart)
+                        && !$cmDate->gt($periodEnd)
+                        && !$cmDate->isSunday()
+                        && $maternityCase
+                        && $maternityCase->containsDate($cmDate)
+                    ) {
+                        $cmAttendanceDates[] = $attendanceDate;
+                    }
+                }
+
+                sort($cmAttendanceDates);
+
+                $maternityCaseId = $maternityCase?->id ?? $existing?->maternity_case_id;
+                $maternityHoldDays = 0.0;
+                $maternityHoldAmount = 0.0;
+                $existingMaternityReleaseAmount = (float) (
+                    $existing?->maternity_release_amount ?? 0
+                );
+                $maternityReleaseAmount = $existingMaternityReleaseAmount;
+
+                if ($maternityCase) {
+                    $maternityDaysInPeriod = count(array_filter(
+                        $cmAttendanceDates,
+                        fn (string $date) => $maternityCase->containsDate($date)
+                    ));
+
+                    if (
+                        $maternityCase->status === 'verified'
+                        && !$maternityCase->released_at
+                    ) {
+                        // Release all amounts that have already been held for
+                        // this case, including any payroll row calculated ahead
+                        // of the current month. Subtract releases recorded on
+                        // other payroll rows so saving an existing period again
+                        // cannot pay the same held amount twice.
+                        $totalMaternityHeld = (float) Payroll::query()
+                            ->where('employee_id', $empId)
+                            ->where('maternity_case_id', $maternityCase->id)
+                            ->sum('maternity_hold_amount');
+
+                        $releasedOnOtherPayrolls = (float) Payroll::query()
+                            ->where('employee_id', $empId)
+                            ->where('maternity_case_id', $maternityCase->id)
+                            ->when($existing, function ($query) use ($existing) {
+                                $query->where('id_payroll', '!=', $existing->id_payroll);
+                            })
+                            ->sum('maternity_release_amount');
+
+                        $unreleasedMaternityAmount = max(
+                            0,
+                            $totalMaternityHeld
+                            - $releasedOnOtherPayrolls
+                            - $existingMaternityReleaseAmount
+                        );
+
+                        $maternityReleaseAmount = round(
+                            $existingMaternityReleaseAmount + $unreleasedMaternityAmount,
+                            2
+                        );
+
+                        $maternityCase->forceFill([
+                            'released_at' => now(),
+                        ])->save();
+                    } elseif (
+                        $maternityCase->status !== 'verified'
+                        && !$maternityCase->released_at
+                    ) {
+                        $maternityHoldDays = (float) $maternityDaysInPeriod;
+                        $maternityHoldAmount = round(
+                            $dailyWage * $maternityHoldDays,
+                            2
+                        );
+                    }
+                }
+
+                // Jangan menambahkan release dua kali ketika payroll periode
+                // yang sama disimpan ulang.
+                $newMaternityRelease = max(
+                    0,
+                    $maternityReleaseAmount - $existingMaternityReleaseAmount
+                );
+
                 $maternityLeavePay =
-                    (float) (
-                        $existing
-                            ?->maternity_leave_pay
-                        ?? 0
-                    );
+                    (float) ($existing?->maternity_leave_pay ?? 0)
+                    + $newMaternityRelease;
 
                 // ====================================================
                 // FINANCIAL VARIABLES
@@ -2334,6 +2546,14 @@ class PayrollController extends Controller
                     $maternityLeavePay
                     +
                     $incentive;
+
+                // CM yang ditahan belum menjadi dasar PPh21 sampai dibayarkan.
+                // Ketika diverifikasi, nominal release masuk ke gross periode
+                // pembayaran dan ikut menjadi dasar PPh21 pada periode tersebut.
+                $taxableGrossSalary = max(
+                    0,
+                    $grossSalary - $maternityHoldAmount
+                );
 
                 // ====================================================
                 // BPJS
@@ -2441,18 +2661,18 @@ class PayrollController extends Controller
                             $employee,
                             $contract,
                             $period,
-                            $grossSalary,
+                            $taxableGrossSalary,
                             $bpjsTkDeduction
                         );
                 } else {
                     $pph21Rate =
                         $this->calculateTerRateByCategory(
                             $terCategory,
-                            $grossSalary
+                            $taxableGrossSalary
                         );
 
                     $pph21Deduction =
-                        $grossSalary
+                        $taxableGrossSalary
                         *
                         $pph21Rate;
                 }
@@ -2483,7 +2703,9 @@ class PayrollController extends Controller
                     +
                     $previousGantunganDeduction
                     +
-                    $otherDeductions;
+                    $otherDeductions
+                    +
+                    $maternityHoldAmount;
 
                 // ====================================================
                 // NET SALARY
@@ -2555,6 +2777,18 @@ class PayrollController extends Controller
 
                     'maternity_leave_pay' =>
                         $maternityLeavePay,
+
+                    'maternity_case_id' =>
+                        $maternityCaseId,
+
+                    'maternity_hold_days' =>
+                        round($maternityHoldDays, 1),
+
+                    'maternity_hold_amount' =>
+                        round($maternityHoldAmount, 2),
+
+                    'maternity_release_amount' =>
+                        round($maternityReleaseAmount, 2),
 
                     'incentive' =>
                         $incentive,
@@ -3722,6 +3956,118 @@ class PayrollController extends Controller
     // ATTENDANCE HELPERS
     // ============================================================
 
+    /**
+     * Prevent the payroll calendar from being used to create unregistered CM.
+     * CM must be scheduled from Kelola CM so Stage 1 duration, delivery date,
+     * supporting document, and the 45-day Stage 2 are tracked as one case.
+     */
+    private function validateMaternityCalendarEntries(
+        array $payrolls,
+        $employees,
+        string $period
+    ): void {
+        $employeeIds = array_map('intval', array_keys($payrolls));
+        if ($employeeIds === []) {
+            return;
+        }
+
+        $periodEnd = Carbon::createFromFormat('!Y-m-d', $period . '-01')
+            ->endOfMonth();
+
+        $casesByEmployee = MaternityLeaveCase::query()
+            ->whereIn('employee_id', $employeeIds)
+            ->whereDate('leave_start_date', '<=', $periodEnd->toDateString())
+            ->get()
+            ->groupBy('employee_id');
+
+        // Legacy P7 may already have CM rows on Sundays. Allow those existing
+        // source=maternity values to pass through unchanged; do not permit a
+        // new/manual Sunday CM value.
+        $periodStart = Carbon::createFromFormat('!Y-m-d', $period . '-01')->toDateString();
+        $legacyMaternitySundayKeys = [];
+        $legacyMaternityRows = AttendanceRecord::query()
+            ->whereIn('employee_id', $employeeIds)
+            ->whereBetween('attendance_date', [$periodStart, $periodEnd->toDateString()])
+            ->where('source', 'maternity')
+            ->get(['employee_id', 'attendance_date']);
+
+        foreach ($legacyMaternityRows as $legacyRow) {
+            $legacyDate = Carbon::parse($legacyRow->attendance_date);
+            if ($legacyDate->isSunday()) {
+                $legacyMaternitySundayKeys[
+                    (int) $legacyRow->employee_id . '|' . $legacyDate->toDateString()
+                ] = true;
+            }
+        }
+
+        foreach ($payrolls as $employeeId => $data) {
+            $employeeId = (int) $employeeId;
+            $employee = $employees->get($employeeId);
+            $daily = $data['daily_attendance'] ?? [];
+
+            if (!$employee || !is_array($daily)) {
+                continue;
+            }
+
+            foreach ($daily as $dateKey => $rawStatus) {
+                if (!is_scalar($rawStatus)) {
+                    continue;
+                }
+
+                $normalizedStatus = $this->normalizeAttendanceStatus($rawStatus);
+                $date = $this->normalizeAttendanceDate($period, $dateKey);
+                if (!$date) {
+                    continue;
+                }
+
+                // CM durations are calendar-based, but Sundays are not CM
+                // attendance rows. Ordinary Sunday attendance (e.g. security)
+                // remains editable/importable under the existing Sunday rules.
+                if ($date->isSunday()) {
+                    $legacyKey = $employeeId . '|' . $date->toDateString();
+                    if (
+                        $normalizedStatus === 'CM'
+                        && !isset($legacyMaternitySundayKeys[$legacyKey])
+                    ) {
+                        throw ValidationException::withMessages([
+                            "payrolls.{$employeeId}.daily_attendance.{$dateKey}" =>
+                                'Hari Minggu tetap masuk durasi kalender CM, tetapi tidak boleh dibuat sebagai record CM baru di absensi.',
+                        ]);
+                    }
+                    continue;
+                }
+
+                $hasRegisteredWorkdaySchedule = ($casesByEmployee->get($employeeId) ?? collect())
+                    ->contains(fn (MaternityLeaveCase $case) => $case->containsDate($date));
+
+                $eligible = $employee->gender === 'P'
+                    && (bool) $employee->is_active
+                    && (bool) ($employee->contract?->is_active ?? false);
+
+                if ($hasRegisteredWorkdaySchedule && $normalizedStatus !== 'CM') {
+                    throw ValidationException::withMessages([
+                        "payrolls.{$employeeId}.daily_attendance.{$dateKey}" =>
+                            'Tanggal yang sudah dijadwalkan sebagai CM tidak dapat diubah atau dihapus dari kalender. Perubahan CM harus melalui pengelolaan kasus CM.',
+                    ]);
+                }
+
+                if ($normalizedStatus === 'CM' && !$eligible) {
+                    throw ValidationException::withMessages([
+                        "payrolls.{$employeeId}.daily_attendance.{$dateKey}" =>
+                            'CM hanya dapat dicatat untuk karyawan perempuan yang aktif dan memiliki kontrak aktif.',
+                    ]);
+                }
+
+                if ($normalizedStatus === 'CM' && !$hasRegisteredWorkdaySchedule) {
+                    throw ValidationException::withMessages([
+                        "payrolls.{$employeeId}.daily_attendance.{$dateKey}" =>
+                            'Tanggal CM harus didaftarkan melalui menu Kelola CM terlebih dahulu. Input kalender hanya dapat mengubah jadwal CM yang sudah terdaftar.',
+                    ]);
+                }
+            }
+        }
+    }
+
     private function normalizeAttendanceDate(
         string $period,
         $dateKey
@@ -3836,6 +4182,12 @@ class PayrollController extends Controller
                 );
 
             if ($status === '') {
+                continue;
+            }
+
+            // Safety net for legacy P7 rows: Sunday CM is ignored by Sigma.
+            // New CM schedules no longer create Sunday attendance records.
+            if ($status === 'CM' && $date->isSunday()) {
                 continue;
             }
 

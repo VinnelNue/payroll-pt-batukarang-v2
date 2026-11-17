@@ -29,6 +29,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
     private const MANUAL_SOURCES = [
         'manual',
         'manual_excel',
+        'maternity',
     ];
 
     public function __construct($period)
@@ -451,7 +452,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
 
     /**
      * Pilih contract history yang efektif pada tanggal absensi.
-     * end_date adalah hari kerja terakhir, sehingga tanggal tersebut termasuk.
+     * end_date tetap exclusive, mengikuti perilaku sistem sebelumnya.
      */
     private static function findHistoryForDate(iterable $histories, string $dateString): ?ContractHistoryLocal
     {
@@ -463,7 +464,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                 ? $history->end_date->format('Y-m-d')
                 : ($history->end_date ? (string) $history->end_date : null);
 
-            if ($startDate !== '' && $startDate <= $dateString && ($endDate === null || $endDate === '' || $endDate >= $dateString)) {
+            if ($startDate !== '' && $startDate <= $dateString && ($endDate === null || $endDate === '' || $endDate > $dateString)) {
                 return $history;
             }
         }

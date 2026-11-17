@@ -22,6 +22,21 @@ class AttendanceRecord extends Model
         'attendance_date' => 'date',
     ];
 
+    protected static function booted(): void
+    {
+        static::updating(function (AttendanceRecord $record): void {
+            // A scheduled maternity day remains CM even if a later fingerprint
+            // or payroll-calendar import tries to replace it with H/manual status.
+            if (
+                $record->getOriginal('source') === 'maternity'
+                && $record->source !== 'maternity'
+            ) {
+                $record->status = 'CM';
+                $record->source = 'maternity';
+            }
+        });
+    }
+
     public function employee()
     {
         return $this->belongsTo(

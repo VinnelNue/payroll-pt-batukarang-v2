@@ -13,6 +13,7 @@ use App\Http\Controllers\EmployeeOuterIslandController;
 use App\Http\Controllers\EmployeeContractController;
 
 use App\Http\Controllers\PayrollController;
+use App\Http\Controllers\MaternityLeaveController;
 
 use App\Http\Controllers\PayrollLocalBcaExportController;
 
@@ -854,6 +855,20 @@ Route::middleware(['auth'])->group(function () {
                 PayrollController::class,
                 'sendEmailBulk',
             ])->name('send-email-bulk');
+
+            // Cuti melahirkan: pendaftaran, dokumen persalinan, dan verifikasi HRD.
+            Route::get('maternity', [MaternityLeaveController::class, 'index'])
+                ->name('maternity.index');
+            Route::post('maternity', [MaternityLeaveController::class, 'store'])
+                ->name('maternity.store');
+            Route::post('maternity/{maternityCase}/certificate', [MaternityLeaveController::class, 'uploadCertificate'])
+                ->name('maternity.certificate.upload');
+            Route::get('maternity/{maternityCase}/certificate', [MaternityLeaveController::class, 'downloadCertificate'])
+                ->name('maternity.certificate.download');
+            Route::post('maternity/{maternityCase}/verify', [MaternityLeaveController::class, 'verify'])
+                ->name('maternity.verify');
+            Route::post('maternity/{maternityCase}/reject', [MaternityLeaveController::class, 'reject'])
+                ->name('maternity.reject');
 
         });
 
