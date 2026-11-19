@@ -870,6 +870,12 @@ Route::middleware(['auth'])->group(function () {
             Route::post('maternity/{maternityCase}/reject', [MaternityLeaveController::class, 'reject'])
                 ->name('maternity.reject');
 
+            // CRUD tambahan: tetap di dalam group payrolls/local yang sama.
+            Route::put('maternity/{maternityCase}', [MaternityLeaveController::class, 'update'])
+                ->name('maternity.update');
+
+            Route::delete('maternity/{maternityCase}', [MaternityLeaveController::class, 'destroy'])
+                ->name('maternity.destroy');
         });
 
     /*

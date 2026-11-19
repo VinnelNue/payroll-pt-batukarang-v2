@@ -4,10 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Employee;
 use App\Models\MaternityLeaveCase;
+use App\Models\AttendanceRecord;
+use App\Models\Payroll;
+use Carbon\Carbon;
 use App\Services\MaternityLeaveScheduleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -37,11 +41,26 @@ class MaternityLeaveController extends Controller
         $cases = MaternityLeaveCase::query()
             ->with([
                 'employee:id_employee,full_name,address_ktp',
-                'payrolls:id_payroll,maternity_case_id,maternity_hold_amount,maternity_release_amount,period_month',
+                'payrolls:id_payroll,employee_id,period_month,maternity_case_id,maternity_hold_days,maternity_hold_amount,maternity_release_amount,maternity_leave_pay,is_locked',
             ])
             ->orderByDesc('leave_start_date')
             ->orderByDesc('id')
             ->paginate(20);
+
+        // Also detect payroll rows in the scheduled months even when an older
+        // payroll row was not linked to maternity_case_id. This keeps the UI
+        // action state aligned with the server-side delete guard.
+        $cases->getCollection()->transform(function (MaternityLeaveCase $case): MaternityLeaveCase {
+            $periods = $this->schedulePeriodMonths($case);
+            $hasPayrollInSchedule = !empty($periods) && Payroll::query()
+                ->where('employee_id', $case->employee_id)
+                ->whereIn('period_month', $periods)
+                ->exists();
+
+            $case->setAttribute('has_payroll_in_schedule', $hasPayrollInSchedule);
+
+            return $case;
+        });
 
         // CM hanya dapat didaftarkan untuk karyawan perempuan yang aktif
         // dan memiliki master kontrak aktif.
@@ -138,6 +157,420 @@ class MaternityLeaveController extends Controller
         return redirect()
             ->route('payrolls.local.maternity.index')
             ->with('success', $message);
+    }
+
+
+
+    /**
+     * Update tanggal dan durasi kasus CM.
+     * Perubahan jadwal otomatis disinkronkan ke attendance_records melalui snapshot.
+     */
+    public function update(Request $request, MaternityLeaveCase $maternityCase)
+    {
+        $this->authorizeManagement();
+
+        $validated = $request->validate([
+            'leave_start_date' => ['required', 'date'],
+            'period1_days' => ['required', 'integer', 'min:1', 'max:45'],
+            'expected_delivery_date' => ['present', 'nullable', 'date', 'after_or_equal:leave_start_date'],
+            'delivery_date' => ['present', 'nullable', 'date', 'after_or_equal:leave_start_date', 'before_or_equal:today'],
+            'certificate' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+        ]);
+
+        $newDeliveryDate = $validated['delivery_date'] ?: null;
+        $oldDeliveryDate = $maternityCase->delivery_date
+            ? Carbon::parse($maternityCase->delivery_date)->toDateString()
+            : null;
+        $deliveryDateChanged = $newDeliveryDate !== $oldDeliveryDate;
+        $certificate = $request->file('certificate');
+
+        if ($deliveryDateChanged && $newDeliveryDate && !$certificate) {
+            throw ValidationException::withMessages([
+                'certificate' => 'Tanggal persalinan aktual berubah. Unggah bukti persalinan yang sesuai dengan tanggal baru.',
+            ]);
+        }
+
+        if ($certificate && !$newDeliveryDate) {
+            throw ValidationException::withMessages([
+                'delivery_date' => 'Isi tanggal persalinan aktual sebelum mengunggah bukti persalinan.',
+            ]);
+        }
+
+        $originalName = $certificate?->getClientOriginalName();
+        $newPath = $certificate
+            ? $certificate->store('maternity-certificates', 'local')
+            : null;
+
+        if ($certificate && !$newPath) {
+            return back()->with('error', 'Dokumen baru gagal disimpan. Silakan coba kembali.');
+        }
+
+        try {
+            $result = DB::transaction(function () use ($maternityCase, $validated, $newDeliveryDate, $newPath, $originalName) {
+                $lockedCase = MaternityLeaveCase::query()
+                    ->whereKey($maternityCase->getKey())
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $this->assertCaseIsNotFinal($lockedCase);
+
+                $oldPath = $lockedCase->certificate_path;
+                $currentDeliveryDate = $lockedCase->delivery_date
+                    ? Carbon::parse($lockedCase->delivery_date)->toDateString()
+                    : null;
+                $currentStartDate = Carbon::parse($lockedCase->leave_start_date)->toDateString();
+                $dateChangedUnderLock = $currentDeliveryDate !== $newDeliveryDate;
+                $scheduleChangedUnderLock = $currentStartDate !== Carbon::parse($validated['leave_start_date'])->toDateString()
+                    || (int) $lockedCase->period1_days !== (int) $validated['period1_days']
+                    || $dateChangedUnderLock;
+
+                if ($dateChangedUnderLock && $newDeliveryDate && !$newPath) {
+                    throw ValidationException::withMessages([
+                        'certificate' => 'Tanggal persalinan aktual berubah. Unggah bukti persalinan yang sesuai dengan tanggal baru.',
+                    ]);
+                }
+
+                if ($scheduleChangedUnderLock) {
+                    $this->assertCaseCanBeEdited($lockedCase);
+                    $this->assertSchedulePeriodsUnlocked($lockedCase);
+                }
+
+                $lockedCase->leave_start_date = $validated['leave_start_date'];
+                $lockedCase->period1_days = (int) $validated['period1_days'];
+                $lockedCase->expected_delivery_date = $validated['expected_delivery_date'] ?: null;
+                $lockedCase->delivery_date = $newDeliveryDate;
+
+                if ($newPath) {
+                    $lockedCase->certificate_path = $newPath;
+                    $lockedCase->certificate_original_name = $originalName
+                        ? Str::limit($originalName, 255, '')
+                        : null;
+                    $lockedCase->document_uploaded_at = now();
+                    $lockedCase->status = 'submitted';
+                    $lockedCase->rejection_reason = null;
+                    $lockedCase->verified_at = null;
+                    $lockedCase->verified_by = null;
+                } elseif ($newDeliveryDate === null) {
+                    // Menghapus tanggal aktual berarti Tahap 2 dan dokumen aktual
+                    // ikut dibatalkan. Tahap 1 tetap disinkronkan.
+                    $lockedCase->certificate_path = null;
+                    $lockedCase->certificate_original_name = null;
+                    $lockedCase->document_uploaded_at = null;
+                    $lockedCase->status = 'pending';
+                    $lockedCase->rejection_reason = null;
+                    $lockedCase->verified_at = null;
+                    $lockedCase->verified_by = null;
+                }
+
+                $lockedCase->save();
+
+                $freshCase = $lockedCase->fresh();
+                $syncResult = [
+                    'updated' => 0,
+                    'restored' => 0,
+                ];
+
+                if ($scheduleChangedUnderLock) {
+                    $this->assertSchedulePeriodsUnlocked($freshCase);
+                    $syncResult = app(MaternityLeaveScheduleService::class)
+                        ->syncAttendance($freshCase);
+                }
+
+                return [
+                    'old_path' => $oldPath,
+                    'sync' => $syncResult,
+                    'schedule_changed' => $scheduleChangedUnderLock,
+                    'periods' => $this->schedulePeriodMonths($freshCase),
+                ];
+            });
+        } catch (\Throwable $exception) {
+            if ($newPath) {
+                Storage::disk('local')->delete($newPath);
+            }
+            throw $exception;
+        }
+
+        if (!empty($result['old_path']) && $result['old_path'] !== $newPath) {
+            Storage::disk('local')->delete($result['old_path']);
+        }
+
+        $sync = $result['sync'];
+        $periodLabels = implode(', ', $result['periods']);
+
+        $successMessage = $result['schedule_changed']
+            ? sprintf(
+                'Data dan jadwal CM berhasil diperbarui. Record CM disinkronkan: %d; absensi asal dipulihkan: %d. Silakan simpan ulang payroll periode %s agar perhitungan mengikuti jadwal terbaru.',
+                $sync['updated'],
+                $sync['restored'],
+                $periodLabels ?: 'terkait'
+            )
+            : 'Data referensi/dokumen CM berhasil diperbarui. Jadwal absensi tidak berubah.';
+
+        return redirect()
+            ->route('payrolls.local.maternity.index')
+            ->with('success', $successMessage);
+    }
+
+    /**
+     * Hapus kasus CM hanya sebelum dipakai payroll dan tanpa periode terkunci.
+     * AttendanceRecord yang tertimpa CM dipulihkan dari attendance_snapshots.
+     */
+    public function destroy(MaternityLeaveCase $maternityCase)
+    {
+        $this->authorizeManagement();
+
+        // The database transaction restores original attendance and removes
+        // the case row first. The physical file is deleted only after commit,
+        // so a rollback can never leave a case pointing to a missing document.
+        $result = DB::transaction(function () use ($maternityCase) {
+            $lockedCase = MaternityLeaveCase::query()
+                ->whereKey($maternityCase->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedCase->status === 'verified' || $lockedCase->released_at) {
+                throw ValidationException::withMessages([
+                    'maternity_case' => 'Kasus CM yang sudah diverifikasi atau dilepas tidak dapat dihapus.',
+                ]);
+            }
+
+            $periods = $this->schedulePeriodMonths($lockedCase);
+            $hasLinkedPayroll = Payroll::query()
+                ->where('maternity_case_id', $lockedCase->getKey())
+                ->exists();
+            $hasPayrollInSchedule = !empty($periods) && Payroll::query()
+                ->where('employee_id', $lockedCase->employee_id)
+                ->whereIn('period_month', $periods)
+                ->exists();
+
+            if ($hasLinkedPayroll || $hasPayrollInSchedule) {
+                throw ValidationException::withMessages([
+                    'maternity_case' => 'Kasus CM tidak dapat dihapus karena sudah menyentuh periode payroll. Hapus/reset payroll draft terkait terlebih dahulu, lalu coba kembali.',
+                ]);
+            }
+
+            $this->assertSchedulePeriodsUnlocked($lockedCase);
+
+            $restored = $this->restoreAttendanceSnapshots($lockedCase);
+            $certificatePath = $lockedCase->certificate_path;
+
+            // Force a real database-row deletion even if the model later adopts
+            // Laravel SoftDeletes. The file bytes are stored on the local disk,
+            // while the path/name metadata live in this database row.
+            DB::table($lockedCase->getTable())
+                ->where($lockedCase->getKeyName(), $lockedCase->getKey())
+                ->delete();
+
+            return [
+                'restored' => $restored,
+                'certificate_path' => $certificatePath,
+                'case_id' => $lockedCase->getKey(),
+            ];
+        });
+
+        $fileCleanupFailed = false;
+        $certificatePath = $result['certificate_path'];
+
+        if ($certificatePath) {
+            try {
+                if (Storage::disk('local')->exists($certificatePath)) {
+                    $deleted = Storage::disk('local')->delete($certificatePath);
+                    $fileCleanupFailed = !$deleted && Storage::disk('local')->exists($certificatePath);
+                }
+            } catch (\Throwable $exception) {
+                $fileCleanupFailed = true;
+                Log::error('maternity.certificate.delete_failed', [
+                    'maternity_case_id' => $result['case_id'],
+                    'path' => $certificatePath,
+                    'exception' => $exception::class,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $message = sprintf(
+            'Kasus CM berhasil dihapus dari database. %d tanggal absensi asal dipulihkan dari snapshot.',
+            $result['restored']
+        );
+
+        if ($fileCleanupFailed) {
+            Log::error('maternity.certificate.delete_failed', [
+                'maternity_case_id' => $result['case_id'],
+                'path' => $certificatePath,
+            ]);
+
+            return redirect()
+                ->route('payrolls.local.maternity.index')
+                ->with('warning', $message . ' Namun file bukti persalinan belum berhasil dihapus dari storage lokal. Periksa log dan hapus file tersebut secara manual.');
+        }
+
+        return redirect()
+            ->route('payrolls.local.maternity.index')
+            ->with('success', $message . ' File bukti persalinan pada storage lokal juga sudah dihapus.');
+    }
+
+    private function assertCaseIsNotFinal(MaternityLeaveCase $case): void
+    {
+        if ($case->status === 'verified' || $case->released_at) {
+            throw ValidationException::withMessages([
+                'maternity_case' => 'Kasus CM yang sudah diverifikasi atau dilepas tidak dapat diubah. Hubungi Finance/administrator untuk koreksi historis.',
+            ]);
+        }
+    }
+
+    private function assertCaseCanBeEdited(MaternityLeaveCase $case): void
+    {
+        $this->assertCaseIsNotFinal($case);
+
+        $hasPayrollImpact = Payroll::query()
+            ->where('maternity_case_id', $case->getKey())
+            ->where(function ($query): void {
+                $query->where('maternity_hold_days', '>', 0)
+                    ->orWhere('maternity_hold_amount', '>', 0)
+                    ->orWhere('maternity_release_amount', '>', 0)
+                    ->orWhere('maternity_leave_pay', '>', 0);
+            })
+            ->exists();
+
+        if ($hasPayrollImpact) {
+            throw ValidationException::withMessages([
+                'maternity_case' => 'Tanggal CM tidak dapat diubah karena sudah memengaruhi perhitungan payroll. Perbaiki/reset payroll draft terkait terlebih dahulu.',
+            ]);
+        }
+    }
+
+    /** @return array<int, string> */
+    private function schedulePeriodMonths(MaternityLeaveCase $case): array
+    {
+        $months = [];
+
+        foreach ($case->schedulePeriods() as $period) {
+            $cursor = Carbon::parse($period['start'])->startOfMonth();
+            $lastMonth = Carbon::parse($period['end'])->startOfMonth();
+
+            while ($cursor->lessThanOrEqualTo($lastMonth)) {
+                $months[] = $cursor->format('Y-m');
+                $cursor->addMonth();
+            }
+        }
+
+        foreach (array_keys((array) ($case->attendance_snapshots ?? [])) as $dateString) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $dateString)) {
+                $months[] = substr((string) $dateString, 0, 7);
+            }
+        }
+
+        $months = array_values(array_unique($months));
+        sort($months);
+
+        return $months;
+    }
+
+    private function assertSchedulePeriodsUnlocked(MaternityLeaveCase $case): void
+    {
+        $months = $this->schedulePeriodMonths($case);
+
+        if (empty($months)) {
+            return;
+        }
+
+        $lockedMonths = Payroll::query()
+            ->where('employee_id', $case->employee_id)
+            ->whereIn('period_month', $months)
+            ->where('is_locked', true)
+            ->pluck('period_month')
+            ->map(static fn ($period): string => substr((string) $period, 0, 7))
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!empty($lockedMonths)) {
+            throw ValidationException::withMessages([
+                'maternity_case' => 'Kasus CM tidak dapat diubah/dihapus karena menyentuh payroll yang sudah Close: ' . implode(', ', $lockedMonths) . '.',
+            ]);
+        }
+    }
+
+    private function restoreAttendanceSnapshots(MaternityLeaveCase $case): int
+    {
+        $snapshots = (array) ($case->attendance_snapshots ?? []);
+        $dateBounds = [];
+
+        foreach ($case->schedulePeriods() as $period) {
+            $dateBounds[] = Carbon::parse($period['start'])->toDateString();
+            $dateBounds[] = Carbon::parse($period['end'])->toDateString();
+        }
+
+        foreach (array_keys($snapshots) as $snapshotDate) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $snapshotDate)) {
+                $dateBounds[] = (string) $snapshotDate;
+            }
+        }
+
+        // A legacy CM row without a snapshot cannot be safely restored to its
+        // original status, so stop rather than silently destroy attendance.
+        // Include historical snapshot dates too, because the CM schedule may
+        // have been edited before this deletion request.
+        $legacyRows = collect();
+        if (!empty($dateBounds)) {
+            sort($dateBounds);
+            $legacyRows = AttendanceRecord::query()
+                ->where('employee_id', $case->employee_id)
+                ->where('source', 'maternity')
+                ->whereBetween('attendance_date', [reset($dateBounds), end($dateBounds)])
+                ->get(['attendance_date']);
+        }
+
+        foreach ($legacyRows as $legacyRow) {
+            $dateString = Carbon::parse($legacyRow->attendance_date)->toDateString();
+            if (!array_key_exists($dateString, $snapshots)) {
+                throw ValidationException::withMessages([
+                    'maternity_case' => 'Ada record CM lama tanpa snapshot absensi asal pada ' . $dateString . '. Kasus tidak dihapus otomatis agar data absensi tidak hilang.',
+                ]);
+            }
+        }
+
+        $restored = 0;
+
+        foreach ($snapshots as $dateString => $original) {
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $dateString)) {
+                continue;
+            }
+
+            $record = AttendanceRecord::query()
+                ->where('employee_id', $case->employee_id)
+                ->whereDate('attendance_date', $dateString)
+                ->first();
+
+            $wasMaternityRecord = $record
+                && strtolower((string) $record->source) === 'maternity';
+
+            if ($wasMaternityRecord) {
+                $record->delete();
+            }
+
+            if (!empty($original['exists'])) {
+                // Never overwrite a later manual/fingerprint correction.
+                $current = AttendanceRecord::query()
+                    ->where('employee_id', $case->employee_id)
+                    ->whereDate('attendance_date', $dateString)
+                    ->first();
+
+                if (!$current) {
+                    AttendanceRecord::create([
+                        'employee_id' => $case->employee_id,
+                        'attendance_date' => $dateString,
+                        'status' => $original['status'] ?? null,
+                        'source' => $original['source'] ?? null,
+                    ]);
+                    $restored++;
+                }
+            } elseif ($wasMaternityRecord) {
+                $restored++;
+            }
+        }
+
+        return $restored;
     }
 
     public function uploadCertificate(Request $request, MaternityLeaveCase $maternityCase)
