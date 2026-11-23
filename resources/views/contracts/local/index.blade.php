@@ -487,35 +487,21 @@
 
                         $todayForContract = \Carbon\Carbon::today();
                         $allContractHistories = $emp->contract?->histories ?? collect();
-                        $effectiveContractHistory = $allContractHistories
-                            ->filter(function ($historyRow) use ($todayForContract) {
-                                try {
-                                    $starts = $historyRow->start_date
-                                        ? \Carbon\Carbon::parse($historyRow->start_date)->startOfDay()
-                                        : null;
-                                    $ends = $historyRow->end_date
-                                        ? \Carbon\Carbon::parse($historyRow->end_date)->endOfDay()
-                                        : null;
-                                    $exits = $historyRow->exit_date
-                                        ? \Carbon\Carbon::parse($historyRow->exit_date)->startOfDay()
-                                        : null;
+                        $effectiveTodayHistories = \App\Support\ContractHistoryResolver::matchingDate(
+                            $allContractHistories,
+                            $todayForContract
+                        );
+                        $contractHasCurrentOverlap = $effectiveTodayHistories->count() > 1;
+                        $effectiveContractHistory = $effectiveTodayHistories->count() === 1
+                            ? $effectiveTodayHistories->first()
+                            : null;
 
-                                    return $starts !== null
-                                        && $starts->lte($todayForContract)
-                                        && (!$ends || $ends->gte($todayForContract))
-                                        && (!$exits || $exits->gte($todayForContract));
-                                } catch (\Throwable $e) {
-                                    return false;
-                                }
-                            })
-                            ->sortByDesc('start_date')
-                            ->sortByDesc('id_contract_history')
-                            ->first();
-
-                        // Tabel utama selalu menampilkan data yang efektif hari ini.
-                        // Jika belum ada riwayat yang efektif (mis. kontrak pertama terjadwal),
-                        // gunakan pointer master sebagai fallback agar record tetap dapat dibuka.
-                        $contract = $effectiveContractHistory ?? $emp->contract?->currentHistory;
+                        // Jika ada overlap hari ini, jangan menampilkan salah satu history
+                        // seolah-olah valid. Pointer lama hanya fallback saat tidak ada overlap.
+                        $contract = $effectiveContractHistory
+                            ?? ($contractHasCurrentOverlap ? null : ($emp->contract_reference_history ?? null));
+                        $contractIsCurrent = $effectiveContractHistory !== null && !$contractHasCurrentOverlap;
+                        $contractIsReferenceOnly = $contract !== null && !$contractIsCurrent;
                         $contractIsScheduled = false;
                         $contractEffectiveDateLabel = null;
                         if ($contract?->start_date) {
@@ -763,6 +749,9 @@
                                     {{ $contract->job_title ?? '-' }}
 
                                 </div>
+                                @if($contractIsReferenceOnly)
+                                    <div class="small text-warning-emphasis mt-1">Data history terakhir — bukan kontrak yang berlaku hari ini</div>
+                                @endif
 
 
                                 {{-- DEPARTMENT + AREA --}}
@@ -834,11 +823,18 @@
 
                             @else
 
-                                <span class="text-muted">
-
-                                    Belum ada kontrak aktif
-
-                                </span>
+                                @if($contractHasCurrentOverlap)
+                                    <span class="badge bg-danger status-badge">
+                                        RIWAYAT OVERLAP
+                                    </span>
+                                    <div class="small text-danger mt-1">
+                                        Lebih dari satu history berlaku hari ini. Periksa periode kontrak.
+                                    </div>
+                                @else
+                                    <span class="text-muted">
+                                        Belum ada kontrak aktif
+                                    </span>
+                                @endif
 
                             @endif
 
@@ -850,90 +846,39 @@
                         =========================================================== --}}
 
                         <td class="text-center">
-
-                            @if($contract)
-
-                                @if($contractIsScheduled)
-                                    <div class="mb-2">
-                                        <span class="badge bg-warning text-dark status-badge">BELUM BERLAKU</span>
-                                        <div class="small text-muted mt-1">Mulai {{ $contractEffectiveDateLabel }}</div>
-                                    </div>
-                                @endif
-
-                                @if(
-                                    in_array(
-                                        $contract->employment_type,
-                                        $terminationTypes,
-                                        true
-                                    )
-                                )
-
-                                    <span
-                                        class="badge bg-danger status-badge"
-                                        title="Alasan: {{ $contract->exit_reason ?? '-' }}"
-                                    >
-
-                                        <i class="fa-solid fa-user-slash me-1"></i>
-
-                                        {{ $contract->employment_type }}
-
-                                    </span>
-
-
-                                    @if($contract->exit_date)
-
-                                        <div
-                                            class="text-muted mt-1"
-                                            style="font-size: 10px;"
-                                        >
-
-                                            {{ \Carbon\Carbon::parse($contract->exit_date)->format('d/m/Y') }}
-
-                                        </div>
-
-                                    @endif
-
-                                @else
-
+                            @switch($emp->contract_status ?? 'no_history')
+                                @case('active')
                                     @php
-                                        $roman = [
-                                            1 => 'I',
-                                            2 => 'II',
-                                            3 => 'III',
-                                            4 => 'IV',
-                                            5 => 'V',
-                                            6 => 'VI',
-                                            7 => 'VII',
-                                        ];
-
-                                        $employmentLabel =
-                                            $contract->employment_type === 'PKWTT'
-                                                ? 'Tetap'
-                                                : ($contract->employment_type === 'PKWT'
-                                                    ? 'Kontrak ' . ($roman[(int) $contract->pkwt_sequence] ?? (string) $contract->pkwt_sequence)
-                                                    : ($contract->employment_type ?? '-'));
+                                        $roman = [1 => 'I', 2 => 'II', 3 => 'III', 4 => 'IV', 5 => 'V', 6 => 'VI', 7 => 'VII'];
+                                        $employmentLabel = $contract?->employment_type === 'PKWTT'
+                                            ? 'Tetap'
+                                            : ($contract?->employment_type === 'PKWT'
+                                                ? 'Kontrak ' . ($roman[(int) $contract->pkwt_sequence] ?? (string) $contract->pkwt_sequence)
+                                                : ($contract?->employment_type ?? 'Aktif'));
                                     @endphp
-
-                                    <span class="badge bg-primary status-badge">
-
-                                        <i class="fa-solid fa-user-check me-1"></i>
-
-                                        {{ $employmentLabel }}
-
-                                    </span>
-
-                                @endif
-
-                            @else
-
-                                <span class="badge bg-secondary status-badge">
-
-                                    Belum Set
-
-                                </span>
-
-                            @endif
-
+                                    <span class="badge bg-success status-badge"><i class="fa-solid fa-user-check me-1"></i>{{ $employmentLabel }}</span>
+                                    @break
+                                @case('scheduled')
+                                    <span class="badge bg-info text-dark status-badge">AKAN BERLAKU</span>
+                                    @if($emp->contract_reference_history?->start_date)
+                                        <div class="small text-muted mt-1">Mulai {{ \Carbon\Carbon::parse($emp->contract_reference_history->start_date)->format('d/m/Y') }}</div>
+                                    @endif
+                                    @break
+                                @case('pending_decision')
+                                    <span class="badge bg-warning text-dark status-badge">MENUNGGU KEPUTUSAN</span>
+                                    @if($contract?->end_date)
+                                        <div class="small text-muted mt-1">Berakhir {{ \Carbon\Carbon::parse($contract->end_date)->format('d/m/Y') }}</div>
+                                    @endif
+                                    @break
+                                @case('inactive')
+                                    <span class="badge bg-danger status-badge">TIDAK AKTIF</span>
+                                    @break
+                                @case('needs_review')
+                                    <span class="badge bg-danger status-badge">PERLU PEMERIKSAAN</span>
+                                    @break
+                                @default
+                                    <span class="badge bg-secondary status-badge">BELUM ADA HISTORY</span>
+                            @endswitch
                         </td>
 
 

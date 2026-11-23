@@ -879,6 +879,30 @@ Route::middleware(['auth'])->group(function () {
         });
 
     /*
+    |--------------------------------------------------------------------------
+    | 5A. ABSENSI SECURITY / SATPAM
+    |--------------------------------------------------------------------------
+    | Tetap memakai PayrollController, Employee, AttendanceRecord, dan Payroll
+    | yang sama. Controller membatasi daftar karyawan berdasarkan job_title
+    | pada current contract history.
+    */
+    Route::prefix('payrolls/security')
+        ->name('payrolls.security.')
+        ->group(function () {
+            Route::get('create', [PayrollController::class, 'create'])
+                ->name('create');
+
+            Route::post('store', [PayrollController::class, 'store'])
+                ->name('store');
+
+            Route::post('import', [PayrollController::class, 'import'])
+                ->name('import');
+
+            Route::get('export-excel', [PayrollController::class, 'exportExcel'])
+                ->name('export-excel');
+        });
+
+    /*
 
     |--------------------------------------------------------------------------
 

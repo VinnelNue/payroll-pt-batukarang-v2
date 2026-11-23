@@ -11,12 +11,15 @@ use App\Models\ContractHistoryLocal;
 use App\Models\ContractLocal;
 
 use App\Models\Employee;
+use App\Models\Payroll;
+use App\Support\ContractHistoryResolver;
 
 use Carbon\Carbon;
 
 use Illuminate\Support\Collection;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 use Illuminate\Support\Str;
 
@@ -405,10 +408,11 @@ class EmployeeImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 
                 )->format('Y-m-d');
 
-            } catch (\Throwable) {
-
-                // Continue.
-
+            } catch (\Throwable $exception) {
+                Log::warning('EmployeeImport row skipped/partially rejected.', [
+                    'nik_ktp' => $nikKtp,
+                    'reason' => $exception->getMessage(),
+                ]);
             }
 
         }
@@ -1143,87 +1147,127 @@ class EmployeeImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 
 
 
-    private function selectCurrentHistory(array $histories): ?ContractHistoryLocal
-
+    private function historyPayloadDiffers(ContractHistoryLocal $history, array $payload): bool
     {
+        foreach ($payload as $field => $value) {
+            $existing = $history->{$field} ?? null;
 
-        if ($histories === []) {
+            if (in_array($field, ['start_date', 'end_date', 'exit_date'], true)) {
+                $existingValue = $existing ? Carbon::parse($existing)->toDateString() : null;
+                $newValue = $value ? Carbon::parse($value)->toDateString() : null;
+            } elseif (in_array($field, [
+                'basic_salary', 'allowance', 'manual_bpjs_tk_employee',
+                'manual_bpjs_ks_employee', 'manual_bpjs_company',
+            ], true)) {
+                $existingValue = round((float) $existing, 2);
+                $newValue = round((float) $value, 2);
+            } elseif (in_array($field, [
+                'is_bpjstk_active', 'is_bpjs_health_active', 'use_manual_bpjs', 'is_active',
+            ], true)) {
+                $existingValue = (int) (bool) $existing;
+                $newValue = (int) (bool) $value;
+            } else {
+                $existingValue = trim((string) ($existing ?? ''));
+                $newValue = trim((string) ($value ?? ''));
+            }
 
-            return null;
-
+            if ($existingValue !== $newValue) {
+                return true;
+            }
         }
 
-
-
-        $today = Carbon::today();
-
-
-
-        $current = collect($histories)
-
-            ->filter(function (ContractHistoryLocal $history) use ($today) {
-
-                $start = $history->start_date ? Carbon::parse($history->start_date) : null;
-
-                $end = $history->end_date ? Carbon::parse($history->end_date) : null;
-
-
-
-                return $start
-
-                    && $start->lte($today)
-
-                    && (!$end || $today->lt($end));
-
-            })
-
-            ->sortByDesc(fn (ContractHistoryLocal $history) => $history->start_date?->format('Y-m-d'))
-
-            ->first();
-
-
-
-        if ($current) {
-
-            return $current;
-
-        }
-
-
-
-        $latestStarted = collect($histories)
-
-            ->filter(function (ContractHistoryLocal $history) use ($today) {
-
-                return $history->start_date
-
-                    && Carbon::parse($history->start_date)->lte($today);
-
-            })
-
-            ->sortByDesc(fn (ContractHistoryLocal $history) => $history->start_date?->format('Y-m-d'))
-
-            ->first();
-
-
-
-        if ($latestStarted) {
-
-            return $latestStarted;
-
-        }
-
-
-
-        return collect($histories)
-
-            ->sortBy(fn (ContractHistoryLocal $history) => $history->start_date?->format('Y-m-d'))
-
-            ->first();
-
+        return false;
     }
 
+    private function hasLockedPayrollForHistory(ContractHistoryLocal $history, int $employeeId): bool
+    {
+        $start = Carbon::parse($history->start_date)->startOfMonth();
+        $end = $history->end_date
+            ? Carbon::parse($history->end_date)->endOfMonth()
+            : Carbon::today()->endOfMonth();
 
+        if ($history->exit_date) {
+            $exitEnd = Carbon::parse($history->exit_date)->endOfMonth();
+            if ($exitEnd->lt($end)) {
+                $end = $exitEnd;
+            }
+        }
+
+        return Payroll::query()
+            ->where('employee_id', $employeeId)
+            ->where('is_locked', true)
+            ->whereBetween('period_month', [$start->format('Y-m'), $end->format('Y-m')])
+            ->exists();
+    }
+
+    private function selectCurrentHistory(iterable $histories): ?ContractHistoryLocal
+    {
+        // Current means exactly one history covers today. Never fall back to
+        // the latest expired history or to a future scheduled record.
+        $matches = ContractHistoryResolver::matchingDate($histories, Carbon::today());
+
+        return $matches->count() === 1 ? $matches->first() : null;
+    }
+
+    /**
+     * If a later history is inserted while an earlier history is still open
+     * (or overlaps it), close the earlier one on the day before the later start.
+     * Intentional gaps are retained. A locked payroll interval is never rewritten.
+     */
+    private function normalizeHistoryTimeline(ContractLocal $contract): void
+    {
+        $histories = $contract->histories()
+            ->orderBy('start_date')
+            ->orderBy('id_contract_history')
+            ->get()
+            ->values();
+
+        for ($index = 0; $index < $histories->count() - 1; $index++) {
+            $current = $histories[$index];
+            $next = $histories[$index + 1];
+            $currentStart = Carbon::parse($current->start_date)->startOfDay();
+            $nextStart = Carbon::parse($next->start_date)->startOfDay();
+
+            if ($currentStart->gte($nextStart)) {
+                continue; // preserve the rows; overlap is handled as a data error below
+            }
+
+            $currentEnd = $current->end_date
+                ? Carbon::parse($current->end_date)->startOfDay()
+                : null;
+            $currentExit = $current->exit_date
+                ? Carbon::parse($current->exit_date)->startOfDay()
+                : null;
+            $dayBeforeNext = $nextStart->copy()->subDay();
+
+            if ($currentExit && $currentExit->lt($dayBeforeNext)) {
+                continue;
+            }
+
+            if ($currentEnd === null || $currentEnd->gte($nextStart)) {
+                // Only the month containing the new boundary can have its
+                // monthly payroll basis changed. Earlier locked months remain
+                // covered by the previous history and must not block a future
+                // contract schedule.
+                $boundaryMonth = $nextStart->format('Y-m');
+                $hasLockedPayroll = Payroll::query()
+                    ->where('employee_id', $contract->employee_id)
+                    ->where('is_locked', true)
+                    ->where('period_month', $boundaryMonth)
+                    ->exists();
+
+                if ($hasLockedPayroll) {
+                    // Do not rewrite a locked payroll's historical contract basis.
+                    continue;
+                }
+
+                $current->update([
+                    'end_date' => $dayBeforeNext->toDateString(),
+                    'is_active' => false,
+                ]);
+            }
+        }
+    }
 
     public function collection(Collection $rows): void
 
@@ -1888,21 +1932,49 @@ class EmployeeImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 
 
                     if (!$history) {
+                        // Before adding a later history, make sure closing an
+                        // open/overlapping earlier period will not rewrite a
+                        // payroll month that has already been locked.
+                        $newStart = Carbon::parse($historyData['start_date'])->startOfDay();
+                        $newEndCandidates = array_values(array_filter([
+                            $historyData['end_date'] ?? null,
+                            $historyData['exit_date'] ?? null,
+                        ]));
+                        $newEffectiveEnd = $newEndCandidates === []
+                            ? null
+                            : min(array_map(
+                                static fn ($date) => Carbon::parse($date)->toDateString(),
+                                $newEndCandidates
+                            ));
+                        $lockedPayrollQuery = Payroll::query()
+                            ->where('employee_id', $employee->id_employee)
+                            ->where('is_locked', true)
+                            ->where('period_month', '>=', $newStart->format('Y-m'));
+                        if ($newEffectiveEnd !== null) {
+                            $lockedPayrollQuery->where('period_month', '<=', Carbon::parse($newEffectiveEnd)->format('Y-m'));
+                        }
+                        if ($lockedPayrollQuery->exists()) {
+                            throw new \RuntimeException(
+                                'Import history dilewati karena periode efektif beririsan dengan payroll terkunci: '
+                                . $newStart->format('Y-m')
+                            );
+                        }
 
                         $history = $contract->histories()->create([
-
                             'uuid' => (string) Str::uuid(),
-
                             ...$historyData,
-
                             'is_active' => false,
-
                         ]);
-
                     } else {
+                        if ($this->historyPayloadDiffers($history, $historyData)
+                            && $this->hasLockedPayrollForHistory($history, (int) $employee->id_employee)) {
+                            throw new \RuntimeException(
+                                'Import history dilewati karena akan mengubah Contract History yang terkait payroll terkunci: '
+                                . $history->id_contract_history
+                            );
+                        }
 
                         $history->update($historyData);
-
                     }
 
 
@@ -1913,72 +1985,40 @@ class EmployeeImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 
 
 
-                $currentHistory = $this->selectCurrentHistory($historyModels);
+                // Re-read the complete history set, not only rows present in this
+                // Excel import, and normalize open periods against a later history.
+                $this->normalizeHistoryTimeline($contract);
+                $allHistories = $contract->histories()->orderBy('start_date')->get();
+                $currentHistory = $this->selectCurrentHistory($allHistories);
 
-
-
-                if (!$currentHistory) {
-
-                    return;
-
+                $allHistories->each(function (ContractHistoryLocal $history): void {
+                    $history->update(['is_active' => false]);
+                });
+                if ($currentHistory) {
+                    $currentHistory->update(['is_active' => true]);
                 }
 
-
-
-                $contract->histories()
-
-                    ->whereKey(array_map(
-
-                        static fn (ContractHistoryLocal $history) => $history->id_contract_history,
-
-                        $historyModels
-
-                    ))
-
-                    ->update(['is_active' => false]);
-
-
-
-                $currentHistory->update(['is_active' => true]);
-
-
-
                 $statusKaryawan = strtoupper(trim((string) $this->value(
-
                     $row,
-
                     ['status_karyawan', 'status_hubungan_kerja']
-
                 )));
 
-
-
-                $employeeActive = !(
-
-                    str_contains($statusKaryawan, 'PHK') ||
-
-                    str_contains($statusKaryawan, 'RESIGN') ||
-
-                    str_contains($statusKaryawan, 'PENSIUN')
-
-                );
-
-
+                $normalizedEmploymentStatus = strtoupper(str_replace([' ', '-'], '_', $statusKaryawan));
+                $isFormalTermination = str_contains($normalizedEmploymentStatus, 'PHK')
+                    || str_contains($normalizedEmploymentStatus, 'RESIGN')
+                    || str_contains($normalizedEmploymentStatus, 'PENSIUN')
+                    || str_contains($normalizedEmploymentStatus, 'END_CONTRACT');
+                $employeeActive = !$isFormalTermination;
 
                 $contract->update([
-
-                    'current_contract_history_id' => $currentHistory->id_contract_history,
-
+                    'current_contract_history_id' => $currentHistory?->id_contract_history,
+                    // A missing current history is not proof that the employee
+                    // has left; active status comes from the employee master/Excel status.
                     'is_active' => $employeeActive,
-
                 ]);
 
-
-
                 $employee->update([
-
                     'is_active' => $employeeActive,
-
                 ]);
 
                 if ($employee->wasRecentlyCreated) {

@@ -10,9 +10,12 @@ use App\Models\CompanySetting;
 use App\Models\Employee;
 use App\Models\Payroll;
 use App\Models\AttendanceRecord;
+use App\Models\FingerprintLog;
 use App\Models\Holiday;
 use App\Models\MaternityLeaveCase;
 use App\Services\MaternityLeaveScheduleService;
+use App\Support\AttendanceEmployeeScope;
+use App\Support\ContractHistoryResolver;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use App\Jobs\SendLocalSalarySlipEmail;
@@ -77,6 +80,15 @@ class PayrollController extends Controller
     private function userRole(): string
     {
         return (string) (Auth::user()->role ?? '');
+    }
+
+    /**
+     * Attendance screens share the same employee/attendance/payroll tables.
+     * Only the visible and submitted employee set changes by route.
+     */
+    private function attendanceScope(Request $request): string
+    {
+        return $request->routeIs('payrolls.security.*') ? 'security' : 'local';
     }
 
     private function isFinanceRole(): bool
@@ -363,12 +375,16 @@ class PayrollController extends Controller
             ],
         ]);
 
-        $employees = Employee::with('contract.currentHistory')
-            ->where('is_active', true)
-            ->get();
+        $employeesQuery = Employee::with([
+            'contract.currentHistory',
+            'contract.histories',
+        ]);
+        AttendanceEmployeeScope::applyPeriodEligibility($employeesQuery, $period);
+        $employees = $employeesQuery->get();
 
         $payrollCollection = Payroll::with([
             'employee.contract.currentHistory',
+            'employee.contract.histories',
         ])
             ->where(
                 'period_month',
@@ -392,10 +408,39 @@ class PayrollController extends Controller
             ->filter()
             ->values();
 
+        // Historical payroll listing views may read employee.contract.currentHistory.
+        // Rebind that relation in memory to the selected period; never change the
+        // database pointer that represents today's current contract.
+        $payrolls->each(function ($payroll) use ($period): void {
+            $employee = $payroll->employee;
+            $contract = $employee?->contract;
+            if (!$employee || !$contract) {
+                return;
+            }
+
+            $periodHistory = ContractHistoryResolver::forPeriod(
+                $contract->histories ?? collect(),
+                $period
+            );
+            $contract->setRelation('currentHistory', $periodHistory);
+            $employee->setRelation('activeContract', $contract);
+        });
+
         $payrollsByDepartment =
-            $payrolls->groupBy(function ($payroll) {
-                return $payroll->employee?->contract?->currentHistory?->department
-                    ?? 'Tanpa Department';
+            $payrolls->groupBy(function ($payroll) use ($period) {
+                $histories = $payroll->employee?->contract?->histories ?? collect();
+                $resolution = ContractHistoryResolver::forPayrollPeriod($histories, $period);
+                $departments = $resolution['histories']
+                    ->pluck('department')
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($departments->count() > 1) {
+                    return 'Beberapa Department';
+                }
+
+                return $departments->first() ?? 'Tanpa Department';
             });
 
         return view(
@@ -486,9 +531,12 @@ class PayrollController extends Controller
         // EMPLOYEES
         // ========================================================
 
-        $employees = Employee::with([
+        $attendanceScope = $this->attendanceScope($request);
+
+        $employeesQuery = Employee::with([
 
             'contract.currentHistory',
+            'contract.histories',
 
             'payrolls' => function ($q) use ($period) {
 
@@ -561,10 +609,45 @@ class PayrollController extends Controller
                     ->orderBy('attendance_date');
             },
 
-        ])
-            ->where('is_active', true)
-            ->get();
+        ]);
 
+        AttendanceEmployeeScope::applyPeriodEligibility($employeesQuery, $period);
+        AttendanceEmployeeScope::applyForPeriod($employeesQuery, $attendanceScope, $period);
+        $employees = $employeesQuery->get();
+
+        // Detail scan mentah hanya dimuat pada halaman Security agar jam
+        // fingerprint dapat diperiksa tanpa menebak pola masuk/pulang.
+        $fingerprintLogs = collect();
+        $fingerprintLogTotal = 0;
+        $fingerprintUnmatchedCount = 0;
+        if ($attendanceScope === 'security') {
+            $fingerprintPeriodStart = Carbon::createFromFormat('!Y-m-d', $period . '-01')->startOfMonth();
+            $fingerprintPeriodEnd = $fingerprintPeriodStart->copy()->endOfMonth();
+
+            $fingerprintEmployeeIds = $employees->pluck('id_employee')->map(fn ($id) => (int) $id)->all();
+            $fingerprintLogsBaseQuery = FingerprintLog::query()
+                ->whereIn('employee_id', $fingerprintEmployeeIds)
+                ->whereBetween('scan_at', [
+                    $fingerprintPeriodStart->format('Y-m-d 00:00:00'),
+                    $fingerprintPeriodEnd->format('Y-m-d 23:59:59'),
+                ]);
+
+            $fingerprintLogTotal = (clone $fingerprintLogsBaseQuery)->count();
+            $fingerprintLogs = $fingerprintLogsBaseQuery
+                ->with('employee:id_employee,full_name')
+                ->orderBy('scan_at')
+                ->limit(3000)
+                ->get();
+
+            $fingerprintUnmatchedCount = FingerprintLog::query()
+                ->whereNull('employee_id')
+                ->whereRaw("LOWER(TRIM(COALESCE(department, ''))) = ?", ['satpam'])
+                ->whereBetween('scan_at', [
+                    $fingerprintPeriodStart->format('Y-m-d 00:00:00'),
+                    $fingerprintPeriodEnd->format('Y-m-d 23:59:59'),
+                ])
+                ->count();
+        }
 
         // ========================================================
         // PREVIOUS PAYROLL / GANTUNGAN PREVIEW
@@ -642,7 +725,11 @@ class PayrollController extends Controller
                 'holidays',
                 'previousPayrolls',
                 'previousGantunganPreview',
-                'previousPeriod'
+                'previousPeriod',
+                'attendanceScope',
+                'fingerprintLogs',
+                'fingerprintLogTotal',
+                'fingerprintUnmatchedCount'
             )
         );
     }
@@ -971,15 +1058,14 @@ class PayrollController extends Controller
                 ) {
                     Excel::import(
                         new AttendanceImport(
-                            $period
+                            $period,
+                            basename($filePath)
                         ),
                         $filePath
                     );
                 }
 
-                AttendanceImport::saveSummaryToDatabase(
-                    $period
-                );
+                $fingerprintSummary = AttendanceImport::saveSummaryToDatabase($period);
 
                 return redirect()
                     ->back()
@@ -987,7 +1073,11 @@ class PayrollController extends Controller
                         'success',
                         'File ZIP Absensi ('
                         . count($extractedFiles)
-                        . ' log harian) berhasil diproses!'
+                        . ' file) berhasil diproses. Scan mentah: '
+                        . ($fingerprintSummary['raw_logs_processed'] ?? 0)
+                        . '; belum cocok ke karyawan: '
+                        . ($fingerprintSummary['raw_logs_unmatched'] ?? 0)
+                        . '.'
                     );
             }
 
@@ -1000,7 +1090,8 @@ class PayrollController extends Controller
                 Payroll::query()
                     ->where('period_month', $period)
                     ->where('is_locked', true)
-                    ->exists()
+                    ->exists(),
+                $this->attendanceScope($request)
             );
 
             Excel::import($calendarImport, $file);
@@ -1027,25 +1118,28 @@ class PayrollController extends Controller
                         . 'tetap: ' . $summary['unchanged'] . ', '
                         . 'dilewati karena terkunci: ' . $summary['skipped_locked'] . ', '
                         . 'placeholder: ' . $summary['skipped_placeholder'] . ', '
+                        . 'di luar kelompok halaman: ' . ($summary['skipped_wrong_scope'] ?? 0) . ', '
                         . 'CM yang tidak sesuai kasus/karyawan perempuan: ' . ($summary['skipped_maternity'] ?? 0) . '.'
                     );
             }
 
             // Bukan workbook payroll: pertahankan jalur import fingerprint lama.
             Excel::import(
-                new AttendanceImport($period),
+                new AttendanceImport($period, $file->getClientOriginalName()),
                 $file
             );
 
-            AttendanceImport::saveSummaryToDatabase(
-                $period
-            );
+            $fingerprintSummary = AttendanceImport::saveSummaryToDatabase($period);
 
             return redirect()
                 ->back()
                 ->with(
                     'success',
-                    'File absensi fingerprint berhasil diimpor!'
+                    'File absensi fingerprint berhasil diimpor. Scan mentah diproses: '
+                    . ($fingerprintSummary['raw_logs_processed'] ?? 0)
+                    . '; belum cocok ke karyawan: '
+                    . ($fingerprintSummary['raw_logs_unmatched'] ?? 0)
+                    . '.'
                 );
 
         } catch (Throwable $e) {
@@ -1149,6 +1243,8 @@ class PayrollController extends Controller
         $period =
             $validated['period_month'];
 
+        $attendanceScope = $this->attendanceScope($request);
+
         // ========================================================
         // LOCK
         // ========================================================
@@ -1207,22 +1303,85 @@ class PayrollController extends Controller
                 )
             );
 
-        $employees =
-            Employee::with(
-                'contract.currentHistory'
-            )
-                ->whereIn(
-                    'id_employee',
-                    $employeeIds
-                )
-                ->where(
-                    'is_active',
-                    true
-                )
-                ->get()
-                ->keyBy(
-                    'id_employee'
-                );
+        $employeesQuery = Employee::with([
+            'contract.currentHistory',
+            'contract.histories',
+        ])
+            ->whereIn(
+                'id_employee',
+                $employeeIds
+            );
+
+        AttendanceEmployeeScope::applyPeriodEligibility($employeesQuery, $period);
+        AttendanceEmployeeScope::applyForPeriod($employeesQuery, $attendanceScope, $period);
+
+        $employees = $employeesQuery
+            ->get()
+            ->keyBy('id_employee');
+
+        $allowedEmployeeIds = $employees->keys()
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+        $outOfScopeEmployeeIds = array_values(array_diff($employeeIds, $allowedEmployeeIds));
+
+        if (!empty($outOfScopeEmployeeIds)) {
+            $scopeLabel = $attendanceScope === 'security'
+                ? 'Satpam/Security'
+                : 'karyawan non-Satpam';
+
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'payrolls' => "Ada karyawan di luar kelompok {$scopeLabel} pada form absensi. Muat ulang halaman dan simpan melalui menu absensi yang sesuai.",
+                ]);
+        }
+
+        // Resolve historical contract by the selected payroll month. Current
+        // pointer is deliberately not used for a past period.
+        $periodContractMap = [];
+        $contractIssues = [];
+
+        foreach ($employees as $employeeId => $employee) {
+            $histories = $employee->contract?->histories ?? collect();
+            $resolution = ContractHistoryResolver::forPayrollPeriod($histories, $period);
+
+            if ($existingPeriodLocked && $resolution['status'] === 'compensation_change') {
+                // A locked payroll already has a stored monthly salary snapshot;
+                // attendance-only edits do not recompute that snapshot.
+                $periodHistory = ContractHistoryResolver::forPeriod($histories, $period);
+                if ($periodHistory) {
+                    $periodContractMap[(int) $employeeId] = $periodHistory;
+                    continue;
+                }
+            }
+
+            if ($resolution['status'] !== 'ok') {
+                $reason = match ($resolution['status']) {
+                    'no_history' => 'tidak ada Contract History yang mencakup periode',
+                    'gap' => 'terdapat jeda antar-Contract History di dalam periode',
+                    'overlap' => 'terdapat Contract History yang overlap',
+                    'compensation_change' => 'ada perubahan basis gaji/tunjangan/komponen payroll di tengah bulan; belum ada aturan prorata',
+                    default => 'Contract History perlu diperiksa',
+                };
+                $contractIssues[] = $employee->full_name . ': ' . $reason;
+                continue;
+            }
+
+            $periodContractMap[(int) $employeeId] = $resolution['history'];
+        }
+
+        // Do not let one employee awaiting an HR decision block payroll for
+        // every other employee in the month. Rows without a valid contract
+        // basis are omitted from periodContractMap and skipped by both save
+        // branches below. If nobody has a valid basis, stop without writing.
+        if ($periodContractMap === []) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'payrolls' => "Tidak ada karyawan dengan Contract History yang valid untuk payroll {$period}. Tidak ada payroll yang disimpan.\n- "
+                        . implode("\n- ", $contractIssues),
+                ]);
+        }
 
         // A new CM period must be registered through Kelola CM, where HRD
         // enters the Stage 1 duration. The calendar may only submit CM dates
@@ -1286,7 +1445,8 @@ class PayrollController extends Controller
                 $employees,
                 $period,
                 $cutoffDay,
-                $lockedHolidayMap
+                $lockedHolidayMap,
+                $periodContractMap
             ) {
 
                 foreach (
@@ -1298,29 +1458,9 @@ class PayrollController extends Controller
                     $employee =
                         $employees->get($empId);
 
-                    $contractHistory =
-                        $employee?->contract?->currentHistory;
+                    $contractHistory = $periodContractMap[$empId] ?? null;
 
                     if (!$employee || !$contractHistory) {
-                        continue;
-                    }
-
-                    $periodStart = Carbon::createFromFormat(
-                        'Y-m-d',
-                        $period . '-01'
-                    )->startOfMonth();
-
-                    $periodEnd = $periodStart->copy()->endOfMonth();
-
-                    $contractEnd = $contractHistory->end_date
-                        ? Carbon::parse($contractHistory->end_date)->startOfDay()
-                        : null;
-
-                    $hasLastWorkingDayInPeriod = $contractEnd
-                        && $contractEnd->gte($periodStart)
-                        && $contractEnd->lte($periodEnd);
-
-                    if (!$contractHistory->is_active && !$hasLastWorkingDayInPeriod) {
                         continue;
                     }
 
@@ -1698,7 +1838,8 @@ class PayrollController extends Controller
             $standardWorkDays,
             $overtimeRate,
             $canEditFinancial,
-            $currentHolidayMap
+            $currentHolidayMap,
+            $periodContractMap
         ) {
 
             foreach (
@@ -1716,96 +1857,16 @@ class PayrollController extends Controller
                         $empId
                     );
 
-                if (
-                    !$employee
-                    ||
-                    !$employee->contract?->currentHistory
-                ) {
+                $contract = $periodContractMap[$empId] ?? null;
+
+                if (!$employee || !$contract) {
                     continue;
                 }
-
-                $contract =
-                    $employee->contract?->currentHistory;
 
                 $existing =
                     $existingPayrolls->get(
                         $empId
                     );
-
-                $contractStart =
-                    $contract->start_date
-                        ? Carbon::parse(
-                            $contract->start_date
-                        )->startOfDay()
-                        : null;
-
-                $contractEnd =
-                    $contract->end_date
-                        ? Carbon::parse(
-                            $contract->end_date
-                        )->startOfDay()
-                        : null;
-
-                $periodStart = $periodDate->copy()->startOfMonth();
-                $periodEnd = $periodDate->copy()->endOfMonth();
-
-                // end_date adalah hari kerja terakhir dan tetap termasuk
-                // dalam periode payroll. History nonaktif tetap diproses
-                // pada bulan yang memuat hari kerja terakhir tersebut.
-                $hasLastWorkingDayInPeriod = $contractEnd
-                    && $contractEnd->gte($periodStart)
-                    && $contractEnd->lte($periodEnd);
-
-                $periodContractInvalid =
-                    (!$contract->is_active && !$hasLastWorkingDayInPeriod)
-                    ||
-                    ($contractStart && $periodEnd->lt($contractStart))
-                    ||
-                    ($contractEnd && $periodStart->gt($contractEnd));
-
-                if ($periodContractInvalid) {
-
-                    Payroll::updateOrCreate(
-                        [
-                            'employee_id' =>
-                                $empId,
-
-                            'period_month' =>
-                                $period,
-                        ],
-                        [
-                            'cutoff_day' => $cutoffDay,
-                            'standard_work_days' => $standardWorkDays,
-                            'daily_attendance' => [],
-                            'work_days' => 0,
-                            'paid_days' => 0,
-                            'unpaid_days' => 0,
-                            'unpaid_leave' => 0,
-                            'gantungan_days' => 0,
-                            'overtime_hours' => 0,
-                            'weekday_overtime_hours' => 0,
-                            'sunday_overtime_details' => [],
-                            'basic_salary' => 0,
-                            'allowance' => 0,
-                            'overtime_pay' => 0,
-                            'maternity_leave_pay' => 0,
-                            'incentive' => 0,
-                            'cash_advance' => 0,
-                            'other_deductions' => 0,
-                            'gantungan_deduction' => 0,
-                            'previous_gantungan_deduction' => 0,
-                            'bpjs_tk_deduction' => 0,
-                            'bpjs_ks_deduction' => 0,
-                            'is_bpjs_override' => false,
-                            'pph21_deduction' => 0,
-                            'gross_salary' => 0,
-                            'net_salary' => 0,
-                            'status' => 'Draft',
-                        ]
-                    );
-
-                    continue;
-                }
 
                 // ====================================================
                 // LOCKED PERIOD WITHOUT PAYROLL
@@ -2073,6 +2134,43 @@ class PayrollController extends Controller
                         $currentHolidayMap
                     );
 
+                // Do not count work/leave/absence on a day outside every
+                // effective contract history. Auto-generated holiday (HB)
+                // outside employment is removed from the payroll snapshot;
+                // real attendance statuses require HRD to fix the history.
+                $contractHistories = $employee->contract?->histories ?? collect();
+                $offContractAttendance = [];
+                foreach ($dailyAttendance as $dateKey => $dayStatus) {
+                    $normalizedDayStatus = $this->normalizeAttendanceStatus($dayStatus);
+                    if ($normalizedDayStatus === '') {
+                        continue;
+                    }
+
+                    $attendanceDate = Carbon::parse($dateKey)->startOfDay();
+                    $coverage = ContractHistoryResolver::statusOnDate($contractHistories, $attendanceDate);
+                    if ($coverage === 'covered') {
+                        continue;
+                    }
+
+                    if ($normalizedDayStatus === 'HB'
+                        || ($normalizedDayStatus === 'CM' && $attendanceDate->isSunday())) {
+                        $dailyAttendance[$dateKey] = '';
+                        continue;
+                    }
+
+                    $offContractAttendance[] = Carbon::parse($dateKey)->format('d/m/Y')
+                        . ' (' . $normalizedDayStatus . ')';
+                }
+
+                if ($offContractAttendance !== []) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'payrolls' => $employee->full_name
+                            . ': terdapat absensi di luar tanggal Contract History: '
+                            . implode(', ', array_slice($offContractAttendance, 0, 8))
+                            . '. Perbaiki periode kontrak atau verifikasi data absensi sebelum menyimpan payroll.',
+                    ]);
+                }
+
                 // ====================================================
                 // SUMMARY
                 // ====================================================
@@ -2228,6 +2326,13 @@ class PayrollController extends Controller
                         $standardWorkDays,
                         $previousPayroll
                     );
+
+                if (!empty($previousGantungan['basis_missing'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'payrolls' => $employee->full_name
+                            . ': ada hari gantungan dari periode sebelumnya, tetapi basis gaji periode tersebut tidak dapat dipastikan. Periksa Contract History atau payroll bulan sebelumnya sebelum menyimpan.',
+                    ]);
+                }
 
                 $previousGantunganDeduction =
                     $previousGantungan[
@@ -2882,6 +2987,15 @@ class PayrollController extends Controller
             }
         });
 
+        $successMessage = "Absensi & rekap payroll periode {$period} berhasil diproses. "
+            . "Gantungan periode {$period} akan dipotong pada {$nextPeriod}; "
+            . "gantungan dari {$previousPeriod} dipotong pada {$period}.";
+
+        if ($contractIssues !== []) {
+            $successMessage .= "\n\nTidak diproses karena Contract History belum valid (data absensi tetap tidak dihapus):\n- "
+                . implode("\n- ", $contractIssues);
+        }
+
         return redirect()
             ->route(
                 'payrolls.local.create',
@@ -2889,12 +3003,7 @@ class PayrollController extends Controller
                     'period' => $period,
                 ]
             )
-            ->with(
-                'success',
-                "Absensi & rekap payroll periode {$period} berhasil diproses. "
-                . "Gantungan periode {$period} akan dipotong pada {$nextPeriod}; "
-                . "gantungan dari {$previousPeriod} dipotong pada {$period}."
-            );
+            ->with('success', $successMessage);
     }
 
     // ============================================================
@@ -3297,6 +3406,7 @@ class PayrollController extends Controller
                         $previousPayroll->allowance
                         ?? 0
                     ),
+                'basis_missing' => false,
             ];
         }
 
@@ -3327,27 +3437,47 @@ class PayrollController extends Controller
                 (int) $previousCutoffDay
             );
 
+        $previousPeriodContract = ContractHistoryResolver::forPayrollPeriod(
+            $employee->contract?->histories ?? collect(),
+            $previousPeriod
+        );
+        $previousPeriodHistory = $previousPeriodContract['status'] === 'ok'
+            ? $previousPeriodContract['history']
+            : null;
+
+        $hasOffContractGantungan = false;
+        if ($gantunganDays > 0) {
+            $historiesForPreviousPeriod = $employee->contract?->histories ?? collect();
+            foreach ($records as $record) {
+                $status = $this->normalizeAttendanceStatus($record->status);
+                if (!in_array($status, ['A', 'I', 'S', 'H0.5'], true)) {
+                    continue;
+                }
+
+                $recordDate = $record->attendance_date instanceof Carbon
+                    ? $record->attendance_date->copy()->startOfDay()
+                    : Carbon::parse($record->attendance_date)->startOfDay();
+
+                if ((int) $recordDate->format('d') < (int) $previousCutoffDay) {
+                    continue;
+                }
+
+                if (ContractHistoryResolver::statusOnDate($historiesForPreviousPeriod, $recordDate) !== 'covered') {
+                    $hasOffContractGantungan = true;
+                    break;
+                }
+            }
+        }
+
         // Tidak ada gantungan.
         if ($gantunganDays <= 0) {
             return [
                 'days' => 0.0,
                 'deduction' => 0.0,
-                'cutoff_day' =>
-                    $previousCutoffDay,
-                'basic_salary' =>
-                    (float) (
-                        $previousPayroll?->basic_salary
-                        ??
-                        $employee->contract?->currentHistory?->basic_salary
-                        ?? 0
-                    ),
-                'allowance' =>
-                    (float) (
-                        $previousPayroll?->allowance
-                        ??
-                        $employee->contract?->currentHistory?->allowance
-                        ?? 0
-                    ),
+                'cutoff_day' => $previousCutoffDay,
+                'basic_salary' => (float) ($previousPayroll?->basic_salary ?? $previousPeriodHistory?->basic_salary ?? 0),
+                'allowance' => (float) ($previousPayroll?->allowance ?? $previousPeriodHistory?->allowance ?? 0),
+                'basis_missing' => false,
             ];
         }
 
@@ -3357,14 +3487,25 @@ class PayrollController extends Controller
         //
         // Prioritas:
         // 1. Payroll bulan sebelumnya
-        // 2. Contract saat ini sebagai fallback terakhir
+        // 2. Contract History yang mencakup bulan sebelumnya
         // ========================================================
+
+        if ((!$previousPayroll && $previousPeriodContract['status'] !== 'ok') || $hasOffContractGantungan) {
+            return [
+                'days' => round($gantunganDays, 1),
+                'deduction' => 0.0,
+                'cutoff_day' => $previousCutoffDay,
+                'basic_salary' => 0.0,
+                'allowance' => 0.0,
+                'basis_missing' => true,
+            ];
+        }
 
         $basicSalary =
             (float) (
                 $previousPayroll?->basic_salary
                 ??
-                $employee->contract?->currentHistory?->basic_salary
+                $previousPeriodHistory?->basic_salary
                 ?? 0
             );
 
@@ -3372,7 +3513,7 @@ class PayrollController extends Controller
             (float) (
                 $previousPayroll?->allowance
                 ??
-                $employee->contract?->currentHistory?->allowance
+                $previousPeriodHistory?->allowance
                 ?? 0
             );
 
@@ -3411,6 +3552,7 @@ class PayrollController extends Controller
                 $basicSalary,
             'allowance' =>
                 $allowance,
+            'basis_missing' => false,
         ];
     }
 
@@ -3667,6 +3809,7 @@ class PayrollController extends Controller
         $query =
             Payroll::with([
                 'employee.contract.currentHistory',
+                'employee.contract.histories',
             ])
                 ->whereHas(
                     'employee',
@@ -3695,6 +3838,15 @@ class PayrollController extends Controller
 
         $payroll =
             $query->firstOrFail();
+
+        $periodHistory = ContractHistoryResolver::forPeriod(
+            $payroll->employee?->contract?->histories ?? collect(),
+            $payroll->period_month
+        );
+        if ($payroll->employee?->contract) {
+            $payroll->employee->contract->setRelation('currentHistory', $periodHistory);
+            $payroll->employee->setRelation('activeContract', $payroll->employee->contract);
+        }
 
         $pdf =
             Pdf::loadView(
@@ -3723,6 +3875,7 @@ class PayrollController extends Controller
         $query =
             Payroll::with([
                 'employee.contract.currentHistory',
+                'employee.contract.histories',
             ])
                 ->whereHas(
                     'employee',
@@ -3751,6 +3904,15 @@ class PayrollController extends Controller
 
         $payroll =
             $query->firstOrFail();
+
+        $periodHistory = ContractHistoryResolver::forPeriod(
+            $payroll->employee?->contract?->histories ?? collect(),
+            $payroll->period_month
+        );
+        if ($payroll->employee?->contract) {
+            $payroll->employee->contract->setRelation('currentHistory', $periodHistory);
+            $payroll->employee->setRelation('activeContract', $payroll->employee->contract);
+        }
 
         $emailDestination =
             $payroll
@@ -5229,15 +5391,16 @@ class PayrollController extends Controller
         ]);
 
         $period = $validated['period'];
+        $attendanceScope = $this->attendanceScope($request);
 
         /*
-         * Export mengikuti halaman Input Absensi:
-         * semua employee aktif ikut diexport, walaupun payroll periode
-         * tersebut belum pernah disimpan.
+         * Export mengikuti kelompok halaman Input Absensi:
+         * Local mengecualikan Satpam/Security, sedangkan halaman Security
+         * hanya memuat jabatan Satpam/Security dari current contract history.
          */
-        $employeeCount = Employee::query()
-            ->where('is_active', true)
-            ->count();
+        $employeeQuery = Employee::query()->where('is_active', true);
+        AttendanceEmployeeScope::applyForPeriod($employeeQuery, $attendanceScope, $period);
+        $employeeCount = $employeeQuery->count();
 
         if ($employeeCount === 0) {
             return redirect()
@@ -5266,7 +5429,8 @@ class PayrollController extends Controller
             $response = Excel::download(
                 new PayrollLocalExport(
                     $period,
-                    $this->userRole()
+                    $this->userRole(),
+                    $attendanceScope
                 ),
                 "Rekap_Payroll_Local_{$period}.xlsx"
             );

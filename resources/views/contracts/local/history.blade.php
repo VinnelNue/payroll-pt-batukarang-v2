@@ -21,12 +21,16 @@
     $today = \Carbon\Carbon::today();
     $start = $history->start_date ? \Carbon\Carbon::parse($history->start_date)->startOfDay() : null;
     $end = $history->end_date ? \Carbon\Carbon::parse($history->end_date)->startOfDay() : null;
+    $exit = $history->exit_date ? \Carbon\Carbon::parse($history->exit_date)->startOfDay() : null;
+    $finalDay = $end && $exit
+        ? ($end->lte($exit) ? $end : $exit)
+        : ($end ?? $exit);
 
     if ($start && $start->greaterThan($today)) {
         $effectiveStatus = 'Terjadwal';
         $effectiveStatusClass = 'status-scheduled';
         $effectiveStatusIcon = 'fa-calendar-clock';
-    } elseif ($end && $end->lessThan($today)) {
+    } elseif ($finalDay && $finalDay->lessThan($today)) {
         $effectiveStatus = 'Selesai';
         $effectiveStatusClass = 'status-ended';
         $effectiveStatusIcon = 'fa-circle-check';

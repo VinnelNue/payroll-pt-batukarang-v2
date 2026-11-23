@@ -230,6 +230,14 @@
         opacity: .90;
     }
 
+    .contract-gap-cell {
+        background-color: #fff4e5 !important;
+    }
+
+    .contract-overlap-cell {
+        background-color: #fce7f3 !important;
+    }
+
     @media (max-width: 768px) {
 
         .payroll-action-sticky {
@@ -360,12 +368,14 @@ $totalDaysCount =
 
 $employeesByDepartment =
     $employees->groupBy(
-        function ($employee) {
-            return $employee
-                ->activeContract
-                ?->currentHistory
-                ?->department
-                ?? 'Tanpa Department';
+        function ($employee) use ($currentPeriod) {
+            $histories = $employee->contract?->histories ?? collect();
+            $periodHistory = \App\Support\ContractHistoryResolver::forPeriod(
+                $histories,
+                $currentPeriod
+            );
+
+            return $periodHistory?->department ?? 'Tanpa Department';
         }
     );
 
@@ -1358,8 +1368,42 @@ $tableColspan =
 
                             @php
 
-                                $contract =
-                                    $emp->activeContract?->currentHistory;
+                                // Payroll memakai satu basis kontrak yang memang
+                                // mencakup periode pilihan, bukan current contract hari ini.
+                                $contractHistories =
+                                    $emp->contract?->histories ?? collect();
+
+                                $periodPayrollResolution =
+                                    \App\Support\ContractHistoryResolver::forPayrollPeriod(
+                                        $contractHistories,
+                                        $currentPeriod
+                                    );
+
+                                // Basis finansial hanya aman dipakai jika seluruh resolver
+                                // menyatakan satu basis payroll yang jelas.
+                                $contract = $periodPayrollResolution['status'] === 'ok'
+                                    ? $periodPayrollResolution['history']
+                                    : null;
+
+                                // Identitas boleh memakai history referensi periode untuk
+                                // membantu HRD melihat riwayat, tetapi bukan basis hitung.
+                                $displayContract = $periodPayrollResolution['history']
+                                    ?? \App\Support\ContractHistoryResolver::forPeriod(
+                                        $contractHistories,
+                                        $currentPeriod
+                                    );
+
+                                $periodContractStatus = $periodPayrollResolution['status'];
+                                $periodHistoryItems = $periodPayrollResolution['histories'] ?? collect();
+                                $periodHasMultipleJobs = $periodHistoryItems
+                                    ->pluck('job_title')->filter()->unique()->count() > 1;
+                                $periodHasMultipleDepartments = $periodHistoryItems
+                                    ->pluck('department')->filter()->unique()->count() > 1;
+
+                                $periodHasOverlap =
+                                    \App\Support\ContractHistoryResolver::hasOverlappingPeriods(
+                                        $periodHistoryItems
+                                    );
 
                                 $existing =
                                     $emp->payrolls->first();
@@ -1440,7 +1484,7 @@ $tableColspan =
 
 
                                 $level =
-                                    $contract?->level;
+                                    $displayContract?->level;
 
 
                                 /*
@@ -1860,10 +1904,50 @@ $tableColspan =
                                     <div class="text-primary fw-semibold"
                                          style="font-size:.78rem;">
 
-                                        {{ $contract?->job_title ?? 'Staff' }}
+                                        {{ $displayContract?->job_title ?? 'Staff' }}
 
                                     </div>
 
+                                    @if($periodContractStatus === 'overlap' || $periodHasOverlap)
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0 mt-1"
+                                              style="font-size:.62rem;">
+                                            Perlu cek overlap kontrak
+                                        </span>
+                                    @elseif($periodContractStatus === 'gap')
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-0 mt-1"
+                                              style="font-size:.62rem;">
+                                            Ada jeda kontrak pada periode ini
+                                        </span>
+                                    @elseif($periodContractStatus === 'compensation_change')
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-0 mt-1"
+                                              style="font-size:.62rem;">
+                                            Perubahan kompensasi di tengah bulan - perlu aturan prorata
+                                        </span>
+                                    @elseif($periodContractStatus === 'no_history' && $contractHistories->isNotEmpty())
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-0 mt-1"
+                                              style="font-size:.62rem;">
+                                            Tidak ada kontrak untuk periode ini - menunggu/verifikasi HRD
+                                        </span>
+                                    @elseif($periodContractStatus === 'no_history')
+                                        <span class="badge bg-secondary-subtle text-secondary border rounded-pill px-2 py-0 mt-1"
+                                              style="font-size:.62rem;">
+                                            Belum ada Contract History
+                                        </span>
+                                    @endif
+
+                                    @if(!empty($previousGantunganData['basis_missing']))
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0 mt-1"
+                                              style="font-size:.62rem;">
+                                            Basis gantungan periode sebelumnya belum jelas
+                                        </span>
+                                    @endif
+
+                                    @if($periodHasMultipleJobs || $periodHasMultipleDepartments)
+                                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill px-2 py-0 mt-1"
+                                              style="font-size:.62rem;">
+                                            Ada perubahan jabatan/department dalam periode
+                                        </span>
+                                    @endif
 
                                     <span class="badge bg-light text-secondary border rounded-pill px-2 py-0 mt-1"
                                           style="font-size:.68rem;">
@@ -1888,7 +1972,7 @@ $tableColspan =
                                             Kat:
 
                                             <strong>
-                                                {{ $contract?->category ?? '-' }}
+                                                {{ $displayContract?->category ?? '-' }}
                                             </strong>
 
                                             |
@@ -1896,7 +1980,7 @@ $tableColspan =
                                             Lvl:
 
                                             <strong>
-                                                {{ $contract?->level ?? '-' }}
+                                                {{ $displayContract?->level ?? '-' }}
                                             </strong>
 
                                         </small>
@@ -1906,7 +1990,7 @@ $tableColspan =
                                               style="font-size:.68rem;">
 
                                             PTKP:
-                                            {{ $contract?->ptkp_status ?? 'TK/0' }}
+                                            {{ $displayContract?->ptkp_status ?? 'TK/0' }}
 
                                         </span>
 
@@ -2062,32 +2146,31 @@ $tableColspan =
                                             $dayNum >= $cutoffDay;
 
 
-                                        $dateIsBeforeContract =
-                                            $contract?->start_date
-                                            && $dt->copy()->startOfDay()->lt(
-                                                \Carbon\Carbon::parse(
-                                                    $contract->start_date
-                                                )->startOfDay()
+                                        $contractDateState =
+                                            \App\Support\ContractHistoryResolver::statusOnDate(
+                                                $contractHistories,
+                                                $dt
                                             );
 
+                                        $dateIsBeforeContract =
+                                            $contractDateState === 'before';
 
                                         $dateIsAfterContract =
-                                            $contract?->end_date
-                                            && $dt->copy()->startOfDay()->greaterThan(
-                                                \Carbon\Carbon::parse(
-                                                    $contract->end_date
-                                                )->startOfDay()
-                                            );
+                                            $contractDateState === 'after';
 
+                                        $dateIsContractGap =
+                                            $contractDateState === 'gap';
 
-                                        $contractCellClass =
-                                            $dateIsAfterContract
-                                                ? 'contract-expired-cell'
-                                                : (
-                                                    $dateIsBeforeContract
-                                                        ? 'contract-before-cell'
-                                                        : ''
-                                                );
+                                        $dateHasContractOverlap =
+                                            $contractDateState === 'overlap';
+
+                                        $contractCellClass = match ($contractDateState) {
+                                            'after' => 'contract-expired-cell',
+                                            'before' => 'contract-before-cell',
+                                            'gap' => 'contract-gap-cell',
+                                            'overlap' => 'contract-overlap-cell',
+                                            default => '',
+                                        };
 
                                     @endphp
 
@@ -2103,6 +2186,10 @@ $tableColspan =
                                             title="Di luar periode kontrak — input manual tetap diperbolehkan"
                                         @elseif($dateIsBeforeContract)
                                             title="Sebelum periode kontrak — input manual tetap diperbolehkan"
+                                        @elseif($dateIsContractGap)
+                                            title="Ada jeda antarperiode kontrak — periksa riwayat kontrak"
+                                        @elseif($dateHasContractOverlap)
+                                            title="Beberapa riwayat kontrak mencakup tanggal ini — periksa data overlap"
                                         @endif
                                     >
 

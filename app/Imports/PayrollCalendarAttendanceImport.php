@@ -5,6 +5,7 @@ namespace App\Imports;
 use App\Models\AttendanceRecord;
 use App\Models\Employee;
 use App\Models\MaternityLeaveCase;
+use App\Support\AttendanceEmployeeScope;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -28,12 +29,14 @@ class PayrollCalendarAttendanceImport implements WithMultipleSheets, SkipsUnknow
     public function __construct(
         string $period,
         int $cutoffDay,
-        bool $isLocked
+        bool $isLocked,
+        string $attendanceScope = 'local'
     ) {
         $this->sheetImport = new PayrollCalendarAttendanceSheetImport(
             $period,
             $cutoffDay,
-            $isLocked
+            $isLocked,
+            $attendanceScope
         );
     }
 
@@ -71,6 +74,7 @@ class PayrollCalendarAttendanceSheetImport implements ToCollection, WithStartRow
     private string $period;
     private int $cutoffDay;
     private bool $isLocked;
+    private string $attendanceScope;
     private bool $sheetWasFound = false;
     private bool $recognized = false;
 
@@ -82,6 +86,7 @@ class PayrollCalendarAttendanceSheetImport implements ToCollection, WithStartRow
         'skipped_placeholder' => 0,
         'skipped_invalid' => 0,
         'skipped_unknown_employee' => 0,
+        'skipped_wrong_scope' => 0,
         'skipped_maternity' => 0,
     ];
 
@@ -92,11 +97,13 @@ class PayrollCalendarAttendanceSheetImport implements ToCollection, WithStartRow
     public function __construct(
         string $period,
         int $cutoffDay,
-        bool $isLocked
+        bool $isLocked,
+        string $attendanceScope = 'local'
     ) {
         $this->period = $period;
         $this->cutoffDay = max(1, min(31, $cutoffDay));
         $this->isLocked = $isLocked;
+        $this->attendanceScope = AttendanceEmployeeScope::normalize($attendanceScope);
     }
 
     public function startRow(): int
@@ -213,19 +220,37 @@ class PayrollCalendarAttendanceSheetImport implements ToCollection, WithStartRow
             return;
         }
 
-        $validEmployeeIds = Employee::query()
-            ->whereIn('id_employee', array_values($employeeIds))
+        $employeeIdsForValidation = array_values($employeeIds);
+
+        $knownEmployeeIds = Employee::query()
+            ->whereIn('id_employee', $employeeIdsForValidation)
+            ->pluck('id_employee')
+            ->map(static fn ($id): int => (int) $id)
+            ->flip();
+
+        $scopedEmployeeQuery = Employee::query()
+            ->whereIn('id_employee', $employeeIdsForValidation);
+        AttendanceEmployeeScope::apply($scopedEmployeeQuery, $this->attendanceScope);
+        $validEmployeeIds = $scopedEmployeeQuery
             ->pluck('id_employee')
             ->map(static fn ($id): int => (int) $id)
             ->flip();
 
         $pending = array_filter(
             $pending,
-            function (array $item) use ($validEmployeeIds): bool {
-                if (!$validEmployeeIds->has($item['employee_id'])) {
+            function (array $item) use ($knownEmployeeIds, $validEmployeeIds): bool {
+                $employeeId = (int) $item['employee_id'];
+
+                if (!$knownEmployeeIds->has($employeeId)) {
                     $this->summary['skipped_unknown_employee']++;
                     return false;
                 }
+
+                if (!$validEmployeeIds->has($employeeId)) {
+                    $this->summary['skipped_wrong_scope']++;
+                    return false;
+                }
+
                 return true;
             }
         );

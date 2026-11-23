@@ -7,6 +7,8 @@ use App\Models\Employee;
 use App\Models\ContractLocal;
 
 use App\Models\ContractHistoryLocal;
+use App\Models\Payroll;
+use App\Support\ContractHistoryResolver;
 
 use Illuminate\Http\Request;
 
@@ -76,7 +78,9 @@ class ContractLocalController extends Controller
 
             'contract.currentHistory',
 
-        ])
+        
+            'contract.histories',
+])
 
             ->when(
 
@@ -174,17 +178,55 @@ class ContractLocalController extends Controller
 
             function ($employee) {
 
-                $history =
+                $histories = $employee->contract?->histories ?? collect();
+                $effectiveToday = ContractHistoryResolver::matchingDate(
+                    $histories,
+                    Carbon::today()
+                );
+                $history = $effectiveToday->count() === 1
+                    ? $effectiveToday->first()
+                    : null;
+                $referenceHistory = ContractHistoryResolver::latest($histories);
+                $futureHistory = $histories
+                    ->filter(fn ($item) => $item->start_date && Carbon::parse($item->start_date)->startOfDay()->gt(Carbon::today()))
+                    ->sortBy('start_date')
+                    ->first();
+                $latestHistory = ContractHistoryResolver::latestStartedOnOrBefore($histories, Carbon::today());
+                $latestTerminationEnd = $latestHistory
+                    ? ContractHistoryResolver::effectiveEnd($latestHistory)
+                    : null;
+                $latestIsTermination = $latestHistory
+                    && $this->isTerminatedEmploymentType((string) $latestHistory->employment_type)
+                    && $latestTerminationEnd
+                    && $latestTerminationEnd->lt(Carbon::today());
 
-                    $employee
+                $currentTerminationEnd = $history
+                    ? ContractHistoryResolver::effectiveEnd($history)
+                    : null;
+                $currentHistoryIsTermination = $history
+                    && $this->isTerminatedEmploymentType((string) $history->employment_type)
+                    && $currentTerminationEnd
+                    && $currentTerminationEnd->lt(Carbon::today());
 
-                        ->contract
+                if ($effectiveToday->count() > 1) {
+                    $contractStatus = 'needs_review';
+                } elseif (!$employee->is_active || $latestIsTermination || $currentHistoryIsTermination) {
+                    $contractStatus = 'inactive';
+                } elseif ($history) {
+                    $contractStatus = 'active';
+                } elseif ($futureHistory) {
+                    $contractStatus = 'scheduled';
+                } elseif ($referenceHistory) {
+                    $contractStatus = 'pending_decision';
+                } else {
+                    $contractStatus = 'no_history';
+                }
 
-                        ?->currentHistory;
-
-                $employee->current_contract_history =
-
-                    $history;
+                // Informasi history terakhir boleh ditampilkan sebagai referensi,
+                // tetapi tidak pernah dijadikan current contract jika tanggalnya sudah berakhir.
+                $employee->current_contract_history = $history;
+                $employee->contract_reference_history = $referenceHistory;
+                $employee->contract_status = $contractStatus;
 
                 $employee->current_contract_level =
 
@@ -202,7 +244,7 @@ class ContractLocalController extends Controller
 
                     $this->canViewSensitiveData(
 
-                        $history
+                        $referenceHistory
 
                     );
 
@@ -256,13 +298,48 @@ class ContractLocalController extends Controller
 
             $employee->contract;
 
-        $history =
-
-            $contract?->currentHistory;
-
         $histories =
 
             $contract?->histories ?? collect();
+
+        $history = ContractHistoryResolver::uniqueForDate(
+            $histories,
+            Carbon::today()
+        );
+        $referenceHistory = $history ?? ContractHistoryResolver::latest($histories);
+        $hasFutureHistory = $histories->contains(function ($item): bool {
+            return $item->start_date
+                && Carbon::parse($item->start_date)->startOfDay()->gt(Carbon::today());
+        });
+        $todayMatches = ContractHistoryResolver::matchingDate($histories, Carbon::today());
+
+        $latestStartedHistory = ContractHistoryResolver::latestStartedOnOrBefore($histories, Carbon::today());
+        $historyEnd = $history ? ContractHistoryResolver::effectiveEnd($history) : null;
+        $latestStartedEnd = $latestStartedHistory
+            ? ContractHistoryResolver::effectiveEnd($latestStartedHistory)
+            : null;
+        $historyIsTermination = $history
+            && $this->isTerminatedEmploymentType((string) $history->employment_type)
+            && $historyEnd
+            && $historyEnd->lt(Carbon::today());
+        $latestIsTermination = $latestStartedHistory
+            && $this->isTerminatedEmploymentType((string) $latestStartedHistory->employment_type)
+            && $latestStartedEnd
+            && $latestStartedEnd->lt(Carbon::today());
+
+        if ($todayMatches->count() > 1) {
+            $contractStatus = 'needs_review';
+        } elseif (!$employee->is_active || $historyIsTermination || $latestIsTermination) {
+            $contractStatus = 'inactive';
+        } elseif ($history) {
+            $contractStatus = 'active';
+        } elseif ($hasFutureHistory) {
+            $contractStatus = 'scheduled';
+        } elseif ($referenceHistory) {
+            $contractStatus = 'pending_decision';
+        } else {
+            $contractStatus = 'no_history';
+        }
 
         /*
 
@@ -298,7 +375,7 @@ class ContractLocalController extends Controller
 
             $this->canViewSensitiveData(
 
-                $history
+                $referenceHistory
 
             );
 
@@ -340,7 +417,7 @@ class ContractLocalController extends Controller
 
         $contractLevel =
 
-            $history?->level;
+            $referenceHistory?->level;
 
         $levelNumber =
 
@@ -518,6 +595,10 @@ class ContractLocalController extends Controller
 
                 'history',
 
+                'referenceHistory',
+
+                'contractStatus',
+
                 'histories',
 
                 'hasContractMaster',
@@ -608,7 +689,9 @@ class ContractLocalController extends Controller
 
             'contract.currentHistory',
 
-        ]);
+        
+            'contract.histories',
+]);
 
         $contract =
 
@@ -630,9 +713,10 @@ class ContractLocalController extends Controller
 
         }
 
-        $history =
-
-            $contract->currentHistory;
+        $history = ContractHistoryResolver::uniqueForDate(
+            $contract->histories,
+            Carbon::today()
+        );
 
         if (!$history) {
 
@@ -714,15 +798,7 @@ class ContractLocalController extends Controller
 
         */
 
-        abort_unless(
-
-            (int) $contract->current_contract_history_id ===
-
-            (int) $history->id_contract_history,
-
-            403
-
-        );
+        abort_unless((int) $history->contract_id === (int) $contract->id_contract, 404);
 
         /*
 
@@ -1106,7 +1182,7 @@ class ContractLocalController extends Controller
 
             'exit_date' =>
 
-                'nullable|date',
+                'nullable|date|after_or_equal:start_date',
 
             'exit_reason' =>
 
@@ -1494,6 +1570,61 @@ class ContractLocalController extends Controller
 
             !$isTerminated;
 
+        $protectedHistoryFields = [
+            'job_title', 'department', 'placement_area', 'category', 'level',
+            'basic_salary', 'allowance', 'is_bpjstk_active', 'is_bpjs_health_active',
+            'ptkp_status', 'ter_category', 'use_manual_bpjs',
+            'manual_bpjs_tk_employee', 'manual_bpjs_ks_employee', 'manual_bpjs_company',
+            'employment_type', 'pkwt_sequence', 'start_date', 'end_date', 'exit_date',
+        ];
+
+        $historyChangesPayrollBasis = collect($protectedHistoryFields)->contains(
+            function (string $field) use ($history, $validated): bool {
+                if (!array_key_exists($field, $validated)) {
+                    return false;
+                }
+
+                $before = $history->{$field} ?? null;
+                $after = $validated[$field] ?? null;
+
+                if (in_array($field, ['basic_salary', 'allowance', 'manual_bpjs_tk_employee', 'manual_bpjs_ks_employee', 'manual_bpjs_company'], true)) {
+                    return round((float) $before, 2) !== round((float) $after, 2);
+                }
+
+                if (in_array($field, ['is_bpjstk_active', 'is_bpjs_health_active', 'use_manual_bpjs'], true)) {
+                    return (int) (bool) $before !== (int) (bool) $after;
+                }
+
+                return trim((string) ($before ?? '')) !== trim((string) ($after ?? ''));
+            }
+        );
+
+        if ($historyChangesPayrollBasis) {
+            $historyStartMonth = Carbon::parse($history->start_date)->format('Y-m');
+            $historyEndDate = $history->end_date
+                ? Carbon::parse($history->end_date)
+                : Carbon::today();
+            if ($history->exit_date) {
+                $exitDate = Carbon::parse($history->exit_date);
+                if ($exitDate->lt($historyEndDate)) {
+                    $historyEndDate = $exitDate;
+                }
+            }
+            $historyEndMonth = $historyEndDate->format('Y-m');
+
+            $hasLockedPayroll = Payroll::query()
+                ->where('employee_id', $employee->id_employee)
+                ->where('is_locked', true)
+                ->whereBetween('period_month', [$historyStartMonth, $historyEndMonth])
+                ->exists();
+
+            if ($hasLockedPayroll) {
+                return back()->withInput()->withErrors([
+                    'contract' => 'History ini terkait payroll yang sudah terkunci. Koreksi data periode tersebut hanya boleh dilakukan melalui prosedur unlock resmi atau dibuat sebagai history baru dengan tanggal efektif yang benar.',
+                ]);
+            }
+        }
+
         /*
 
         |--------------------------------------------------------------------------
@@ -1520,31 +1651,10 @@ class ContractLocalController extends Controller
 
             ) {
 
-                $history->update(
+                $history->update($validated);
 
-                    $validated
-
-                );
-
-                $contract->update([
-
-                    'current_contract_history_id' =>
-
-                        $history->id_contract_history,
-
-                    'is_active' =>
-
-                        !$isTerminated,
-
-                ]);
-
-                $employee->update([
-
-                    'is_active' =>
-
-                        !$isTerminated,
-
-                ]);
+                // Recalculate current pointer from effective dates after an edit.
+                $this->syncCurrentContractPointer($contract, $employee);
 
             }
 
@@ -1652,6 +1762,7 @@ class ContractLocalController extends Controller
 
             'contract.currentHistory',
 
+            
             'contract.histories',
 
         ]);
@@ -1682,15 +1793,35 @@ class ContractLocalController extends Controller
 
         ]);
 
-        $currentHistory =
+        $currentHistory = ContractHistoryResolver::uniqueForDate(
+            $contract->histories,
+            Carbon::today()
+        );
+        $requestedStartDate = $request->input('start_date');
+        try {
+            $requestedStartDate = $requestedStartDate
+                ? Carbon::parse($requestedStartDate)->toDateString()
+                : Carbon::today()->toDateString();
+        } catch (\Throwable $e) {
+            $requestedStartDate = Carbon::today()->toDateString();
+        }
+        $referenceHistory = ContractHistoryResolver::latestStartedOnOrBefore(
+            $contract->histories,
+            $requestedStartDate
+        );
 
-            $contract->currentHistory;
+        // Kontrak pertama hanya ketika belum ada history sama sekali.
+        // Current pointer NULL setelah kontrak berakhir tidak berarti kontrak pertama.
+        $isInitialContract = $contract->histories->isEmpty();
 
-        // Kontrak pertama manual hanya berlaku jika belum ada satupun history.
-        // Jangan anggap ini kontrak pertama bila pointer kosong tetapi history lama/terjadwal sudah ada.
-        $isInitialContract =
-            !$currentHistory &&
-            $contract->histories->isEmpty();
+        // A newly appended history may not predate the first recorded history.
+        // Such a correction belongs in the explicit history-correction flow,
+        // not in a new renewal/adjustment that would inherit a future record.
+        if (!$isInitialContract && !$referenceHistory) {
+            return back()->withInput()->withErrors([
+                'start_date' => 'Tanggal mulai history baru lebih awal daripada seluruh history yang tercatat. Gunakan koreksi history yang sudah ada, bukan menambahkan periode baru.',
+            ]);
+        }
 
         /*
 
@@ -1748,7 +1879,7 @@ class ContractLocalController extends Controller
 
         $currentLevel =
 
-            $currentHistory?->level;
+            $referenceHistory?->level;
 
         $currentLevelNumber =
 
@@ -1770,49 +1901,49 @@ class ContractLocalController extends Controller
 
         $oldBasicSalary =
 
-            $currentHistory?->basic_salary ?? 0;
+            $referenceHistory?->basic_salary ?? 0;
 
         $oldAllowance =
 
-            $currentHistory?->allowance ?? 0;
+            $referenceHistory?->allowance ?? 0;
 
         $oldPtkpStatus =
 
-            $this->normalizePtkpCode($currentHistory?->ptkp_status ?? null)
+            $this->normalizePtkpCode($referenceHistory?->ptkp_status ?? null)
 
                 ?? 'TK0';
 
         $oldTerCategory =
 
-            in_array(strtoupper(trim((string) ($currentHistory?->ter_category ?? ''))), ['A', 'B', 'C'], true)
+            in_array(strtoupper(trim((string) ($referenceHistory?->ter_category ?? ''))), ['A', 'B', 'C'], true)
 
-                ? strtoupper(trim((string) $currentHistory?->ter_category))
+                ? strtoupper(trim((string) $referenceHistory?->ter_category))
 
                 : null;
 
         $oldUseManualBpjs =
 
-            $currentHistory?->use_manual_bpjs ?? false;
+            $referenceHistory?->use_manual_bpjs ?? false;
 
         $oldManualBpjsTkEmployee =
 
-            $currentHistory?->manual_bpjs_tk_employee ?? 0;
+            $referenceHistory?->manual_bpjs_tk_employee ?? 0;
 
         $oldManualBpjsKsEmployee =
 
-            $currentHistory?->manual_bpjs_ks_employee ?? 0;
+            $referenceHistory?->manual_bpjs_ks_employee ?? 0;
 
         $oldManualBpjsCompany =
 
-            $currentHistory?->manual_bpjs_company ?? 0;
+            $referenceHistory?->manual_bpjs_company ?? 0;
 
         $oldCategory =
 
-            $currentHistory?->category;
+            $referenceHistory?->category;
 
         $oldLevel =
 
-            $currentHistory?->level;
+            $referenceHistory?->level;
 
         /*
 
@@ -1891,6 +2022,9 @@ class ContractLocalController extends Controller
         */
 
         $validated = $request->validate([
+
+            'change_type' => 'required|string|in:initial_contract,contract_renewal,level_up,level_down,salary_adjustment,job_promotion,job_demotion,position_change,reward,punishment',
+            'change_reason' => 'nullable|string|max:1000|required_unless:change_type,initial_contract,contract_renewal',
 
             'nik_fingerprint' =>
 
@@ -1978,13 +2112,38 @@ class ContractLocalController extends Controller
 
             'exit_date' =>
 
-                'nullable|date',
+                'nullable|date|after_or_equal:start_date',
 
             'exit_reason' =>
 
                 'nullable|string|max:500',
 
         ]);
+
+        $validated['change_type'] = trim((string) $validated['change_type']);
+        $validated['change_reason'] = isset($validated['change_reason'])
+            ? trim((string) $validated['change_reason'])
+            : null;
+
+        if ($validated['change_type'] === 'initial_contract' && !$isInitialContract) {
+            return back()->withInput()->withErrors([
+                'change_type' => 'Kontrak pertama hanya boleh dibuat jika karyawan belum memiliki history kontrak.',
+            ]);
+        }
+
+        if ($validated['change_type'] !== 'initial_contract' && $isInitialContract) {
+            return back()->withInput()->withErrors([
+                'change_type' => 'Pilih Kontrak Pertama karena belum ada history kontrak sebelumnya.',
+            ]);
+        }
+
+        if ($referenceHistory
+            && $this->isTerminatedEmploymentType((string) $referenceHistory->employment_type)
+            && !in_array($validated['change_type'], ['contract_renewal'], true)) {
+            return back()->withInput()->withErrors([
+                'change_type' => 'History terakhir adalah terminasi. Untuk memulai hubungan kerja kembali, buat periode kontrak baru sesuai keputusan HRD; jangan gunakan perubahan level, gaji, reward, atau punishment pada history terminasi.',
+            ]);
+        }
 
         $validated['ptkp_status'] =
 
@@ -2280,6 +2439,15 @@ class ContractLocalController extends Controller
 
         }
 
+        // Perubahan non-renewal bukan status kerja/sequence baru. Inherit data
+        // kontrak dari history pembanding sebelum validasi terminasi dan PKWT.
+        if ($referenceHistory && !in_array($validated['change_type'], ['contract_renewal', 'initial_contract'], true)) {
+            $validated['employment_type'] = $referenceHistory->employment_type;
+            $validated['pkwt_sequence'] = $referenceHistory->pkwt_sequence;
+            $validated['exit_date'] = null;
+            $validated['exit_reason'] = null;
+        }
+
         /*
 
         |--------------------------------------------------------------------------
@@ -2298,54 +2466,30 @@ class ContractLocalController extends Controller
 
         */
 
-        if (
-
-            strtoupper(
-
-                $validated['employment_type']
-
-            ) === 'PKWT'
-
-        ) {
-
-            $validated['pkwt_sequence'] =
-
-                !empty($validated['pkwt_sequence'])
-
+        if (strtoupper((string) $validated['employment_type']) === 'PKWT') {
+            if (in_array($validated['change_type'], ['initial_contract', 'contract_renewal'], true)) {
+                $validated['pkwt_sequence'] = !empty($validated['pkwt_sequence'])
                     ? (int) $validated['pkwt_sequence']
-
                     : $this->getNextPkwtSequence($contract);
 
-            $duplicateSequence = ContractHistoryLocal::query()
+                $duplicateSequence = ContractHistoryLocal::query()
+                    ->where('contract_id', $contract->id_contract)
+                    ->where('employment_type', 'PKWT')
+                    ->where('pkwt_sequence', $validated['pkwt_sequence'])
+                    ->exists();
 
-                ->where('contract_id', $contract->id_contract)
-
-                ->where('employment_type', 'PKWT')
-
-                ->where('pkwt_sequence', $validated['pkwt_sequence'])
-
-                ->exists();
-
-            if ($duplicateSequence) {
-
-                return back()
-
-                    ->withInput()
-
-                    ->withErrors([
-
-                        'pkwt_sequence' =>
-
-                            'Nomor kontrak tersebut sudah digunakan. Pilih nomor kontrak berikutnya.',
-
+                if ($duplicateSequence) {
+                    return back()->withInput()->withErrors([
+                        'pkwt_sequence' => 'Nomor kontrak tersebut sudah digunakan. Pilih nomor kontrak berikutnya.',
                     ]);
-
+                }
+            } else {
+                // Reward, punishment, level/salary/position changes retain the
+                // same contract sequence; they are not a new PKWT renewal.
+                $validated['pkwt_sequence'] = $referenceHistory?->pkwt_sequence;
             }
-
         } else {
-
             $validated['pkwt_sequence'] = null;
-
         }
 
         /*
@@ -2380,7 +2524,7 @@ class ContractLocalController extends Controller
 
                 $validated['exit_date'] =
 
-                    now()->format('Y-m-d');
+                    Carbon::parse($validated['start_date'])->format('Y-m-d');
 
             }
 
@@ -2406,6 +2550,126 @@ class ContractLocalController extends Controller
 
             $validated['exit_reason'] = null;
 
+        }
+
+        if ($referenceHistory) {
+            $oldLevelValue = is_numeric($referenceHistory->level) ? (int) $referenceHistory->level : null;
+            $newLevelValue = is_numeric($validated['level'] ?? null) ? (int) $validated['level'] : null;
+            $oldSalaryValue = (float) ($referenceHistory->basic_salary ?? 0);
+            $newSalaryValue = (float) ($validated['basic_salary'] ?? 0);
+            $levelDelta = ($oldLevelValue !== null && $newLevelValue !== null) ? ($newLevelValue - $oldLevelValue) : 0;
+            $salaryDelta = round($newSalaryValue - $oldSalaryValue, 2);
+
+            switch ($validated['change_type']) {
+                case 'level_up':
+                    if ($oldLevelValue === null || $newLevelValue === null || $levelDelta <= 0 || $salaryDelta < 0) {
+                        return back()->withInput()->withErrors(['level' => 'Naik level harus menggunakan level lebih tinggi dan gaji pokok tidak boleh lebih rendah dari sebelumnya.']);
+                    }
+                    $validated['job_title'] = $referenceHistory->job_title;
+                    $validated['department'] = $referenceHistory->department;
+                    $validated['placement_area'] = $referenceHistory->placement_area;
+                    break;
+
+                case 'level_down':
+                    if ($oldLevelValue === null || $newLevelValue === null || $levelDelta >= 0 || $salaryDelta > 0) {
+                        return back()->withInput()->withErrors(['level' => 'Turun level harus menggunakan level lebih rendah dan gaji pokok tidak boleh lebih tinggi dari sebelumnya.']);
+                    }
+                    $validated['job_title'] = $referenceHistory->job_title;
+                    $validated['department'] = $referenceHistory->department;
+                    $validated['placement_area'] = $referenceHistory->placement_area;
+                    break;
+
+                case 'salary_adjustment':
+                    if ($salaryDelta == 0.0) {
+                        return back()->withInput()->withErrors(['basic_salary' => 'Penyesuaian gaji harus memiliki nilai gaji pokok yang berbeda.']);
+                    }
+                    $validated['job_title'] = $referenceHistory->job_title;
+                    $validated['level'] = $referenceHistory->level;
+                    $validated['category'] = $referenceHistory->category;
+                    $validated['department'] = $referenceHistory->department;
+                    $validated['placement_area'] = $referenceHistory->placement_area;
+                    $validated['ptkp_status'] = $referenceHistory->ptkp_status;
+                    break;
+
+                case 'position_change':
+                    $validated['job_title'] = $referenceHistory->job_title;
+                    $validated['level'] = $referenceHistory->level;
+                    $validated['category'] = $referenceHistory->category;
+                    $validated['basic_salary'] = $referenceHistory->basic_salary;
+                    $validated['allowance'] = $referenceHistory->allowance;
+                    $validated['ptkp_status'] = $referenceHistory->ptkp_status;
+                    break;
+
+                case 'reward':
+                    if (($levelDelta < 0) || ($salaryDelta < 0) || ($levelDelta <= 0 && $salaryDelta <= 0)) {
+                        return back()->withInput()->withErrors(['change_reason' => 'Reward harus mencatat kenaikan level dan/atau gaji; nilai lainnya tidak boleh turun.']);
+                    }
+                    $validated['level'] = $newLevelValue ?? $referenceHistory->level;
+                    $validated['category'] = $validated['category'] ?? $referenceHistory->category;
+                    $validated['job_title'] = $referenceHistory->job_title;
+                    $validated['department'] = $referenceHistory->department;
+                    $validated['placement_area'] = $referenceHistory->placement_area;
+                    $validated['ptkp_status'] = $referenceHistory->ptkp_status;
+                    break;
+
+                case 'punishment':
+                    if (($levelDelta > 0) || ($salaryDelta > 0) || ($levelDelta >= 0 && $salaryDelta >= 0)) {
+                        return back()->withInput()->withErrors(['change_reason' => 'Punishment harus mencatat penurunan level dan/atau gaji; nilai lainnya tidak boleh naik.']);
+                    }
+                    $validated['level'] = $newLevelValue ?? $referenceHistory->level;
+                    $validated['category'] = $validated['category'] ?? $referenceHistory->category;
+                    $validated['job_title'] = $referenceHistory->job_title;
+                    $validated['department'] = $referenceHistory->department;
+                    $validated['placement_area'] = $referenceHistory->placement_area;
+                    $validated['ptkp_status'] = $referenceHistory->ptkp_status;
+                    break;
+
+                case 'job_promotion':
+                case 'job_demotion':
+                    // Jabatan baru harus disebut secara eksplisit; level/kompensasi
+                    // mengikuti keputusan yang diinput, bukan persentase buatan sistem.
+                    if (trim((string) $validated['job_title']) === trim((string) $referenceHistory->job_title)) {
+                        return back()->withInput()->withErrors(['job_title' => 'Perubahan promosi/demosi harus mencatat jabatan baru.']);
+                    }
+                    break;
+            }
+
+            // Recalculate the existing company allowance formula only after
+            // the final level/salary values for the event have been resolved.
+            // This prevents salary-only Reward/Punishment from producing a
+            // zero allowance when the level input is intentionally left blank.
+            $allowanceRecalculationTypes = [
+                'level_up', 'level_down', 'salary_adjustment',
+                'job_promotion', 'job_demotion', 'reward', 'punishment',
+            ];
+            $finalLevel = $validated['level'] ?? null;
+            if (
+                in_array($validated['change_type'], $allowanceRecalculationTypes, true)
+                && !$headHrdSavingAbove13
+                && ($isFinance || $isKeuangan || ($isHeadHrd && (is_null($finalLevel) || (int) $finalLevel <= 13)))
+            ) {
+                $validated['allowance'] = $this->calculateAllowance(
+                    $validated['basic_salary'],
+                    $finalLevel
+                );
+            }
+
+            // Penyesuaian gaji, perubahan level, promosi/demosi, reward,
+            // punishment dan perubahan posisi bukan kontrak PKWT baru.
+            if ($validated['change_type'] !== 'contract_renewal') {
+                $validated['employment_type'] = $referenceHistory->employment_type;
+                $validated['pkwt_sequence'] = $referenceHistory->pkwt_sequence;
+            }
+        }
+
+        if ($validated['change_type'] === 'contract_renewal'
+            && ($validated['employment_type'] ?? null) === 'PKWT') {
+            $expectedSequence = $this->getNextPkwtSequence($contract);
+            if ((int) ($validated['pkwt_sequence'] ?? 0) !== $expectedSequence) {
+                return back()->withInput()->withErrors([
+                    'pkwt_sequence' => "Perpanjangan PKWT harus menggunakan urutan berikutnya, yaitu kontrak {$expectedSequence}.",
+                ]);
+            }
         }
 
         /*
@@ -2444,93 +2708,67 @@ class ContractLocalController extends Controller
 
                 */
 
-                if ($currentHistory) {
+                $lockedContract = ContractLocal::query()
+                    ->whereKey($contract->id_contract)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-                    $currentHistory->update([
+                $lockedHistories = $lockedContract->histories()
+                    ->orderBy('start_date')
+                    ->lockForUpdate()
+                    ->get();
 
-                        'is_active' => false,
-
+                $sameStartExists = $lockedHistories->contains(function ($item) use ($validated) {
+                    return $item->start_date
+                        && Carbon::parse($item->start_date)->toDateString() === Carbon::parse($validated['start_date'])->toDateString();
+                });
+                if ($sameStartExists) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'start_date' => 'Sudah ada history kontrak pada tanggal mulai yang sama. Periksa dan koreksi tanggal efektif.',
                     ]);
-
                 }
 
-                /*
+                $effectiveMonth = Carbon::parse($validated['start_date'])->format('Y-m');
+                $effectiveEndCandidates = array_values(array_filter([
+                    $validated['end_date'] ?? null,
+                    $validated['exit_date'] ?? null,
+                ]));
+                $effectiveEndDate = $effectiveEndCandidates === []
+                    ? null
+                    : min(array_map(
+                        static fn ($date) => Carbon::parse($date)->toDateString(),
+                        $effectiveEndCandidates
+                    ));
 
-                |--------------------------------------------------------------------------
+                // A new history affects locked payroll only within its own
+                // effective interval. Older periods before start_date remain
+                // attached to the previous history and must not block future
+                // contract scheduling.
+                $lockedPayrollQuery = Payroll::query()
+                    ->where('employee_id', $employee->id_employee)
+                    ->where('is_locked', true)
+                    ->where('period_month', '>=', $effectiveMonth);
 
-                | CREATE HISTORY BARU
+                if ($effectiveEndDate !== null) {
+                    $lockedPayrollQuery->where('period_month', '<=', Carbon::parse($effectiveEndDate)->format('Y-m'));
+                }
 
-                |--------------------------------------------------------------------------
+                if ($lockedPayrollQuery->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'start_date' => 'Periode Contract History yang akan dibuat beririsan dengan payroll terkunci. Gunakan prosedur unlock resmi sebelum menambahkan atau mengubah history pada periode tersebut.',
+                    ]);
+                }
 
-                */
+                $lockedContract->histories()->create(array_merge($validated, [
+                    'uuid' => (string) Str::uuid(),
+                    'is_active' => false,
+                ]));
 
-                $newHistory =
-
-                    $contract
-
-                        ->histories()
-
-                        ->create(
-
-                            array_merge(
-
-                                $validated,
-
-                                [
-
-                                    'uuid' =>
-
-                                        (string) Str::uuid(),
-
-                                    'is_active' =>
-
-                                        !$isTerminated,
-
-                                ]
-
-                            )
-
-                        );
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | UPDATE MASTER
-
-                |--------------------------------------------------------------------------
-
-                */
-
-                $contract->update([
-
-                    'current_contract_history_id' =>
-
-                        $newHistory->id_contract_history,
-
-                    'is_active' =>
-
-                        !$isTerminated,
-
-                ]);
-
-                /*
-
-                |--------------------------------------------------------------------------
-
-                | UPDATE EMPLOYEE
-
-                |--------------------------------------------------------------------------
-
-                */
-
-                $employee->update([
-
-                    'is_active' =>
-
-                        !$isTerminated,
-
-                ]);
+                // Setiap history berikutnya menutup periode sebelumnya sehari
+                // sebelum tanggal efektif, hanya bila periode lama masih terbuka
+                // atau end_date-nya melewati tanggal history berikutnya.
+                $this->normalizeContractTimeline($lockedContract);
+                $this->syncCurrentContractPointer($lockedContract, $employee);
 
             }
 
@@ -2546,17 +2784,15 @@ class ContractLocalController extends Controller
 
         */
 
-        $message =
+        $startsInFuture = Carbon::parse($validated['start_date'])
+            ->startOfDay()
+            ->gt(Carbon::today());
 
-            $isTerminated
-
-                ? 'Contract Period baru berhasil dibuat dan karyawan menjadi '
-
-                    . $validated['employment_type']
-
-                    . ' (Non-Aktif).'
-
-                : 'Contract Period baru berhasil dibuat dan menjadi Current Contract.';
+        $message = $isTerminated
+            ? 'Contract Period baru berhasil dibuat. Status karyawan mengikuti tanggal efektif terminasi.'
+            : ($startsInFuture
+                ? 'Contract Period berhasil dibuat sebagai jadwal kontrak. Current Contract yang masih berlaku tidak diganti.'
+                : 'Contract Period berhasil dibuat. Current Contract disinkronkan berdasarkan tanggal berlaku.');
 
         return redirect()
 
@@ -3294,24 +3530,8 @@ class ContractLocalController extends Controller
 
     ): bool {
 
-        return in_array(
-
-            $employmentType,
-
-            [
-
-                'PHK',
-
-                'Resign',
-
-                'Pensiun',
-
-                'End_Contract',
-
-            ],
-
-            true
-
+        return ContractHistoryResolver::isTerminationType(
+            (string) ($employmentType ?? '')
         );
 
     }
@@ -3404,6 +3624,149 @@ class ContractLocalController extends Controller
 
     }
 
+    /**
+     * Recalculate the current-history pointer from inclusive effective dates.
+     * If multiple histories cover today, the pointer is cleared rather than
+     * silently choosing one. A future history never replaces a valid current one.
+     */
+    /**
+     * Keep sequential histories mutually exclusive. A later history closes
+     * an earlier open/overlapping period on the day before its own start.
+     * Existing intentional gaps are preserved.
+     */
+    private function normalizeContractTimeline(ContractLocal $contract): void
+    {
+        $histories = $contract->histories()
+            ->orderBy('start_date')
+            ->orderBy('id_contract_history')
+            ->lockForUpdate()
+            ->get()
+            ->values();
+
+        for ($index = 0; $index < $histories->count() - 1; $index++) {
+            $current = $histories[$index];
+            $next = $histories[$index + 1];
+            $currentStart = Carbon::parse($current->start_date)->startOfDay();
+            $nextStart = Carbon::parse($next->start_date)->startOfDay();
+
+            if ($currentStart->gte($nextStart)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'start_date' => 'Ditemukan dua history dengan tanggal mulai yang sama atau urutan tidak valid.',
+                ]);
+            }
+
+            $currentEnd = $current->end_date
+                ? Carbon::parse($current->end_date)->startOfDay()
+                : null;
+            $currentExit = $current->exit_date
+                ? Carbon::parse($current->exit_date)->startOfDay()
+                : null;
+            $dayBeforeNext = $nextStart->copy()->subDay();
+
+            // If termination/exit already ends the older period earlier, retain it.
+            if ($currentExit && $currentExit->lt($dayBeforeNext)) {
+                continue;
+            }
+
+            if ($currentEnd === null || $currentEnd->gte($nextStart)) {
+                // Changing the old end boundary affects the payroll month in
+                // which the new history starts. Earlier locked months remain
+                // fully covered by the old history and are not changed by this
+                // future-boundary normalization.
+                $boundaryMonth = $nextStart->format('Y-m');
+                $hasLockedPayroll = Payroll::query()
+                    ->where('employee_id', $contract->employee_id)
+                    ->where('is_locked', true)
+                    ->where('period_month', $boundaryMonth)
+                    ->exists();
+
+                if ($hasLockedPayroll) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'start_date' => 'Periode kontrak lama beririsan dengan payroll terkunci. Buka kunci periode melalui prosedur resmi sebelum membuat perubahan tanggal history.',
+                    ]);
+                }
+
+                if ($dayBeforeNext->lt($currentStart)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'start_date' => 'Tanggal mulai history baru tidak boleh sama dengan atau mendahului periode sebelumnya.',
+                    ]);
+                }
+
+                $current->update([
+                    'end_date' => $dayBeforeNext->toDateString(),
+                    'is_active' => false,
+                ]);
+            }
+        }
+    }
+
+    private function syncCurrentContractPointer(
+        ContractLocal $contract,
+        Employee $employee
+    ): ?ContractHistoryLocal {
+        $today = Carbon::today();
+        $histories = $contract->histories()->get();
+        $matches = ContractHistoryResolver::matchingDate($histories, $today);
+
+        $contract->histories()->update(['is_active' => false]);
+
+        if ($matches->count() === 1) {
+            /** @var ContractHistoryLocal $current */
+            $current = $matches->first();
+            $currentEffectiveEnd = ContractHistoryResolver::effectiveEnd($current);
+            $terminationEffective = $this->isTerminatedEmploymentType(
+                (string) $current->employment_type
+            ) && $currentEffectiveEnd !== null
+                && $currentEffectiveEnd->lt($today);
+
+            if (!$terminationEffective) {
+                $current->update(['is_active' => true]);
+                // Current-history linkage must not reactivate a manually
+                // inactive employee/master. Employment status is separate.
+                $contract->update([
+                    'current_contract_history_id' => $current->id_contract_history,
+                ]);
+            } else {
+                $contract->update([
+                    'current_contract_history_id' => $current->id_contract_history,
+                    'is_active' => false,
+                ]);
+                $employee->update(['is_active' => false]);
+            }
+
+            return $current;
+        }
+
+        // No unique history is effective today: a gap or overlap must not be
+        // silently represented as a current contract.
+        $contract->update(['current_contract_history_id' => null]);
+
+        // Preserve the employee's existing active flag for future schedules or
+        // overlaps. A completed termination event is the exception.
+        $latestStarted = $histories
+            ->filter(function ($history) use ($today) {
+                return $history->start_date
+                    && Carbon::parse($history->start_date)->startOfDay()->lt($today);
+            })
+            ->sortByDesc('start_date')
+            ->first();
+
+        $latestTerminationEnd = $latestStarted
+            ? ContractHistoryResolver::effectiveEnd($latestStarted)
+            : null;
+        if (
+            $latestStarted
+            && $this->isTerminatedEmploymentType((string) $latestStarted->employment_type)
+            && $latestTerminationEnd !== null
+            && $latestTerminationEnd->lt($today)
+        ) {
+            $contract->update(['is_active' => false]);
+            $employee->update(['is_active' => false]);
+        }
+
+        return null;
+    }
+
     /*
 
     |--------------------------------------------------------------------------
@@ -3432,7 +3795,7 @@ class ContractLocalController extends Controller
 
         }
 
-        return Carbon::today()->greaterThanOrEqualTo(
+        return Carbon::today()->greaterThan(
 
             Carbon::parse(
 

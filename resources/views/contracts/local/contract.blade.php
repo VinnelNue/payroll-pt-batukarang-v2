@@ -77,42 +77,31 @@ $currentHistory  = $history ?? null;
 
 $histories = collect($histories ?? []);
 $historyToday = \Carbon\Carbon::today();
+$referenceHistory = $referenceHistory ?? $currentHistory ?? \App\Support\ContractHistoryResolver::latest($histories);
+$formHistory = $referenceHistory ?? $currentHistory;
 
-// Kontrak pertama manual: belum ada history yang tersimpan sama sekali.
-// HRD boleh mengisi level awal (maksimal 13) dan PTKP, tanpa membuka akses gaji/BPJS.
-$isInitialContract = !$currentHistory && $histories->isEmpty();
+// Kontrak pertama hanya jika belum ada history sama sekali.
+$isInitialContract = $histories->isEmpty();
 
 // Tampilan utama harus memakai riwayat yang efektif hari ini, bukan sekadar
 // riwayat yang ditunjuk current_contract_history_id (yang dapat menunjuk ke
 // perubahan masa depan). Riwayat mendatang tetap ditampilkan di tabel bawah.
-$effectiveHistoryForToday = $histories
-    ->filter(function ($item) use ($historyToday) {
-        try {
-            $starts = $item->start_date
-                ? \Carbon\Carbon::parse($item->start_date)->startOfDay()
-                : null;
-            $ends = $item->end_date
-                ? \Carbon\Carbon::parse($item->end_date)->endOfDay()
-                : null;
-            $exits = $item->exit_date
-                ? \Carbon\Carbon::parse($item->exit_date)->startOfDay()
-                : null;
-
-            return $starts !== null
-                && $starts->lte($historyToday)
-                && (!$ends || $ends->gte($historyToday))
-                && (!$exits || $exits->gte($historyToday));
-        } catch (\Throwable $e) {
-            return false;
-        }
-    })
-    ->sortByDesc('start_date')
-    ->sortByDesc('id_contract_history')
-    ->first();
+$effectiveHistoriesForToday = \App\Support\ContractHistoryResolver::matchingDate(
+    $histories,
+    $historyToday
+);
+$effectiveHistoryForToday = $effectiveHistoriesForToday->count() === 1
+    ? $effectiveHistoriesForToday->first()
+    : null;
+$hasOverlappingCurrentHistories = $effectiveHistoriesForToday->count() > 1;
 
 if ($effectiveHistoryForToday) {
     $currentHistory = $effectiveHistoryForToday;
+} elseif ($hasOverlappingCurrentHistories) {
+    // Jangan gunakan pointer lama jika ada lebih dari satu history yang berlaku hari ini.
+    $currentHistory = null;
 }
+
 
 $historyStatus = function ($item) use ($historyToday) {
     try {
@@ -121,7 +110,7 @@ $historyStatus = function ($item) use ($historyToday) {
         $exit = $item->exit_date ? \Carbon\Carbon::parse($item->exit_date)->startOfDay() : null;
 
         if ($starts && $starts->gt($historyToday)) return 'scheduled';
-        if ($exit && $exit->lte($historyToday)) return 'ended';
+        if ($exit && $exit->lt($historyToday)) return 'ended';
         if ($ends && $ends->lt($historyToday)) return 'history';
         if ($starts && $starts->lte($historyToday)) return 'effective';
     } catch (\Throwable $e) {
@@ -143,12 +132,12 @@ foreach ($histories as $historyRow) {
     $historyStatusCounts[$state] = ($historyStatusCounts[$state] ?? 0) + 1;
 }
 
-$currentHistoryStartsInFuture = false;
-if ($currentHistory?->start_date) {
+$referenceHistoryStartsInFuture = false;
+if ($referenceHistory?->start_date) {
     try {
-        $currentHistoryStartsInFuture = \Carbon\Carbon::parse($currentHistory->start_date)->startOfDay()->gt($historyToday);
+        $referenceHistoryStartsInFuture = \Carbon\Carbon::parse($referenceHistory->start_date)->startOfDay()->gt($historyToday);
     } catch (\Throwable $e) {
-        $currentHistoryStartsInFuture = false;
+        $referenceHistoryStartsInFuture = false;
     }
 }
 
@@ -160,8 +149,7 @@ if ($currentHistory?->start_date) {
 */
 
 $contractLevel =
-    $currentHistory?->level
-    ?? $currentContract?->level
+    $referenceHistory?->level
     ?? null;
 
 $levelNumber = is_numeric($contractLevel)
@@ -288,57 +276,57 @@ $formatDate = function ($value) {
 */
 
 $basicSalary =
-    $currentHistory?->basic_salary
+    $formHistory?->basic_salary
     ?? $currentContract?->basic_salary
     ?? 0;
 
 $allowance =
-    $currentHistory?->allowance
+    $formHistory?->allowance
     ?? $currentContract?->allowance
     ?? 0;
 
 $category =
-    $currentHistory?->category
+    $formHistory?->category
     ?? $currentContract?->category
     ?? '';
 
 $level =
-    $currentHistory?->level
+    $formHistory?->level
     ?? $currentContract?->level
     ?? '';
 
 $employmentType =
-    $currentHistory?->employment_type
+    $formHistory?->employment_type
     ?? $currentContract?->employment_type
     ?? 'PKWT';
 
 $pkwtSequence =
-    $currentHistory?->pkwt_sequence
+    $formHistory?->pkwt_sequence
     ?? $currentContract?->pkwt_sequence
     ?? '';
 
 $jobTitle =
-    $currentHistory?->job_title
+    $formHistory?->job_title
     ?? $currentContract?->job_title
     ?? '';
 
 $department =
-    $currentHistory?->department
+    $formHistory?->department
     ?? $currentContract?->department
     ?? '';
 
 $placementArea =
-    $currentHistory?->placement_area
+    $formHistory?->placement_area
     ?? $currentContract?->placement_area
     ?? '';
 
 $fingerprintPin =
-    $currentHistory?->fingerprint_pin
+    $formHistory?->fingerprint_pin
     ?? $currentContract?->fingerprint_pin
     ?? '';
 
 $nikFingerprint =
-    $currentHistory?->nik_fingerprint
+    $formHistory?->nik_fingerprint
     ?? $currentContract?->nik_fingerprint
     ?? '';
 
@@ -350,22 +338,22 @@ $nikFingerprint =
 */
 
 $startDate = $formatDate(
-    $currentHistory?->start_date
+    $formHistory?->start_date
     ?? $currentContract?->start_date
 );
 
 $endDate = $formatDate(
-    $currentHistory?->end_date
+    $formHistory?->end_date
     ?? $currentContract?->end_date
 );
 
 $exitDate = $formatDate(
-    $currentHistory?->exit_date
+    $formHistory?->exit_date
     ?? $currentContract?->exit_date
 );
 
 $exitReason =
-    $currentHistory?->exit_reason
+    $formHistory?->exit_reason
     ?? $currentContract?->exit_reason
     ?? '';
 
@@ -381,19 +369,19 @@ $exitReason =
 */
 
 $isBpjstkActive = (bool) (
-    $currentHistory?->is_bpjstk_active
+    $formHistory?->is_bpjstk_active
     ?? $currentContract?->is_bpjstk_active
     ?? false
 );
 
 $isBpjsHealthActive = (bool) (
-    $currentHistory?->is_bpjs_health_active
+    $formHistory?->is_bpjs_health_active
     ?? $currentContract?->is_bpjs_health_active
     ?? false
 );
 
 $useManualBpjs = (bool) (
-    $currentHistory?->use_manual_bpjs
+    $formHistory?->use_manual_bpjs
     ?? $currentContract?->use_manual_bpjs
     ?? false
 );
@@ -406,21 +394,21 @@ $useManualBpjs = (bool) (
 */
 
 $manualBpjstkEmployee =
-    $currentHistory?->manual_bpjs_tk_employee
-    ?? $currentHistory?->manual_bpjstk_employee
+    $formHistory?->manual_bpjs_tk_employee
+    ?? $formHistory?->manual_bpjstk_employee
     ?? $currentContract?->manual_bpjs_tk_employee
     ?? $currentContract?->manual_bpjstk_employee
     ?? 0;
 
 $manualBpjsHealthEmployee =
-    $currentHistory?->manual_bpjs_ks_employee
-    ?? $currentHistory?->manual_bpjs_health_employee
+    $formHistory?->manual_bpjs_ks_employee
+    ?? $formHistory?->manual_bpjs_health_employee
     ?? $currentContract?->manual_bpjs_ks_employee
     ?? $currentContract?->manual_bpjs_health_employee
     ?? 0;
 
 $manualBpjsCompany =
-    $currentHistory?->manual_bpjs_company
+    $formHistory?->manual_bpjs_company
     ?? $currentContract?->manual_bpjs_company
     ?? 0;
 
@@ -478,7 +466,7 @@ $normalizePtkpDisplay = function ($value) {
 };
 
 $ptkp = $normalizePtkpDisplay(
-    $currentHistory?->ptkp_status
+    $formHistory?->ptkp_status
         ?? $currentContract?->ptkp_status
         ?? 'TK0'
 );
@@ -564,8 +552,8 @@ $addPeriodUrl = route(
 |--------------------------------------------------------------------------
 */
 
-$nextPkwtSequence =
-    ((int) ($currentHistory?->pkwt_sequence ?? 0)) + 1;
+$nextPkwtSequence = (int) ($nextPkwtSequence
+    ?? (((int) $histories->where('employment_type', 'PKWT')->max('pkwt_sequence')) + 1));
 
 if ($nextPkwtSequence > 7) {
     $nextPkwtSequence = 7;
@@ -1143,16 +1131,36 @@ if ($endDate) {
      CURRENT CONTRACT
 ============================================================== --}}
 
-@if($currentContract || $currentHistory)
+@if(!$currentHistory && $referenceHistory && ($contractStatus ?? null) === 'pending_decision')
+    <div class="alert alert-warning d-flex align-items-start gap-2 mb-4">
+        <i class="fas fa-hourglass-half mt-1"></i>
+        <div>
+            <strong>Menunggu keputusan perpanjangan</strong>
+            <div class="small">History terakhir sudah berakhir. Karyawan tetap aktif pada master, tetapi belum ada Contract History yang berlaku hari ini. Tambahkan periode baru hanya setelah keputusan HRD ditetapkan.</div>
+        </div>
+    </div>
+@endif
 
-@if($currentHistoryStartsInFuture)
+@if(!$currentHistory && $referenceHistory && ($contractStatus ?? null) === 'scheduled')
+    <div class="alert alert-info mb-4"><strong>Akan Berlaku:</strong> terdapat Contract History terjadwal. Current Contract tetap menunjuk periode yang berlaku hari ini sampai tanggal mulai history berikutnya.</div>
+@endif
+
+@if($currentHistory || $histories->isEmpty())
+@if($hasOverlappingCurrentHistories)
+    <div class="alert alert-danger" role="alert">
+        Ditemukan lebih dari satu riwayat kontrak yang mencakup hari ini. Current Contract tidak dipilih otomatis. Periksa tanggal mulai, tanggal akhir, dan tanggal keluar pada riwayat kontrak.
+    </div>
+@endif
+
+
+@if($referenceHistoryStartsInFuture)
     <div class="alert alert-warning d-flex align-items-start gap-2 shadow-sm mb-4">
         <i class="fas fa-calendar-alt mt-1"></i>
         <div>
             <strong>Perubahan terjadwal, belum berlaku hari ini.</strong>
             <div class="small mt-1">
                 Riwayat yang terhubung ke master kontrak ini mulai berlaku pada
-                <strong>{{ \Carbon\Carbon::parse($currentHistory->start_date)->format('d M Y') }}</strong>.
+                <strong>{{ \Carbon\Carbon::parse($referenceHistory->start_date)->format('d M Y') }}</strong>.
                 Nilai pada formulir ini adalah nilai untuk tanggal tersebut. Periksa tabel Contract History di bawah untuk membandingkan riwayat yang berlaku hari ini.
             </div>
         </div>
@@ -2083,7 +2091,7 @@ if ($endDate) {
             </div>
 
 
-            @if($currentHistory || !$currentContract)
+            @if($currentHistory || $histories->isNotEmpty() || !$currentContract)
                 <button
                     type="button"
                     id="btnAddContractPeriod"
@@ -2103,7 +2111,7 @@ if ($endDate) {
              NEW PERIOD
         ========================================================== --}}
 
-        @if($currentHistory || !$currentContract)
+        @if($currentHistory || $histories->isNotEmpty() || !$currentContract)
         <div
             id="newPeriodWrapper"
             class="border rounded p-4 mb-4"
@@ -2146,7 +2154,7 @@ if ($endDate) {
 
                 {{-- JENIS PERUBAHAN --}}
                 <div class="row g-3 mb-3">
-                    @if($currentHistory)
+                    @if($referenceHistory)
                         <div class="col-md-6">
                             <label for="new_change_type" class="form-label fw-semibold">Jenis Perubahan</label>
                             <select name="change_type" id="new_change_type" class="form-select" required>
@@ -2157,6 +2165,8 @@ if ($endDate) {
                                 <option value="job_promotion" @selected(old('change_type') === 'job_promotion')>Promosi jabatan</option>
                                 <option value="job_demotion" @selected(old('change_type') === 'job_demotion')>Penurunan jabatan</option>
                                 <option value="position_change" @selected(old('change_type') === 'position_change')>Perubahan penempatan tanpa perubahan level/gaji</option>
+                                <option value="reward" @selected(old('change_type') === 'reward')>Reward / penghargaan</option>
+                                <option value="punishment" @selected(old('change_type') === 'punishment')>Punishment / sanksi</option>
                             </select>
                         </div>
                     @else
@@ -2177,9 +2187,9 @@ if ($endDate) {
                     </div>
                 </div>
 
-                @if($currentHistory)
+                @if($referenceHistory)
                     <div id="currentContractSnapshot" class="border rounded-3 p-3 mb-4 bg-light" style="display:none;">
-                        <h6 class="fw-bold mb-3"><i class="fas fa-clipboard-list me-2"></i>Data Contract Aktif Sebelum Perubahan</h6>
+                        <h6 class="fw-bold mb-3"><i class="fas fa-clipboard-list me-2"></i>{{ $currentHistory ? 'Data Contract Aktif Sebelum Perubahan' : 'History Terakhir Sebelum Perubahan' }}</h6>
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <small class="text-muted d-block">Jabatan saat ini</small>
@@ -2444,6 +2454,8 @@ if ($endDate) {
                             name="end_date"
                             class="form-control"
                             value="{{ old('end_date', '') }}">
+
+                        <small class="text-muted d-block mt-1">Kosongkan jika kontrak masih terbuka. Saat ada history berikutnya, periode ini akan ditutup sehari sebelum tanggal mulai history baru.</small>
 
                     </div>
 
@@ -3014,6 +3026,8 @@ if ($endDate) {
                                         'job_promotion' => 'Promosi jabatan',
                                         'job_demotion' => 'Penurunan jabatan',
                                         'position_change' => 'Perubahan jabatan/penempatan',
+                                        'reward' => 'Reward / penghargaan',
+                                        'punishment' => 'Punishment / sanksi',
                                     ];
                                 @endphp
                                 <small class="text-primary d-block">
@@ -3908,13 +3922,15 @@ document.addEventListener('DOMContentLoaded', function () {
         job_promotion: 'Isi jabatan baru dan perbarui level, kategori, gaji serta tunjangan jika sesuai keputusan promosi.',
         job_demotion: 'Isi jabatan baru dan perbarui level, kategori, gaji serta tunjangan jika sesuai keputusan penurunan jabatan.',
         position_change: 'Perubahan penempatan/jabatan tanpa perubahan level, kategori, gaji, atau tunjangan.',
+        reward: 'Reward: masukkan level dan/atau gaji yang meningkat serta alasan/keputusan. Sistem tidak menetapkan persentase otomatis.',
+        punishment: 'Punishment: masukkan level dan/atau gaji yang menurun serta alasan/keputusan. Sistem tidak menetapkan potongan otomatis.',
     };
 
     function syncChangeTypeFields() {
         if (!changeTypeSelect) return;
         const type = changeTypeSelect.value;
         const isRenewal = type === 'contract_renewal' || type === 'initial_contract';
-        const isLevelChange = ['level_change', 'level_up', 'level_down'].includes(type);
+        const isLevelChange = ['level_change', 'level_up', 'level_down', 'reward', 'punishment'].includes(type);
         const isJobPromotionDemotion = ['job_promotion', 'job_demotion'].includes(type);
         const isSalaryAdjustment = type === 'salary_adjustment';
         const isPositionChange = type === 'position_change';

@@ -103,7 +103,7 @@
                 <!-- 1. INPUT ABSENSI (COLLAPSE) -->
 
                 @php
-                    $isAbsensiActive = request()->routeIs('payrolls.local.create');
+                    $isAbsensiActive = request()->routeIs('payrolls.local.create', 'payrolls.security.create');
                 @endphp
 
                 <a class="nav-link-custom d-flex align-items-center justify-content-between {{ $isAbsensiActive ? '' : 'collapsed' }}"
@@ -129,6 +129,14 @@
                     <span>Absensi Malang</span>
                 </a>
 
+                <!-- ABSENSI SECURITY / SATPAM -->
+                <a href="{{ route('payrolls.security.create') }}"
+                class="nav-link-custom py-2 my-1 {{ request()->routeIs('payrolls.security.*') ? 'active' : '' }}">
+
+                    <i class="fa-solid fa-shield-halved me-2"></i>
+                    <span>Absensi Security</span>
+                </a>
+
                 <!-- ABSENSI OUTER ISLAND -->
                 <!-- Route akan dibuat nanti ketika modul Outer Island sudah dibuat -->
                 <a href="{{ route('payrolls.outer_island.create') }}"
@@ -142,7 +150,9 @@
 
             <!-- 2. PROCESS PAYROLL (COLLAPSE / TERPISAH) -->
             @php
-                $isPayrollActive = request()->routeIs('payrolls.*') && !request()->routeIs('absensi.*');
+                $isPayrollActive = request()->routeIs('payrolls.*')
+                    && !request()->routeIs('absensi.*')
+                    && !request()->routeIs('payrolls.local.create', 'payrolls.security.create');
             @endphp
             <a class="nav-link-custom d-flex align-items-center justify-content-between mt-1 {{ $isPayrollActive ? '' : 'collapsed' }}" 
             data-bs-toggle="collapse" href="#menuPayroll" role="button" aria-expanded="{{ $isPayrollActive ? 'true' : 'false' }}">

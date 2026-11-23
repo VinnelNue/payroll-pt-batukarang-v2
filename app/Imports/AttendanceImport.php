@@ -19,6 +19,8 @@ class AttendanceImport implements ToCollection, WithHeadingRow
 {
     protected string $period;
 
+    protected ?string $sourceFile;
+
     /**
      * Satu proses import dapat membaca beberapa file (misalnya ZIP).
      * Buffer diproses sekaligus agar query database tidak dilakukan
@@ -32,9 +34,10 @@ class AttendanceImport implements ToCollection, WithHeadingRow
         'maternity',
     ];
 
-    public function __construct($period)
+    public function __construct($period, ?string $sourceFile = null)
     {
         $this->period = $period ?? date('Y-m');
+        $this->sourceFile = $sourceFile;
     }
 
     public static function resetBuffer(): void
@@ -69,6 +72,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                     ?? ''
                 ));
                 $rawDate = $cleanRow['tanggal'] ?? $cleanRow['date'] ?? null;
+                $rawTime = $cleanRow['jam'] ?? $cleanRow['time'] ?? $cleanRow['waktu'] ?? null;
 
                 if ((($nik === '') && ($pin === '')) || $rawDate === null || $rawDate === '') {
                     continue;
@@ -91,16 +95,98 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                     'pin_mesin' => $pin,
                     'nama_karyawan' => $name,
                     'daily' => [],
+                    'logs' => [],
                 ];
 
-                // Satu atau banyak log di tanggal yang sama tetap menjadi satu status H.
+                // Status harian lama tetap dipertahankan sementara aturan shift divalidasi.
                 self::$globalAttendanceBuffer[$targetPeriod][$mapKey]['daily'][$dateString] = 'H';
+
+                // Simpan setiap punch secara terpisah agar jam tidak hilang saat diringkas.
+                $scanAt = $this->parseAttendanceTimestamp($rawDate, $rawTime);
+                if ($scanAt) {
+                    self::$globalAttendanceBuffer[$targetPeriod][$mapKey]['logs'][] = [
+                        'attendance_date' => $dateString,
+                        'pin_mesin' => $pin,
+                        'nik_mesin' => $nik,
+                        'scan_at' => $scanAt->format('Y-m-d H:i:s'),
+                        'device_sn' => $this->nullableString($cleanRow['sn_mesin'] ?? $cleanRow['snmesin'] ?? null, 100),
+                        'device_name' => $this->nullableString($cleanRow['nama_mesin'] ?? $cleanRow['namamesin'] ?? null, 150),
+                        'verification' => $this->nullableString($cleanRow['verifikasi'] ?? $cleanRow['verification'] ?? null, 50),
+                        'mode' => $this->nullableString($cleanRow['mode'] ?? null, 80),
+                        'mode_update' => $this->nullableString($cleanRow['mode_update'] ?? $cleanRow['modeupdate'] ?? null, 80),
+                        'branch' => $this->nullableString($cleanRow['cabang'] ?? $cleanRow['branch'] ?? null, 100),
+                        'department' => $this->nullableString($cleanRow['departemen'] ?? $cleanRow['department'] ?? null, 100),
+                        'job_position' => $this->nullableString($cleanRow['jabatan'] ?? $cleanRow['job_title'] ?? null, 100),
+                        'source_file' => $this->nullableString($this->sourceFile, 255),
+                    ];
+                }
             } catch (Throwable $exception) {
                 Log::warning('Baris fingerprint gagal dibaca.', [
                     'row_index' => $index,
                     'error' => $exception->getMessage(),
                 ]);
             }
+        }
+    }
+
+    private function nullableString(mixed $value, int $maxLength): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+
+        return $value === '' ? null : mb_substr($value, 0, $maxLength);
+    }
+
+    private function parseAttendanceTimestamp(mixed $rawDate, mixed $rawTime): ?Carbon
+    {
+        $date = $this->parseAttendanceDate($rawDate);
+        if (!$date || $rawTime === null) {
+            return null;
+        }
+
+        try {
+            if ($rawTime instanceof \DateTimeInterface) {
+                return $date->copy()->setTime(
+                    (int) $rawTime->format('H'),
+                    (int) $rawTime->format('i'),
+                    (int) $rawTime->format('s')
+                );
+            }
+
+            if (is_numeric($rawTime)) {
+                $numericTime = (float) $rawTime;
+                $excelDateTime = ExcelDate::excelToDateTimeObject($numericTime);
+                return $date->copy()->setTime(
+                    (int) $excelDateTime->format('H'),
+                    (int) $excelDateTime->format('i'),
+                    (int) $excelDateTime->format('s')
+                );
+            }
+
+            $timeString = trim((string) $rawTime);
+            if ($timeString === '') {
+                return null;
+            }
+            if (preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/', $timeString, $matches)) {
+                $hour = (int) $matches[1];
+                $minute = (int) $matches[2];
+                $second = (int) ($matches[3] ?? 0);
+
+                if ($hour > 23 || $minute > 59 || $second > 59) {
+                    return null;
+                }
+
+                return $date->copy()->setTime($hour, $minute, $second);
+            }
+
+            // Fallback untuk format waktu teks yang tidak standar (mis. 7:10 PM).
+            $parsed = Carbon::parse($timeString);
+            return $date->copy()->setTime(
+                (int) $parsed->format('H'),
+                (int) $parsed->format('i'),
+                (int) $parsed->format('s')
+            );
+        } catch (Throwable) {
+            return null;
         }
     }
 
@@ -127,7 +213,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
 
     /**
      * Resolves fingerprint identities, lock data and existing attendance in
-     * batches, then writes attendance_records using chunked upserts.
+     * batches, then writes raw punch events and attendance_records using chunked upserts.
      */
     public static function saveSummaryToDatabase($defaultPeriod): array
     {
@@ -138,6 +224,8 @@ class AttendanceImport implements ToCollection, WithHeadingRow
             'skipped_locked' => 0,
             'skipped_manual' => 0,
             'unmatched' => 0,
+            'raw_logs_processed' => 0,
+            'raw_logs_unmatched' => 0,
         ];
 
         if (empty(self::$globalAttendanceBuffer)) {
@@ -233,6 +321,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                 );
 
                 $resolvedRows = [];
+                $resolvedRawLogs = [];
                 $resolvedEmployeeIds = [];
                 $historyUpdates = [];
                 $fallbackCache = [];
@@ -298,6 +387,25 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                             $employee = $history ? $employeeFallback : null;
                         }
 
+                        $employeeIdForLog = $employee ? (int) $employee->id_employee : null;
+                        $historyIdForLog = $history ? (int) $history->id_contract_history : null;
+
+                        foreach (($data['logs'] ?? []) as $rawLog) {
+                            if (($rawLog['attendance_date'] ?? null) !== $dateString) {
+                                continue;
+                            }
+
+                            $resolvedRawLogs[] = self::prepareRawLogRow(
+                                $rawLog,
+                                $employeeIdForLog,
+                                $historyIdForLog
+                            );
+                            $summary['raw_logs_processed']++;
+                            if (!$employeeIdForLog) {
+                                $summary['raw_logs_unmatched']++;
+                            }
+                        }
+
                         if (!$history || !$employee) {
                             continue;
                         }
@@ -341,7 +449,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                     }
                 }
 
-                if ($resolvedRows === []) {
+                if ($resolvedRows === [] && $resolvedRawLogs === []) {
                     foreach ($historyUpdates as $update) {
                         if ($update['changes'] !== []) {
                             $update['model']->update($update['changes']);
@@ -351,11 +459,13 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                 }
 
                 // Payroll lock diambil sekali untuk seluruh employee periode ini.
-                $payrollRows = Payroll::query()
-                    ->where('period_month', $targetPeriod)
-                    ->whereIn('employee_id', array_values($resolvedEmployeeIds))
-                    ->orderBy('id_payroll')
-                    ->get(['id_payroll', 'employee_id', 'is_locked', 'cutoff_day']);
+                $payrollRows = $resolvedEmployeeIds === []
+                    ? collect()
+                    : Payroll::query()
+                        ->where('period_month', $targetPeriod)
+                        ->whereIn('employee_id', array_values($resolvedEmployeeIds))
+                        ->orderBy('id_payroll')
+                        ->get(['id_payroll', 'employee_id', 'is_locked', 'cutoff_day']);
 
                 $payrollByEmployee = [];
                 foreach ($payrollRows as $payroll) {
@@ -364,16 +474,18 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                 }
 
                 // Attendance existing diambil sekali per periode, bukan per hari.
-                $existingRecords = AttendanceRecord::query()
-                    ->whereIn('employee_id', array_values($resolvedEmployeeIds))
-                    ->whereBetween('attendance_date', [$periodStartString, $periodEndString])
-                    ->get(['employee_id', 'attendance_date', 'status', 'source'])
-                    ->keyBy(static function (AttendanceRecord $record): string {
-                        $date = $record->attendance_date instanceof Carbon
-                            ? $record->attendance_date->format('Y-m-d')
-                            : Carbon::parse($record->attendance_date)->format('Y-m-d');
-                        return (int) $record->employee_id . '|' . $date;
-                    });
+                $existingRecords = $resolvedEmployeeIds === []
+                    ? collect()
+                    : AttendanceRecord::query()
+                        ->whereIn('employee_id', array_values($resolvedEmployeeIds))
+                        ->whereBetween('attendance_date', [$periodStartString, $periodEndString])
+                        ->get(['employee_id', 'attendance_date', 'status', 'source'])
+                        ->keyBy(static function (AttendanceRecord $record): string {
+                            $date = $record->attendance_date instanceof Carbon
+                                ? $record->attendance_date->format('Y-m-d')
+                                : Carbon::parse($record->attendance_date)->format('Y-m-d');
+                            return (int) $record->employee_id . '|' . $date;
+                        });
 
                 $upserts = [];
                 $now = now();
@@ -423,7 +535,7 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                     ];
                 }
 
-                DB::transaction(function () use ($upserts, $historyUpdates): void {
+                DB::transaction(function () use ($upserts, $resolvedRawLogs, $historyUpdates): void {
                     // Simpan auto-binding NIK/PIN satu kali per contract history.
                     foreach ($historyUpdates as $update) {
                         if ($update['changes'] !== []) {
@@ -438,6 +550,20 @@ class AttendanceImport implements ToCollection, WithHeadingRow
                             ['status', 'source', 'updated_at']
                         );
                     }
+
+                    // Raw fingerprint punches disimpan utuh dan idempotent.
+                    // Tidak ada interpretasi masuk/pulang atau H/0.5H pada tahap ini.
+                    foreach (array_chunk($resolvedRawLogs, 500) as $chunk) {
+                        \App\Models\FingerprintLog::query()->upsert(
+                            $chunk,
+                            ['log_hash'],
+                            [
+                                'employee_id',
+                                'contract_history_id',
+                                'updated_at',
+                            ]
+                        );
+                    }
                 });
             }
         } finally {
@@ -448,6 +574,46 @@ class AttendanceImport implements ToCollection, WithHeadingRow
         Log::info('Import fingerprint selesai.', $summary);
 
         return $summary;
+    }
+
+    private static function prepareRawLogRow(array $rawLog, ?int $employeeId, ?int $historyId): array
+    {
+        $identity = [
+            trim((string) ($rawLog['pin_mesin'] ?? '')),
+            strtoupper(trim((string) ($rawLog['nik_mesin'] ?? ''))),
+            (string) ($rawLog['scan_at'] ?? ''),
+            (string) ($rawLog['device_sn'] ?? ''),
+            (string) ($rawLog['device_name'] ?? ''),
+            (string) ($rawLog['mode'] ?? ''),
+            (string) ($rawLog['mode_update'] ?? ''),
+            (string) ($rawLog['verification'] ?? ''),
+        ];
+
+        return [
+            'employee_id' => $employeeId,
+            'contract_history_id' => $historyId,
+            'fingerprint_pin' => self::nullableValue($rawLog['pin_mesin'] ?? null, 50),
+            'nik' => self::nullableValue($rawLog['nik_mesin'] ?? null, 50),
+            'scan_at' => $rawLog['scan_at'],
+            'device_sn' => self::nullableValue($rawLog['device_sn'] ?? null, 100),
+            'device_name' => self::nullableValue($rawLog['device_name'] ?? null, 150),
+            'verification' => self::nullableValue($rawLog['verification'] ?? null, 50),
+            'mode' => self::nullableValue($rawLog['mode'] ?? null, 80),
+            'mode_update' => self::nullableValue($rawLog['mode_update'] ?? null, 80),
+            'branch' => self::nullableValue($rawLog['branch'] ?? null, 100),
+            'department' => self::nullableValue($rawLog['department'] ?? null, 100),
+            'job_position' => self::nullableValue($rawLog['job_position'] ?? null, 100),
+            'source_file' => self::nullableValue($rawLog['source_file'] ?? null, 255),
+            'log_hash' => hash('sha256', json_encode($identity, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+
+    private static function nullableValue(mixed $value, int $maxLength): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+        return $value === '' ? null : mb_substr($value, 0, $maxLength);
     }
 
     /**

@@ -4,15 +4,29 @@ namespace App\Exports;
 
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
+/**
+ * Workbook payroll lokal dengan dua worksheet:
+ * - Rekap Absensi: mengikuti layout ringkas referensi.
+ * - Detail Lengkap: memuat rekap tambahan dan kolom finansial sesuai role.
+ *
+ * File ini HARUS mendeklarasikan PayrollLocalExport, bukan PayrollLocalViewSheet.
+ */
 class PayrollLocalExport implements WithMultipleSheets
 {
     private readonly string $period;
+
     private readonly string $userRole;
 
-    public function __construct(string $period, string $userRole)
-    {
+    private readonly string $attendanceScope;
+
+    public function __construct(
+        string $period,
+        string $userRole,
+        string $attendanceScope = 'local'
+    ) {
         $this->period = trim($period);
         $this->userRole = strtolower(trim($userRole));
+        $this->attendanceScope = \App\Support\AttendanceEmployeeScope::normalize($attendanceScope);
     }
 
     public function sheets(): array
@@ -24,6 +38,7 @@ class PayrollLocalExport implements WithMultipleSheets
                 'payrolls.local.export_excel',
                 'Rekap Absensi',
                 true,
+                $this->attendanceScope,
             ),
             new PayrollLocalViewSheet(
                 $this->period,
@@ -31,6 +46,7 @@ class PayrollLocalExport implements WithMultipleSheets
                 'payrolls.local.export_excel_detail',
                 'Detail Lengkap',
                 false,
+                $this->attendanceScope,
             ),
         ];
     }
