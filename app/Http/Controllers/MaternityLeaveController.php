@@ -6,6 +6,8 @@ use App\Models\Employee;
 use App\Models\MaternityLeaveCase;
 use App\Models\AttendanceRecord;
 use App\Models\Payroll;
+use App\Models\MaternityLeaveSettlement;
+use App\Services\MaternityLeaveSettlementService;
 use Carbon\Carbon;
 use App\Services\MaternityLeaveScheduleService;
 use Illuminate\Http\Request;
@@ -26,6 +28,11 @@ class MaternityLeaveController extends Controller
         'super_admin',
     ];
 
+    private const FINANCE_ROLES = [
+        'manager_keuangan',
+        'super_admin',
+    ];
+
     private function authorizeManagement(): void
     {
         abort_unless(
@@ -34,14 +41,38 @@ class MaternityLeaveController extends Controller
         );
     }
 
+    private function authorizeFinance(): void
+    {
+        abort_unless(
+            in_array((string) (Auth::user()->role ?? ''), self::FINANCE_ROLES, true),
+            403
+        );
+    }
+
+    private function authorizeIndexAccess(): void
+    {
+        $role = (string) (Auth::user()->role ?? '');
+        abort_unless(
+            in_array($role, self::MANAGEMENT_ROLES, true)
+            || in_array($role, self::FINANCE_ROLES, true),
+            403
+        );
+    }
+
     public function index()
     {
-        $this->authorizeManagement();
+        $this->authorizeIndexAccess();
+
+        $role = (string) (Auth::user()->role ?? '');
+        $canManageMaternity = in_array($role, self::MANAGEMENT_ROLES, true);
+        $canManagePayments = in_array($role, self::FINANCE_ROLES, true);
 
         $cases = MaternityLeaveCase::query()
             ->with([
                 'employee:id_employee,full_name,address_ktp',
                 'payrolls:id_payroll,employee_id,period_month,maternity_case_id,maternity_hold_days,maternity_hold_amount,maternity_release_amount,maternity_leave_pay,is_locked',
+                'settlement',
+                'accruals:id,maternity_case_id,attendance_date,amount,status,settlement_id',
             ])
             ->orderByDesc('leave_start_date')
             ->orderByDesc('id')
@@ -52,28 +83,33 @@ class MaternityLeaveController extends Controller
         // action state aligned with the server-side delete guard.
         $cases->getCollection()->transform(function (MaternityLeaveCase $case): MaternityLeaveCase {
             $periods = $this->schedulePeriodMonths($case);
-            $hasPayrollInSchedule = !empty($periods) && Payroll::query()
-                ->where('employee_id', $case->employee_id)
-                ->whereIn('period_month', $periods)
-                ->exists();
+            $schedulePayrolls = !empty($periods)
+                ? Payroll::query()
+                    ->where('employee_id', $case->employee_id)
+                    ->whereIn('period_month', $periods)
+                    ->get(['id_payroll', 'maternity_hold_amount'])
+                : collect();
 
-            $case->setAttribute('has_payroll_in_schedule', $hasPayrollInSchedule);
+            $case->setAttribute('has_payroll_in_schedule', $schedulePayrolls->isNotEmpty());
+            $case->setAttribute('legacy_held_total', (float) $schedulePayrolls->sum('maternity_hold_amount'));
 
             return $case;
         });
 
         // CM hanya dapat didaftarkan untuk karyawan perempuan yang aktif
         // dan memiliki master kontrak aktif.
-        $employees = Employee::query()
+        $employees = $canManageMaternity ? Employee::query()
             ->where('gender', 'P')
             ->where('is_active', true)
             ->whereHas('contract', function ($query) {
                 $query->where('is_active', true);
             })
             ->orderBy('full_name')
-            ->get(['id_employee', 'full_name', 'address_ktp']);
+            ->get(['id_employee', 'full_name', 'address_ktp']) : collect();
 
-        return view('payrolls.local.maternity.index', compact('cases', 'employees'));
+        return view('payrolls.local.maternity.index', compact(
+            'cases', 'employees', 'canManageMaternity', 'canManagePayments'
+        ));
     }
 
     public function store(Request $request)
@@ -679,7 +715,7 @@ class MaternityLeaveController extends Controller
     {
         $this->authorizeManagement();
 
-        DB::transaction(function () use ($maternityCase): void {
+        $settlement = DB::transaction(function () use ($maternityCase): MaternityLeaveSettlement {
             $lockedCase = MaternityLeaveCase::query()
                 ->whereKey($maternityCase->getKey())
                 ->lockForUpdate()
@@ -695,17 +731,148 @@ class MaternityLeaveController extends Controller
                 'Tanggal persalinan dan dokumen bukti wajib tersedia sebelum verifikasi.'
             );
 
+            // Ensure all scheduled CM attendance rows exist before the daily accrual snapshot.
+            app(MaternityLeaveScheduleService::class)->syncAttendance($lockedCase);
+
+            $verifiedAt = now();
             $lockedCase->update([
                 'status' => 'verified',
-                'verified_at' => now(),
+                'verified_at' => $verifiedAt,
                 'verified_by' => Auth::id(),
                 'rejection_reason' => null,
+            ]);
+
+            return app(MaternityLeaveSettlementService::class)
+                ->createForVerifiedCase($lockedCase->fresh(), $verifiedAt);
+        });
+
+        $message = $settlement->status === 'no_balance'
+            ? 'Dokumen CM diverifikasi. Tidak ada saldo CM tertahan yang perlu dibayar melalui settlement; hari yang sudah masuk payroll reguler tetap dibayar melalui payroll tersebut.'
+            : 'Dokumen CM diverifikasi. Settlement langsung dibuat sebesar Rp '
+                . number_format((float) $settlement->gross_amount, 0, ',', '.')
+                . '. Keuangan dapat menghitung PPh21 dan mengonfirmasi transfer.';
+
+        return redirect()
+            ->route('payrolls.local.maternity.index')
+            ->with('success', $message);
+    }
+
+    public function previewSettlementTax(Request $request, MaternityLeaveSettlement $settlement)
+    {
+        $this->authorizeFinance();
+
+        $validated = $request->validate([
+            'planned_payment_date' => ['required', 'date', 'before_or_equal:today'],
+        ]);
+
+        DB::transaction(function () use ($settlement, $validated): void {
+            $lockedSettlement = MaternityLeaveSettlement::query()
+                ->whereKey($settlement->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless($lockedSettlement->status === 'pending', 409, 'Settlement ini tidak lagi menunggu pembayaran.');
+
+            $paymentDate = Carbon::parse($validated['planned_payment_date'])->startOfDay();
+            $preview = app(MaternityLeaveSettlementService::class)
+                ->calculateTaxPreview($lockedSettlement, $paymentDate);
+
+            $lockedSettlement->update([
+                'pph21_amount' => $preview['pph21_amount'],
+                'net_amount' => $preview['net_amount'],
+                'tax_period' => $preview['tax_period'],
+                'taxable_gross_basis' => $preview['taxable_gross_basis'],
+                'ter_rate' => $preview['ter_rate'],
+                'tax_calculated_at' => now(),
+                'planned_payment_date' => $paymentDate->toDateString(),
             ]);
         });
 
         return redirect()
             ->route('payrolls.local.maternity.index')
-            ->with('success', 'Kasus CM diverifikasi. Saldo CM yang tertahan akan dilepas pada payroll terbuka berikutnya saat payroll disimpan.');
+            ->with('success', 'PPh21 settlement berhasil dihitung. Transfer sesuai nominal bersih yang ditampilkan. Jika tanggal transfer berubah bulan, hitung ulang pajaknya.');
+    }
+
+    public function downloadSettlementProof(MaternityLeaveSettlement $settlement): StreamedResponse
+    {
+        $this->authorizeFinance();
+
+        abort_unless(
+            $settlement->proof_path
+            && Storage::disk('local')->exists($settlement->proof_path),
+            404
+        );
+
+        return Storage::disk('local')->download(
+            $settlement->proof_path,
+            'bukti-transfer-settlement-cm-' . $settlement->id
+        );
+    }
+
+    public function markSettlementPaid(Request $request, MaternityLeaveSettlement $settlement)
+    {
+        $this->authorizeFinance();
+
+        $validated = $request->validate([
+            'payment_date' => ['required', 'date', 'before_or_equal:today'],
+            'transfer_reference' => ['required', 'string', 'max:120'],
+            'actual_net_amount' => ['required', 'numeric', 'min:0'],
+            'payment_proof' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+        ]);
+
+        $paymentDate = Carbon::parse($validated['payment_date'])->startOfDay();
+        $proofPath = $request->file('payment_proof')->store('maternity-settlements', 'local');
+
+        try {
+            DB::transaction(function () use ($settlement, $validated, $paymentDate, $proofPath): void {
+                $lockedSettlement = MaternityLeaveSettlement::query()
+                    ->whereKey($settlement->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                abort_unless($lockedSettlement->status === 'pending', 409, 'Settlement sudah diproses atau tidak menunggu pembayaran.');
+                abort_unless(
+                    $lockedSettlement->tax_calculated_at
+                    && $lockedSettlement->tax_period === $paymentDate->format('Y-m')
+                    && $lockedSettlement->planned_payment_date === $paymentDate->toDateString(),
+                    422,
+                    'Hitung PPh21 settlement kembali menggunakan tanggal transfer yang persis sama sebelum konfirmasi.'
+                );
+
+                $expectedNet = (float) $lockedSettlement->net_amount;
+                $actualNet = (float) $validated['actual_net_amount'];
+                abort_if(
+                    abs($expectedNet - $actualNet) > 1,
+                    422,
+                    'Nominal transfer tidak sama dengan nominal bersih settlement. Hitung ulang PPh21 atau koreksi nominal transfer.'
+                );
+
+                $paidAt = now();
+                $lockedSettlement->update([
+                    'status' => 'paid',
+                    'payment_date' => $paymentDate->toDateString(),
+                    'transfer_reference' => $validated['transfer_reference'],
+                    'proof_path' => $proofPath,
+                    'paid_at' => $paidAt,
+                    'paid_by' => Auth::id(),
+                ]);
+
+                $case = MaternityLeaveCase::query()
+                    ->whereKey($lockedSettlement->maternity_case_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $case->forceFill(['released_at' => $paidAt])->save();
+
+                app(MaternityLeaveSettlementService::class)->markAccrualsPaid($lockedSettlement);
+            });
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($proofPath);
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('payrolls.local.maternity.index')
+            ->with('success', 'Transfer settlement CM berhasil dicatat. Kasus ditandai lunas dan tanggal pelepasan telah disimpan.');
     }
 
     public function reject(Request $request, MaternityLeaveCase $maternityCase)

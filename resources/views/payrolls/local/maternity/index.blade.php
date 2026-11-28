@@ -68,6 +68,7 @@
 
 
 
+    @if($canManageMaternity)
     <div class="card border-0 shadow-sm rounded-4 mb-4">
 
         <div class="card-header bg-white border-0 pt-3 px-3">
@@ -155,6 +156,7 @@
         </div>
 
     </div>
+    @endif
 
 
 
@@ -188,9 +190,9 @@
 
                             <th>Status</th>
 
-                            <th class="text-end">Ditahan</th>
+                            <th class="text-end">Bruto Settlement</th>
 
-                            <th class="text-end">Sisa Ditahan</th>
+                            <th>Status Settlement / Transfer</th>
 
                             <th style="min-width:360px">Aksi, Dokumen & Tindakan HRD</th>
 
@@ -204,11 +206,10 @@
 
                             @php
 
-                                $heldTotal = (float) $case->payrolls->sum('maternity_hold_amount');
-
-                                $releasedTotal = (float) $case->payrolls->sum('maternity_release_amount');
-
-                                $outstanding = max(0, $heldTotal - $releasedTotal);
+                                $settlement = $case->settlement;
+                                $legacyHeldTotal = (float) ($case->legacy_held_total ?? $case->payrolls->sum('maternity_hold_amount'));
+                                $settlementGross = (float) ($settlement?->gross_amount ?? $legacyHeldTotal);
+                                $settlementStatus = $settlement?->status ?? 'not_created';
 
                                 $hasPayrollImpact = $case->payrolls->contains(function ($payroll) {
                                     return (float) ($payroll->maternity_hold_days ?? 0) > 0
@@ -217,9 +218,11 @@
                                         || (float) ($payroll->maternity_leave_pay ?? 0) > 0
                                         || (bool) ($payroll->is_locked ?? false);
                                 });
-                                $canEditCase = $case->status !== 'verified'
+                                $canEditCase = $canManageMaternity
+                                    && $case->status !== 'verified'
                                     && !$case->released_at;
-                                $canDeleteCase = $case->status !== 'verified'
+                                $canDeleteCase = $canManageMaternity
+                                    && $case->status !== 'verified'
                                     && !$case->released_at
                                     && $case->payrolls->isEmpty()
                                     && !$case->has_payroll_in_schedule;
@@ -289,12 +292,33 @@
 
                                 </td>
 
-                                <td class="text-end text-nowrap">Rp {{ number_format($heldTotal, 0, ',', '.') }}</td>
+                                <td class="text-end text-nowrap">Rp {{ number_format($settlementGross, 0, ',', '.') }}</td>
 
-                                <td class="text-end text-nowrap fw-bold {{ $outstanding > 0 ? 'text-danger' : 'text-success' }}">
-
-                                    Rp {{ number_format($outstanding, 0, ',', '.') }}
-
+                                <td class="text-nowrap">
+                                    @if($settlementStatus === 'pending')
+                                        <span class="badge text-bg-warning">Menunggu transfer</span>
+                                        @if($settlement->tax_calculated_at)
+                                            <div class="small text-muted">PPh21: Rp {{ number_format((float) $settlement->pph21_amount, 0, ',', '.') }}</div>
+                                            <div class="small fw-semibold">Neto: Rp {{ number_format((float) $settlement->net_amount, 0, ',', '.') }}</div>
+                                        @else
+                                            <div class="small text-muted">PPh21 belum dihitung Keuangan</div>
+                                        @endif
+                                    @elseif($settlementStatus === 'paid')
+                                        <span class="badge text-bg-success">LUNAS</span>
+                                        <div class="small text-muted">{{ optional($settlement->payment_date)->format('d/m/Y') }} · {{ $settlement->transfer_reference }}</div>
+                                        <div class="small fw-semibold">Net transfer: Rp {{ number_format((float) $settlement->net_amount, 0, ',', '.') }}</div>
+                                    @elseif($settlementStatus === 'no_balance')
+                                        <span class="badge text-bg-secondary">Tidak ada saldo</span>
+                                    @else
+                                        @if($case->status === 'verified')
+                                            <span class="badge text-bg-danger">Settlement belum tersedia</span>
+                                        @else
+                                            <span class="badge text-bg-secondary">Belum diverifikasi</span>
+                                        @endif
+                                        @if($legacyHeldTotal > 0)
+                                            <div class="small text-muted">Hold payroll: Rp {{ number_format($legacyHeldTotal, 0, ',', '.') }}</div>
+                                        @endif
+                                    @endif
                                 </td>
 
                                 <td>
@@ -391,7 +415,7 @@
 
 
 
-                                    @if($case->status !== 'verified')
+                                    @if($canManageMaternity && $case->status !== 'verified')
 
                                         <form method="POST" action="{{ route('payrolls.local.maternity.certificate.upload', $case) }}" enctype="multipart/form-data" class="border rounded-3 p-2 mb-2">
 
@@ -435,7 +459,7 @@
 
                                             <div class="d-flex flex-wrap gap-2">
 
-                                                <form method="POST" action="{{ route('payrolls.local.maternity.verify', $case) }}" onsubmit="return confirm('Verifikasi dokumen persalinan ini? Saldo CM tertahan akan dilepas pada payroll terbuka berikutnya.');">
+                                                <form method="POST" action="{{ route('payrolls.local.maternity.verify', $case) }}" onsubmit="return confirm('Verifikasi dokumen persalinan ini? Sistem akan langsung membuat settlement dari seluruh hari CM yang sudah diperoleh sebelum tanggal verifikasi.');">
 
                                                     @csrf
 
@@ -461,7 +485,7 @@
 
                                         @endif
 
-                                    @else
+                                    @elseif($case->status === 'verified')
 
                                         <div class="small text-success fw-semibold">
 
@@ -469,11 +493,63 @@
 
                                         </div>
 
-                                        <div class="small text-muted">Saldo dilepas: Rp {{ number_format($releasedTotal, 0, ',', '.') }}</div>
+                                        <div class="small text-muted">Verifikasi: {{ optional($case->verified_at)->format('d/m/Y H:i') }}</div>
 
                                     @endif
 
 
+
+                                    @if($canManagePayments && $settlement && $settlement->status === 'pending')
+                                        <div class="border rounded-3 p-2 mt-2">
+                                            <div class="fw-semibold small mb-1">Proses transfer Keuangan</div>
+                                            <div class="small text-muted mb-2">Bruto: Rp {{ number_format((float) $settlement->gross_amount, 0, ',', '.') }}</div>
+                                            <div class="small text-warning mb-2">Preview PPh21 memakai masa pajak tanggal transfer. Pastikan Finance/Tax sudah menetapkan bahwa gaji CM yang ditahan belum terutang sebelum verifikasi.</div>
+                                            <form method="POST" action="{{ route('payrolls.local.maternity.settlements.preview-tax', $settlement) }}" class="row g-2 mb-2">
+                                                @csrf
+                                                <div class="col-md-6">
+                                                    <label class="form-label small mb-1">Tanggal rencana transfer</label>
+                                                    <input type="date" name="planned_payment_date" class="form-control form-control-sm" value="{{ optional($settlement->planned_payment_date)->format('Y-m-d') ?? now()->toDateString() }}" max="{{ now()->toDateString() }}" required>
+                                                </div>
+                                                <div class="col-md-6 d-flex align-items-end">
+                                                    <button type="submit" class="btn btn-outline-primary btn-sm w-100">Hitung PPh21 & Neto</button>
+                                                </div>
+                                            </form>
+                                            @if($settlement->tax_calculated_at)
+                                                <div class="small mb-2">
+                                                    <div>PPh21: <strong>Rp {{ number_format((float) $settlement->pph21_amount, 0, ',', '.') }}</strong></div>
+                                                    <div>Net transfer: <strong class="text-success">Rp {{ number_format((float) $settlement->net_amount, 0, ',', '.') }}</strong></div>
+                                                    <div class="text-muted">Masa pajak {{ $settlement->tax_period }} · Basis bruto {{ number_format((float) $settlement->taxable_gross_basis, 0, ',', '.') }}</div>
+                                                </div>
+                                                <form method="POST" action="{{ route('payrolls.local.maternity.settlements.paid', $settlement) }}" enctype="multipart/form-data" class="row g-2">
+                                                    @csrf
+                                                    <div class="col-md-5">
+                                                        <label class="form-label small mb-1">Tanggal transfer aktual</label>
+                                                        <input type="date" name="payment_date" class="form-control form-control-sm" value="{{ optional($settlement->planned_payment_date)->format('Y-m-d') }}" max="{{ now()->toDateString() }}" required>
+                                                    </div>
+                                                    <div class="col-md-7">
+                                                        <label class="form-label small mb-1">Nomor referensi transfer</label>
+                                                        <input type="text" name="transfer_reference" class="form-control form-control-sm" maxlength="120" required>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label small mb-1">Nominal bersih yang ditransfer</label>
+                                                        <input type="number" name="actual_net_amount" class="form-control form-control-sm" min="0" step="0.01" value="{{ number_format((float) $settlement->net_amount, 2, '.', '') }}" required>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label small mb-1">Bukti transfer (PDF/JPG/PNG)</label>
+                                                        <input type="file" name="payment_proof" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png" required>
+                                                    </div>
+                                                    <div class="col-12 text-end">
+                                                        <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Konfirmasi bahwa transfer sebesar nominal bersih di atas benar-benar sudah dilakukan?')">Konfirmasi transfer lunas</button>
+                                                    </div>
+                                                </form>
+                                            @endif
+                                        </div>
+                                    @elseif($canManagePayments && $settlement && $settlement->status === 'paid')
+                                        <div class="small text-success mt-2">Dibayar oleh user #{{ $settlement->paid_by }} pada {{ optional($settlement->paid_at)->format('d/m/Y H:i') }}.</div>
+                                        @if($settlement->proof_path)
+                                            <a class="small" href="{{ route('payrolls.local.maternity.settlements.proof', $settlement) }}">Unduh bukti transfer</a>
+                                        @endif
+                                    @endif
 
                                     @if($case->rejection_reason)
 
@@ -525,7 +601,7 @@
 
         <br><br>
 
-        <strong>Alur pembayaran:</strong> status CM pada hari kerja tetap dihitung sebagai hari dibayar pada Sigma. Nilai CM untuk Periode 1 dan Periode 2 ditahan selama dokumen belum diverifikasi HRD. Setelah bukti dan tanggal persalinan diverifikasi, saldo yang sudah tertahan dilepas satu kali pada payroll terbuka berikutnya. Hari CM berikutnya setelah verifikasi dibayarkan melalui payroll normal.
+        <strong>Alur pembayaran:</strong> sebelum verifikasi HRD, hak gaji CM yang telah diperoleh ditahan dalam payroll. Saat HRD memverifikasi dokumen, sistem langsung membuat satu settlement dari hari kerja CM sebelum tanggal verifikasi. Keuangan menghitung PPh21 pada masa pajak transfer, lalu mengonfirmasi pembayaran dengan referensi dan bukti transfer. Hari CM setelah tanggal verifikasi dibayarkan melalui payroll normal.
 
     </div>
 

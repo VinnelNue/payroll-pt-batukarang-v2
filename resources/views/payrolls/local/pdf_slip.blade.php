@@ -1048,6 +1048,7 @@
 
 $maternityPay = (float) ($payroll->maternity_leave_pay ?? 0);
 $maternityHoldAmount = (float) ($payroll->maternity_hold_amount ?? 0);
+$maternitySettledAmount = (float) ($payroll->maternity_settled_amount ?? 0);
 
     /*
      * Counter CM untuk tampilan saja.
@@ -1062,6 +1063,7 @@ $maternityHoldAmount = (float) ($payroll->maternity_hold_amount ?? 0);
     $isMaternity =
         $maternityPay > 0
         || $maternityHoldAmount > 0
+        || $maternitySettledAmount > 0
         || $maternityLeaveDays > 0;
 
 
@@ -1247,6 +1249,7 @@ $maternityHoldAmount = (float) ($payroll->maternity_hold_amount ?? 0);
         + $bpjsKs
         + $pph21
         + $maternityHoldAmount
+        + $maternitySettledAmount
         + $previousGantunganDeduction
         + $cashAdvance
         + $otherDeductions;
@@ -2509,6 +2512,14 @@ $maternityHoldAmount = (float) ($payroll->maternity_hold_amount ?? 0);
                         </tr>
                     @endif
 
+                    @if($maternitySettledAmount > 0)
+                        <tr>
+                            <td class="deduction-number">{{ $deductionNumber++ }}.</td>
+                            <td class="deduction-name">CM Dialihkan ke Settlement Terpisah</td>
+                            <td class="deduction-value">Rp {{ number_format($maternitySettledAmount, 0, ',', '.') }}</td>
+                        </tr>
+                    @endif
+
                     @if($previousGantunganDeduction > 0)
                         <tr>
                             <td class="deduction-number">{{ $deductionNumber++ }}.</td>
@@ -2816,9 +2827,11 @@ $maternityHoldAmount = (float) ($payroll->maternity_hold_amount ?? 0);
                         </div>
 
                         <div style="margin-top: 5px;">
-                            Pembayaran hak CM ditahan selama jadwal berlangsung
-                            dan dilepas sekaligus pada payroll setelah Tahap 2 selesai
-                            serta dokumen diverifikasi HRD.
+                            Sebelum verifikasi, hak CM yang sudah diperoleh ditahan dari payroll.
+                            Setelah HRD memverifikasi dokumen, hak CM sebelum tanggal verifikasi
+                            dibayar melalui settlement terpisah oleh Keuangan. Hari CM setelah
+                            verifikasi masuk payroll normal. Nilai settlement yang sudah dibayar
+                            dikurangkan dari payroll agar tidak terjadi pembayaran ganda.
                         </div>
 
 

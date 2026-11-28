@@ -867,6 +867,12 @@ Route::middleware(['auth'])->group(function () {
                 ->name('maternity.certificate.download');
             Route::post('maternity/{maternityCase}/verify', [MaternityLeaveController::class, 'verify'])
                 ->name('maternity.verify');
+            Route::get('maternity/settlements/{settlement}/proof', [MaternityLeaveController::class, 'downloadSettlementProof'])
+                ->name('maternity.settlements.proof');
+            Route::post('maternity/settlements/{settlement}/preview-tax', [MaternityLeaveController::class, 'previewSettlementTax'])
+                ->name('maternity.settlements.preview-tax');
+            Route::post('maternity/settlements/{settlement}/paid', [MaternityLeaveController::class, 'markSettlementPaid'])
+                ->name('maternity.settlements.paid');
             Route::post('maternity/{maternityCase}/reject', [MaternityLeaveController::class, 'reject'])
                 ->name('maternity.reject');
 

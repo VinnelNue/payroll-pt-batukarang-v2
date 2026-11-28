@@ -13,7 +13,12 @@ use App\Models\AttendanceRecord;
 use App\Models\FingerprintLog;
 use App\Models\Holiday;
 use App\Models\MaternityLeaveCase;
+use App\Models\MaternityLeaveAccrual;
+use App\Models\MaternityLeaveSettlement;
+use App\Models\EmployeeContract;
+use App\Models\ContractHistoryLocal;
 use App\Services\MaternityLeaveScheduleService;
+use App\Services\MaternityLeaveAccrualService;
 use App\Support\AttendanceEmployeeScope;
 use App\Support\ContractHistoryResolver;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -1075,6 +1080,8 @@ class PayrollController extends Controller
                         . count($extractedFiles)
                         . ' file) berhasil diproses. Scan mentah: '
                         . ($fingerprintSummary['raw_logs_processed'] ?? 0)
+                        . '; Alpha otomatis: '
+                        . ($fingerprintSummary['auto_alpha'] ?? 0)
                         . '; belum cocok ke karyawan: '
                         . ($fingerprintSummary['raw_logs_unmatched'] ?? 0)
                         . '.'
@@ -1137,6 +1144,8 @@ class PayrollController extends Controller
                     'success',
                     'File absensi fingerprint berhasil diimpor. Scan mentah diproses: '
                     . ($fingerprintSummary['raw_logs_processed'] ?? 0)
+                    . '; Alpha otomatis: '
+                    . ($fingerprintSummary['auto_alpha'] ?? 0)
                     . '; belum cocok ke karyawan: '
                     . ($fingerprintSummary['raw_logs_unmatched'] ?? 0)
                     . '.'
@@ -1727,6 +1736,9 @@ class PayrollController extends Controller
                 $period . '-01'
             );
 
+        $periodStart = $periodDate->copy()->startOfMonth();
+        $periodEnd = $periodDate->copy()->endOfMonth();
+
         $previousPeriod =
             $periodDate
                 ->copy()
@@ -1827,6 +1839,8 @@ class PayrollController extends Controller
             $previousPayrolls,
             $period,
             $periodDate,
+            $periodStart,
+            $periodEnd,
             $previousPeriod,
             $nextPeriod,
             $isNextPeriodLocked,
@@ -2476,15 +2490,17 @@ class PayrollController extends Controller
                     );
 
                 // ====================================================
-                // MATERNITY LEAVE - DEFERRED PAYMENT
+                // MATERNITY LEAVE - DAILY HOLD / SETTLEMENT OFFSET
                 // ====================================================
-                // CM tetap dihitung sebagai paid days pada Sigma.
-                // Nilai hari CM ditahan sampai dokumen persalinan
-                // diverifikasi HRD. Hari sebelum tanggal mulai CM
-                // tidak ikut ditahan.
+                // Before HRD verification: accrued CM days are held from
+                // regular payroll. After verification: dates already placed
+                // in a settlement are deducted from regular payroll because
+                // they are paid through the separate settlement transaction.
+                // CM dates after verification remain payable in normal payroll.
                 // ====================================================
 
                 $cmAttendanceDates = [];
+                $today = Carbon::today();
 
                 foreach ($dailyAttendance as $attendanceDate => $attendanceStatus) {
                     if (
@@ -2505,6 +2521,7 @@ class PayrollController extends Controller
                         && $cmDate->format('Y-m-d') === $attendanceDate
                         && !$cmDate->lt($periodStart)
                         && !$cmDate->gt($periodEnd)
+                        && $cmDate->lt($today) // never hold an unearned future/today CM day
                         && !$cmDate->isSunday()
                         && $maternityCase
                         && $maternityCase->containsDate($cmDate)
@@ -2518,76 +2535,63 @@ class PayrollController extends Controller
                 $maternityCaseId = $maternityCase?->id ?? $existing?->maternity_case_id;
                 $maternityHoldDays = 0.0;
                 $maternityHoldAmount = 0.0;
-                $existingMaternityReleaseAmount = (float) (
-                    $existing?->maternity_release_amount ?? 0
-                );
-                $maternityReleaseAmount = $existingMaternityReleaseAmount;
+                $maternitySettledDays = 0.0;
+                $maternitySettledAmount = 0.0;
+                $maternityReleaseAmount = 0.0;
+                $maternityLeavePay = 0.0;
 
                 if ($maternityCase) {
-                    $maternityDaysInPeriod = count(array_filter(
-                        $cmAttendanceDates,
-                        fn (string $date) => $maternityCase->containsDate($date)
-                    ));
+                    if ($maternityCase->status === 'verified') {
+                        // A payroll that already withheld CM before HRD verification
+                        // must retain that original hold if the month is recalculated.
+                        // The same amount is settled separately, not deducted twice.
+                        if ($existing?->id_payroll) {
+                            $originalHeldAccruals = MaternityLeaveAccrual::query()
+                                ->where('maternity_case_id', $maternityCase->id)
+                                ->where('payroll_id', $existing->id_payroll)
+                                ->whereNotNull('settlement_id')
+                                ->whereBetween('attendance_date', [
+                                    $periodStart->toDateString(),
+                                    $periodEnd->toDateString(),
+                                ])
+                                ->get(['amount', 'attendance_date']);
 
-                    if (
-                        $maternityCase->status === 'verified'
-                        && !$maternityCase->released_at
-                    ) {
-                        // Release all amounts that have already been held for
-                        // this case, including any payroll row calculated ahead
-                        // of the current month. Subtract releases recorded on
-                        // other payroll rows so saving an existing period again
-                        // cannot pay the same held amount twice.
-                        $totalMaternityHeld = (float) Payroll::query()
-                            ->where('employee_id', $empId)
+                            $maternityHoldDays = (float) $originalHeldAccruals->count();
+                            $maternityHoldAmount = round(
+                                (float) $originalHeldAccruals->sum('amount'),
+                                2
+                            );
+                        }
+
+                        // Only offset days which were accrued before the month
+                        // payroll existed. A non-null payroll_id means the original
+                        // payroll already withheld this day and must not be deducted
+                        // a second time after settlement.
+                        $settledAccruals = MaternityLeaveAccrual::query()
                             ->where('maternity_case_id', $maternityCase->id)
-                            ->sum('maternity_hold_amount');
+                            ->whereNotNull('settlement_id')
+                            ->whereNull('payroll_id')
+                            ->whereBetween('attendance_date', [
+                                $periodStart->toDateString(),
+                                $periodEnd->toDateString(),
+                            ])
+                            ->get(['amount', 'attendance_date']);
 
-                        $releasedOnOtherPayrolls = (float) Payroll::query()
-                            ->where('employee_id', $empId)
-                            ->where('maternity_case_id', $maternityCase->id)
-                            ->when($existing, function ($query) use ($existing) {
-                                $query->where('id_payroll', '!=', $existing->id_payroll);
-                            })
-                            ->sum('maternity_release_amount');
-
-                        $unreleasedMaternityAmount = max(
-                            0,
-                            $totalMaternityHeld
-                            - $releasedOnOtherPayrolls
-                            - $existingMaternityReleaseAmount
-                        );
-
-                        $maternityReleaseAmount = round(
-                            $existingMaternityReleaseAmount + $unreleasedMaternityAmount,
+                        $maternitySettledDays = (float) $settledAccruals->count();
+                        $maternitySettledAmount = round(
+                            (float) $settledAccruals->sum('amount'),
                             2
                         );
-
-                        $maternityCase->forceFill([
-                            'released_at' => now(),
-                        ])->save();
-                    } elseif (
-                        $maternityCase->status !== 'verified'
-                        && !$maternityCase->released_at
-                    ) {
-                        $maternityHoldDays = (float) $maternityDaysInPeriod;
+                    } elseif (!$maternityCase->released_at) {
+                        $maternityHoldDays = (float) count($cmAttendanceDates);
+                        // Round the daily entitlement first so it matches the
+                        // per-date accrual snapshots used by CM settlement.
                         $maternityHoldAmount = round(
-                            $dailyWage * $maternityHoldDays,
+                            round($dailyWage, 2) * $maternityHoldDays,
                             2
                         );
                     }
                 }
-
-                // Jangan menambahkan release dua kali ketika payroll periode
-                // yang sama disimpan ulang.
-                $newMaternityRelease = max(
-                    0,
-                    $maternityReleaseAmount - $existingMaternityReleaseAmount
-                );
-
-                $maternityLeavePay =
-                    (float) ($existing?->maternity_leave_pay ?? 0)
-                    + $newMaternityRelease;
 
                 // ====================================================
                 // FINANCIAL VARIABLES
@@ -2652,12 +2656,29 @@ class PayrollController extends Controller
                     +
                     $incentive;
 
-                // CM yang ditahan belum menjadi dasar PPh21 sampai dibayarkan.
-                // Ketika diverifikasi, nominal release masuk ke gross periode
-                // pembayaran dan ikut menjadi dasar PPh21 pada periode tersebut.
+                // CM yang ditahan melalui payroll belum menjadi penghasilan
+                // yang dibayarkan pada masa pajak tersebut. Settlement baru
+                // masuk basis PPh21 pada bulan transfer aktual oleh Keuangan.
                 $taxableGrossSalary = max(
                     0,
-                    $grossSalary - $maternityHoldAmount
+                    $grossSalary - $maternityHoldAmount - $maternitySettledAmount
+                );
+
+                // Settlement wages are taxable in the month they are actually transferred.
+                $settlementTaxRows = MaternityLeaveSettlement::query()
+                    ->where('employee_id', $empId)
+                    ->where('status', 'paid')
+                    ->whereBetween('payment_date', [
+                        $periodStart->toDateString(),
+                        $periodEnd->toDateString(),
+                    ])
+                    ->get(['gross_amount', 'pph21_amount']);
+
+                $settlementGrossPaidThisMonth = (float) $settlementTaxRows->sum('gross_amount');
+                $settlementPphPaidThisMonth = (float) $settlementTaxRows->sum('pph21_amount');
+                $taxableGrossWithSettlements = max(
+                    0,
+                    $taxableGrossSalary + $settlementGrossPaidThisMonth
                 );
 
                 // ====================================================
@@ -2761,32 +2782,28 @@ class PayrollController extends Controller
                         $contract
                     )
                 ) {
-                    $pph21Deduction =
-                        $this->calculateFinalPph21(
-                            $employee,
-                            $contract,
-                            $period,
-                            $taxableGrossSalary,
-                            $bpjsTkDeduction
-                        );
+                    $totalPeriodPph21 = $this->calculateFinalPph21(
+                        $employee,
+                        $contract,
+                        $period,
+                        $taxableGrossWithSettlements,
+                        $bpjsTkDeduction
+                    );
                 } else {
-                    $pph21Rate =
-                        $this->calculateTerRateByCategory(
-                            $terCategory,
-                            $taxableGrossSalary
-                        );
+                    $pph21Rate = $this->calculateTerRateByCategory(
+                        $terCategory,
+                        $taxableGrossWithSettlements
+                    );
 
-                    $pph21Deduction =
-                        $taxableGrossSalary
-                        *
-                        $pph21Rate;
+                    $totalPeriodPph21 = $taxableGrossWithSettlements * $pph21Rate;
                 }
 
-                $pph21Deduction =
-                    round(
-                        $pph21Deduction,
-                        2
-                    );
+                // PPh21 already withheld from a separate settlement transfer
+                // must not be deducted again in this monthly payroll.
+                $pph21Deduction = round(
+                    $totalPeriodPph21 - $settlementPphPaidThisMonth,
+                    2
+                );
 
                 // ====================================================
                 // TOTAL DEDUCTIONS
@@ -2810,7 +2827,9 @@ class PayrollController extends Controller
                     +
                     $otherDeductions
                     +
-                    $maternityHoldAmount;
+                    $maternityHoldAmount
+                    +
+                    $maternitySettledAmount;
 
                 // ====================================================
                 // NET SALARY
@@ -2891,6 +2910,12 @@ class PayrollController extends Controller
 
                     'maternity_hold_amount' =>
                         round($maternityHoldAmount, 2),
+
+                    'maternity_settled_days' =>
+                        round($maternitySettledDays, 1),
+
+                    'maternity_settled_amount' =>
+                        round($maternitySettledAmount, 2),
 
                     'maternity_release_amount' =>
                         round($maternityReleaseAmount, 2),
@@ -2974,16 +2999,46 @@ class PayrollController extends Controller
                 // SIMPAN PAYROLL
                 // ====================================================
 
-                Payroll::updateOrCreate(
+                $savedPayroll = Payroll::updateOrCreate(
                     [
-                        'employee_id' =>
-                            $empId,
+                        'employee_id' => $empId,
 
-                        'period_month' =>
-                            $period,
+                        'period_month' => $period,
                     ],
                     $payload
                 );
+
+                // Record per-day salary snapshots for every CM day actually
+                // withheld by this payroll. HRD verification can then settle
+                // exactly these amounts without guessing from monthly totals.
+                if ($maternityCase && $maternityCase->status !== 'verified') {
+                    app(MaternityLeaveAccrualService::class)->recordPayrollHoldAccruals(
+                        $maternityCase,
+                        $cmAttendanceDates,
+                        $savedPayroll
+                    );
+                }
+
+                // Track the payroll that offsets a settlement accrual which
+                // was created before this month's payroll existed. Keep
+                // payroll_id untouched: it records the ORIGINAL payroll that
+                // withheld a day, if one existed. This distinction prevents a
+                // held day from being deducted twice when an old month is
+                // recalculated after HRD verification.
+                if ($maternityCase && $maternityCase->status === 'verified') {
+                    MaternityLeaveAccrual::query()
+                        ->where('maternity_case_id', $maternityCase->id)
+                        ->whereBetween('attendance_date', [
+                            $periodStart->toDateString(),
+                            $periodEnd->toDateString(),
+                        ])
+                        ->whereNotNull('settlement_id')
+                        ->whereNull('payroll_id')
+                        ->update([
+                            'offset_payroll_id' => $savedPayroll->id_payroll,
+                            'updated_at' => now(),
+                        ]);
+                }
             }
         });
 
@@ -4935,6 +4990,8 @@ class PayrollController extends Controller
                 ->get([
                     'period_month',
                     'gross_salary',
+                    'maternity_hold_amount',
+                    'maternity_settled_amount',
                     'bpjs_tk_deduction',
                     'pph21_deduction',
                 ]);
@@ -4944,11 +5001,12 @@ class PayrollController extends Controller
         $pph21BeforeCurrent = 0.0;
 
         foreach ($previousPayrolls as $row) {
-            $grossBeforeCurrent +=
-                (float) (
-                    $row->gross_salary
-                    ?? 0
-                );
+            $grossBeforeCurrent += max(
+                0,
+                (float) ($row->gross_salary ?? 0)
+                    - (float) ($row->maternity_hold_amount ?? 0)
+                    - (float) ($row->maternity_settled_amount ?? 0)
+            );
 
             $retirementBeforeCurrent +=
                 (float) (
@@ -4962,6 +5020,16 @@ class PayrollController extends Controller
                     ?? 0
                 );
         }
+
+        $previousPaidSettlements = MaternityLeaveSettlement::query()
+            ->where('employee_id', $employee->id_employee)
+            ->where('status', 'paid')
+            ->whereDate('payment_date', '>=', $yearStart . '-01')
+            ->whereDate('payment_date', '<', $periodDate->copy()->startOfMonth()->toDateString())
+            ->get(['gross_amount', 'pph21_amount']);
+
+        $grossBeforeCurrent += (float) $previousPaidSettlements->sum('gross_amount');
+        $pph21BeforeCurrent += (float) $previousPaidSettlements->sum('pph21_amount');
 
         $actualGross =
             $grossBeforeCurrent
@@ -5176,6 +5244,151 @@ class PayrollController extends Controller
             $pph21BeforeCurrent,
             2
         );
+    }
+
+    /**
+     * Calculate the incremental PPh21 withheld from a maternity settlement.
+     * This implementation assumes the held CM amount is not legally due until
+     * HRD verification/payment, so it enters the payment month's TER/final tax
+     * basis. PMK 168/2023 Pasal 19 also taxes income when it becomes due if that
+     * happens before payment; Finance/Tax must confirm this assumption for the
+     * company's employment/payroll policy before production use.
+     * The existing TER table and final-period calculation remain the shared
+     * computational source for payroll and settlement.
+     *
+     * @return array{pph21_amount:float,net_amount:float,tax_period:string,taxable_gross_basis:float,ter_rate:?float}
+     */
+    public function calculateMaternitySettlementTax(
+        int $employeeId,
+        float $settlementGross,
+        string $paymentDate,
+        int $excludeSettlementId
+    ): array {
+        $date = Carbon::parse($paymentDate)->startOfDay();
+        $period = $date->format('Y-m');
+
+        $employee = Employee::query()->findOrFail($employeeId);
+        $employeeContract = EmployeeContract::query()
+            ->where('employee_id', $employeeId)
+            ->first();
+
+        if (!$employeeContract) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'settlement' => 'Master kontrak karyawan tidak ditemukan untuk menghitung PPh21 settlement.',
+            ]);
+        }
+
+        $histories = ContractHistoryLocal::query()
+            ->where('contract_id', $employeeContract->id_contract)
+            ->orderBy('start_date')
+            ->get();
+        $contract = ContractHistoryResolver::uniqueForDate($histories, $date);
+
+        if (!$contract) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'settlement' => 'Tidak ditemukan tepat satu Contract History yang berlaku pada tanggal transfer. Perbaiki histori kontrak terlebih dahulu.',
+            ]);
+        }
+
+        $payroll = Payroll::query()
+            ->where('employee_id', $employeeId)
+            ->where('period_month', $period)
+            ->orderByDesc('id_payroll')
+            ->first();
+
+        if ($payroll) {
+            $regularGross = max(
+                0,
+                (float) $payroll->gross_salary
+                    - (float) $payroll->maternity_hold_amount
+                    - (float) ($payroll->maternity_settled_amount ?? 0)
+            );
+            $currentBpjsTkDeduction = (float) $payroll->bpjs_tk_deduction;
+        } else {
+            $basic = (float) $contract->basic_salary;
+            $level = (int) ($contract->level ?? 0);
+            $allowance = $basic > 0 && $level > 0
+                ? round($basic * ($level * 0.02), 2)
+                : 0.0;
+            $currentMonthSettlementAccrual = (float) MaternityLeaveAccrual::query()
+                ->where('settlement_id', $excludeSettlementId)
+                ->whereNull('payroll_id')
+                ->whereBetween('attendance_date', [
+                    $date->copy()->startOfMonth()->toDateString(),
+                    $date->copy()->endOfMonth()->toDateString(),
+                ])
+                ->sum('amount');
+
+            // When this month's payroll does not exist yet, its monthly salary
+            // estimate must exclude same-month CM days already included in this
+            // settlement; otherwise the tax preview would count those days twice.
+            $regularGross = max(0, $basic + $allowance - $currentMonthSettlementAccrual);
+            if ((bool) ($contract->use_manual_bpjs ?? false)) {
+                $currentBpjsTkDeduction = (float) ($contract->manual_bpjs_tk_employee ?? 0);
+            } elseif ((bool) ($contract->is_bpjstk_active ?? false)) {
+                $tkRate = (float) CompanySetting::get('bpjs_tk_employee_rate', 2.0) / 100;
+                $currentBpjsTkDeduction = ($basic + $allowance) * $tkRate;
+            } else {
+                $currentBpjsTkDeduction = 0.0;
+            }
+        }
+
+        $otherPaidSettlements = MaternityLeaveSettlement::query()
+            ->where('employee_id', $employeeId)
+            ->where('status', 'paid')
+            ->where('id', '!=', $excludeSettlementId)
+            ->whereBetween('payment_date', [
+                $date->copy()->startOfMonth()->toDateString(),
+                $date->copy()->endOfMonth()->toDateString(),
+            ])
+            ->get(['gross_amount', 'pph21_amount']);
+
+        $otherSettlementGross = (float) $otherPaidSettlements->sum('gross_amount');
+        $baselineGross = max(0, $regularGross + $otherSettlementGross);
+        $combinedGross = max(0, $baselineGross + $settlementGross);
+
+        // Calculate the marginal tax caused by THIS settlement only.
+        // The baseline already includes regular payroll and any other settlements
+        // paid in this tax month, so the difference avoids charging this case for
+        // tax that belongs to monthly salary or another settlement.
+        $terRatePercent = null;
+        if ($this->isPph21FinalPeriod($period, $contract)) {
+            $taxWithSettlement = $this->calculateFinalPph21(
+                $employee,
+                $contract,
+                $period,
+                $combinedGross,
+                $currentBpjsTkDeduction
+            );
+            $taxWithoutSettlement = $this->calculateFinalPph21(
+                $employee,
+                $contract,
+                $period,
+                $baselineGross,
+                $currentBpjsTkDeduction
+            );
+        } else {
+            $category = $this->resolveTerCategory($contract);
+            $rateWithSettlement = $this->calculateTerRateByCategory($category, $combinedGross);
+            $rateWithoutSettlement = $this->calculateTerRateByCategory($category, $baselineGross);
+            $terRatePercent = round($rateWithSettlement * 100, 4);
+            $taxWithSettlement = round($combinedGross * $rateWithSettlement, 2);
+            $taxWithoutSettlement = round($baselineGross * $rateWithoutSettlement, 2);
+        }
+
+        $incrementalPph = max(
+            0,
+            round($taxWithSettlement - $taxWithoutSettlement, 2)
+        );
+        $incrementalPph = min(max(0, $settlementGross), $incrementalPph);
+
+        return [
+            'pph21_amount' => round($incrementalPph, 2),
+            'net_amount' => round(max(0, $settlementGross - $incrementalPph), 2),
+            'tax_period' => $period,
+            'taxable_gross_basis' => round($combinedGross, 2),
+            'ter_rate' => $terRatePercent,
+        ];
     }
 
     private function terCategories(): array

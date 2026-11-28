@@ -56,6 +56,16 @@ class MaternityLeaveCase extends Model
         return $this->hasMany(Payroll::class, 'maternity_case_id', 'id');
     }
 
+    public function accruals()
+    {
+        return $this->hasMany(MaternityLeaveAccrual::class, 'maternity_case_id', 'id');
+    }
+
+    public function settlement()
+    {
+        return $this->hasOne(MaternityLeaveSettlement::class, 'maternity_case_id', 'id');
+    }
+
     public function firstPeriodStartDate(): Carbon
     {
         return Carbon::parse($this->leave_start_date)->startOfDay();

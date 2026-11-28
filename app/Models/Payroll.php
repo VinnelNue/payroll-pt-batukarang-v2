@@ -23,6 +23,8 @@ class Payroll extends Model
         'standard_work_days' => 'integer',
         'maternity_hold_days' => 'float',
         'maternity_hold_amount' => 'float',
+        'maternity_settled_days' => 'float',
+        'maternity_settled_amount' => 'float',
         'maternity_release_amount' => 'float',
     ];
 
@@ -47,6 +49,8 @@ class Payroll extends Model
         'maternity_case_id',
         'maternity_hold_days',
         'maternity_hold_amount',
+        'maternity_settled_days',
+        'maternity_settled_amount',
         'maternity_release_amount',
         'incentive',
         'cash_advance',
@@ -83,6 +87,15 @@ class Payroll extends Model
             MaternityLeaveCase::class,
             'maternity_case_id',
             'id'
+        );
+    }
+
+    public function maternityAccruals()
+    {
+        return $this->hasMany(
+            MaternityLeaveAccrual::class,
+            'payroll_id',
+            'id_payroll'
         );
     }
 }
